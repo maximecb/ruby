@@ -354,6 +354,10 @@ static ruby_gc_params_t gc_params = {
     FALSE,
 };
 
+pthread_mutex_t sweep_lock;
+pthread_mutexattr_t sweep_lock_attr;
+pthread_mutex_t free_page_lock;
+
 /* GC_DEBUG:
  *  enable to embed GC debugging information.
  */
@@ -2192,11 +2196,27 @@ heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap)
 
     struct heap_page *page;
 
+    int have_lock = 0;
+
+    if (is_lazy_sweeping(heap)) {
+        pthread_mutex_lock(&sweep_lock);
+        if (is_lazy_sweeping(heap)) {
+            have_lock = 1;
+        } else {
+            pthread_mutex_unlock(&sweep_lock);
+        }
+    }
+
     while (heap->free_pages == NULL) {
 	heap_prepare(objspace, heap);
     }
+
     page = heap->free_pages;
     heap->free_pages = page->free_next;
+
+    if (have_lock) {
+        pthread_mutex_unlock(&sweep_lock);
+    }
 
     GC_ASSERT(page->free_slots != 0);
     RUBY_DEBUG_LOG("page:%p freelist:%p cnt:%d", page, page->freelist, page->free_slots);
@@ -3173,6 +3193,10 @@ Init_heap(void)
     }
 #endif
 
+    pthread_mutexattr_init(&sweep_lock_attr);
+    pthread_mutexattr_settype(&sweep_lock_attr, PTHREAD_MUTEX_RECURSIVE);
+    pthread_mutex_init(&sweep_lock, &sweep_lock_attr);
+    pthread_mutex_init(&free_page_lock, NULL);
     objspace->next_object_id = INT2FIX(OBJ_ID_INITIAL);
     objspace->id_to_obj_tbl = st_init_table(&object_id_hash_type);
     objspace->obj_to_id_tbl = st_init_numtable();
@@ -5001,7 +5025,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
     sweep_page->free_slots = freed_slots + empty_slots;
     objspace->profile.total_freed_objects += freed_slots;
 
-    if (heap_pages_deferred_final && !finalizing) {
+    if (heap_pages_deferred_final && !finalizing && GET_EC()) {
         rb_thread_t *th = GET_THREAD();
         if (th) {
 	    gc_finalize_deferred_register(objspace);
@@ -5126,6 +5150,7 @@ gc_sweep_finish(rb_objspace_t *objspace)
 static int
 gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 {
+    pthread_mutex_lock(&sweep_lock);
     struct heap_page *sweep_page = heap->sweeping_page;
     int unlink_limit = 3;
     int swept_slots = 0;
@@ -5194,6 +5219,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 
     GC_ASSERT(gc_mode(objspace) == gc_mode_sweeping ? heap->free_pages != NULL : 1);
 
+    pthread_mutex_unlock(&sweep_lock);
     return heap->free_pages != NULL;
 }
 
@@ -5205,6 +5231,19 @@ gc_sweep_rest(rb_objspace_t *objspace)
     while (has_sweeping_pages(heap)) {
 	gc_sweep_step(objspace, heap);
     }
+}
+
+static void *
+thread_sweep(rb_objspace_t *objspace)
+{
+    rb_heap_t *heap = heap_eden; /* lazy sweep only for eden */
+
+    int count = 0;
+    while (has_sweeping_pages(heap)) {
+	gc_sweep_step(objspace, heap);
+        count++;
+    }
+    return NULL;
 }
 
 static void
@@ -5328,6 +5367,7 @@ gc_sweep(rb_objspace_t *objspace)
     }
     else {
 	struct heap_page *page = NULL;
+        pthread_t tid1;
 	gc_sweep_start(objspace);
 
         if (ruby_enable_autocompact && is_full_marking(objspace)) {
@@ -5338,6 +5378,7 @@ gc_sweep(rb_objspace_t *objspace)
             page->flags.before_sweep = TRUE;
         }
 	gc_sweep_step(objspace, heap_eden);
+        pthread_create(&tid1, NULL, thread_sweep, objspace);
     }
 
     gc_heap_prepare_minimum_pages(objspace, heap_eden);
