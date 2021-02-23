@@ -1260,22 +1260,24 @@ in_payload_p(VALUE obj)
     uintptr_t original_obj = (uintptr_t)obj;
 
     while (BUILTIN_TYPE(obj) != T_PAYLOAD) {
-        if(GET_HEAP_PAGE(obj) != p)
+        if(GET_HEAP_PAGE(obj) != p) {
             break;
+        }
  
         i++;
-        obj = obj - i * sizeof(RVALUE);
+        obj = obj - sizeof(RVALUE);
     }
-
-    if (obj == original_obj)
-        return true;
 
     if (GET_HEAP_PAGE(obj) != p) {
         return false;
     }
 
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
-    if ((uintptr_t)obj <= original_obj &&
+    if ((uintptr_t)obj == original_obj) {
+        return true;
+    }
+
+    if ((uintptr_t)obj <= original_obj && 
             original_obj < ((uintptr_t)obj + (RPAYLOAD(obj)->len * sizeof(RVALUE)))) {
         return true;
     }
@@ -1291,11 +1293,12 @@ check_rvalue_consistency_force(const VALUE obj, int terminate)
 
     RB_VM_LOCK_ENTER_NO_BARRIER();
     {
+        if (in_payload_p(obj) && (BUILTIN_TYPE(obj)!=T_PAYLOAD))
+            return err;
+
         if (SPECIAL_CONST_P(obj)) {
-            if(!in_payload_p(obj)) {
-                fprintf(stderr, "check_rvalue_consistency: %p is a special const.\n", (void *)obj);
-                err++;
-            }
+            fprintf(stderr, "check_rvalue_consistency: %p is a special const.\n", (void *)obj);
+            err++;
         }
         else if (!is_pointer_to_heap(objspace, (void *)obj)) {
             /* check if it is in tomb_pages */
@@ -1337,7 +1340,7 @@ check_rvalue_consistency_force(const VALUE obj, int terminate)
                 err++;
             }
 
-            obj_memsize_of((VALUE)obj, FALSE);
+            /* obj_memsize_of((VALUE)obj, FALSE); */
 
             /* check generation
              *
@@ -6096,6 +6099,8 @@ rb_mark_tbl_no_pin(st_table *tbl)
     mark_tbl_no_pin(&rb_objspace, tbl);
 }
 
+static void gc_mark_payload(rb_objspace_t *objspace, VALUE obj);
+
 static void
 gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
 {
@@ -6109,6 +6114,9 @@ gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
         switch (BUILTIN_TYPE(obj)) {
           case T_ZOMBIE:
           case T_NONE:
+            break;
+          case T_PAYLOAD:
+            gc_mark_payload(objspace, obj);
             break;
           default:
             gc_mark_and_pin(objspace, obj, 0);
@@ -6244,6 +6252,9 @@ static void reachable_objects_from_callback(VALUE obj);
 static void
 gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
 {
+    if (!payload_body_p && in_payload_p(obj))
+        rb_bug("no");
+
     if (LIKELY(during_gc)) {
         if(!payload_body_p)
             rgengc_check_relation(objspace, obj);
@@ -6428,8 +6439,9 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
 
-    for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
+    for (int i = 0 ; i < RPAYLOAD(obj)->len; i++) {
         VALUE p = obj + i * sizeof(RVALUE);
+        //fprintf(stderr, "gc_mark_payload: T_PAYLOAD (%p) Marking PAYLOAD BODY %p\n", (void *)obj, (void *)p);
         gc_mark_and_pin(objspace, p, 1);
     }
 }
@@ -6465,6 +6477,9 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 	gc_mark_imemo(objspace, obj);
 	return;
 
+      case T_CLASS:
+        break;
+
       default:
         break;
     }
@@ -6480,13 +6495,17 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         if (RCLASS_SUPER(obj)) {
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
-	if (!RCLASS_EXT(obj)) break;
+	if (!RCLASS_EXT(obj)) {
+            fprintf(stderr, "gc_mark_children: T_CLASS (%p) Has no payload, ptr is %p\n",
+                    (void *)obj, (void *)RCLASS(obj)->ptr);
+            break;
+        }
 
         mark_m_tbl(objspace, RCLASS_M_TBL(obj));
         cc_table_mark(objspace, obj);
         mark_tbl_no_pin(objspace, RCLASS_IV_TBL(obj));
 	mark_const_tbl(objspace, RCLASS_CONST_TBL(obj));
-        gc_mark(objspace, (VALUE)((uintptr_t)RCLASS(obj)->ptr - sizeof(struct RPayload)));
+        gc_mark_payload(objspace, (VALUE)((uintptr_t)RCLASS(obj)->ptr - sizeof(struct RPayload)));
 	break;
 
       case T_ICLASS:
@@ -6496,10 +6515,14 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         if (RCLASS_SUPER(obj)) {
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
-	if (!RCLASS_EXT(obj)) break;
+	if (!RCLASS_EXT(obj)) {
+            fprintf(stderr, "gc_mark_children: T_ICLASS (%p) Has no payload, ptr is %p\n",
+                    (void *)obj, (void *)RCLASS(obj)->ptr);
+            break;
+        }
 	mark_m_tbl(objspace, RCLASS_CALLABLE_M_TBL(obj));
         cc_table_mark(objspace, obj);
-        gc_mark(objspace, (VALUE)((uintptr_t)RCLASS(obj)->ptr - sizeof(struct RPayload)));
+        gc_mark_payload(objspace, (VALUE)((uintptr_t)RCLASS(obj)->ptr - sizeof(struct RPayload)));
 	break;
 
       case T_ARRAY:
@@ -7851,6 +7874,8 @@ rgengc_rememberset_mark(rb_objspace_t *objspace, rb_heap_t *heap)
 
 		if (bitset) {
 		    p = offset  + j * BITS_BITLENGTH;
+                    if(BUILTIN_TYPE(p) == T_CLASS)
+                        printf("");
 
 		    do {
 			if (bitset & 1) {
