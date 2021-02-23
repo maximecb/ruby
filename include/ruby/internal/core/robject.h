@@ -43,7 +43,10 @@
 #define ROBJECT_IV_INDEX_TBL  ROBJECT_IV_INDEX_TBL
 /** @endcond */
 
-enum ruby_robject_flags { ROBJECT_EMBED = RUBY_FL_USER1 };
+enum ruby_robject_flags {
+  ROBJECT_EMBED = RUBY_FL_USER1,
+  ROBJECT_T_PAYLOAD = RUBY_FL_USER2
+};
 
 enum ruby_robject_consts { ROBJECT_EMBED_LEN_MAX = RBIMPL_EMBED_LEN_MAX_OF(VALUE) };
 

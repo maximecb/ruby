@@ -2316,6 +2316,10 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
     int slots = (int)rvargc_slot_count(size);
 
+    if (slots > 400) {
+        rb_bug("too many slots");
+    }
+
     RVALUE * p = rvargc_find_contiguous_slots(slots, freelist);
 
     // We found a contiguous space on the freelist stored in the ractor cache
@@ -2607,7 +2611,15 @@ VALUE
 rb_newobj_of(VALUE klass, VALUE flags)
 {
     if ((flags & RUBY_T_MASK) == T_OBJECT) {
-        return newobj_of(klass, (flags | ROBJECT_EMBED) & ~FL_WB_PROTECTED , Qundef, Qundef, Qundef, flags & FL_WB_PROTECTED, sizeof(RVALUE));
+        st_table *index_tbl = RCLASS_IV_INDEX_TBL(klass);
+
+        VALUE obj = newobj_of(klass, (flags | ROBJECT_EMBED) & ~FL_WB_PROTECTED , Qundef, Qundef, Qundef, flags & FL_WB_PROTECTED, sizeof(RVALUE));
+
+        if (index_tbl && index_tbl->num_entries > ROBJECT_EMBED_LEN_MAX) {
+            rb_init_iv_list(obj);
+        }
+
+        return obj;
     }
     else {
         return newobj_of(klass, flags & ~FL_WB_PROTECTED, 0, 0, 0, flags & FL_WB_PROTECTED, sizeof(RVALUE));
@@ -2720,8 +2732,33 @@ rb_imemo_new_debug(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0,
 VALUE
 rb_class_allocate_instance(VALUE klass)
 {
+    st_table *index_tbl = RCLASS_IV_INDEX_TBL(klass);
+
     VALUE flags = T_OBJECT | ROBJECT_EMBED;
-    return newobj_of(klass, flags, Qundef, Qundef, Qundef, RGENGC_WB_PROTECTED_OBJECT, sizeof(RVALUE));
+
+    uint32_t num_ivars = 0;
+
+    if (index_tbl && index_tbl->num_entries > ROBJECT_EMBED_LEN_MAX) {
+        num_ivars = (uint32_t)index_tbl->num_entries;
+    }
+
+    VALUE obj = newobj_of(klass, flags, Qundef, Qundef, Qundef, RGENGC_WB_PROTECTED_OBJECT, sizeof(RVALUE) + (num_ivars * sizeof(VALUE)));
+
+    if (index_tbl && index_tbl->num_entries > ROBJECT_EMBED_LEN_MAX) {
+        FL_SET(obj, ROBJECT_T_PAYLOAD);
+        FL_UNSET(obj, ROBJECT_EMBED);
+        ROBJECT(obj)->as.heap.numiv = num_ivars;
+        ROBJECT(obj)->as.heap.iv_index_tbl = index_tbl;
+
+        VALUE *iv_list = rb_rvargc_payload_data_ptr(obj + rb_slot_size());
+        ROBJECT(obj)->as.heap.ivptr = iv_list;
+
+        for (uint32_t i = 0; i < num_ivars; i++) {
+            iv_list[i] = Qundef;
+        }
+    }
+
+    return obj;
 }
 
 VALUE
@@ -3052,6 +3089,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
       case T_OBJECT:
         if (RANY(obj)->as.basic.flags & ROBJECT_EMBED) {
             RB_DEBUG_COUNTER_INC(obj_obj_embed);
+        }
+        else if (FL_TEST_RAW(obj, ROBJECT_T_PAYLOAD)) {
+            // do nothing
         }
         else if (ROBJ_TRANSIENT_P(obj)) {
             RB_DEBUG_COUNTER_INC(obj_obj_transient);
@@ -6778,6 +6818,10 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
             uint32_t i, len = ROBJECT_NUMIV(obj);
             for (i  = 0; i < len; i++) {
                 gc_mark(objspace, ptr[i]);
+            }
+
+            if (FL_TEST_RAW(obj, ROBJECT_T_PAYLOAD)) {
+                gc_mark_payload(objspace, (VALUE)((uintptr_t)ROBJECT(obj)->as.heap.ivptr - sizeof(struct RPayload)));
             }
 
             if (LIKELY(during_gc) &&

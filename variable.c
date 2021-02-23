@@ -1372,7 +1372,18 @@ obj_ivar_heap_realloc(VALUE obj, int32_t len, size_t newsize)
     VALUE *newptr;
     int i;
 
-    if (ROBJ_TRANSIENT_P(obj)) {
+    if (RBASIC(obj)->flags & ROBJECT_T_PAYLOAD) {
+        const VALUE *orig_ptr = ROBJECT(obj)->as.heap.ivptr;
+        newptr = obj_ivar_heap_alloc(obj, newsize);
+
+        assert(newptr);
+        ROBJECT(obj)->as.heap.ivptr = newptr;
+        FL_UNSET(obj, ROBJECT_T_PAYLOAD);
+        for (i=0; i<(int)len; i++) {
+            newptr[i] = orig_ptr[i];
+        }
+    }
+    else if (ROBJ_TRANSIENT_P(obj)) {
         const VALUE *orig_ptr = ROBJECT(obj)->as.heap.ivptr;
         newptr = obj_ivar_heap_alloc(obj, newsize);
 
