@@ -6177,6 +6177,9 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 {
     const VALUE old_parent = objspace->rgengc.parent_object;
 
+    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
+        fprintf(stderr, "");
+
     if (old_parent) { /* parent object is old */
 	if (RVALUE_WB_UNPROTECTED(obj)) {
 	    if (gc_remember_unprotected(objspace, obj)) {
@@ -6212,6 +6215,9 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 static void
 gc_grey(rb_objspace_t *objspace, VALUE obj)
 {
+
+    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
+        fprintf(stderr, "");
 #if RGENGC_CHECK_MODE
     if (RVALUE_MARKED(obj) == FALSE) rb_bug("gc_grey: %s is not marked.", obj_info(obj));
     if (RVALUE_MARKING(obj) == TRUE) rb_bug("gc_grey: %s is marking/remembered.", obj_info(obj));
@@ -6255,6 +6261,8 @@ static void reachable_objects_from_callback(VALUE obj);
 static void
 gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
 {
+    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
+        payload_body_p = 1;
     if (!payload_body_p && in_payload_p(obj))
         rb_bug("no");
 
@@ -12418,6 +12426,7 @@ type_name(int type, VALUE obj)
 	    TYPE_NAME(T_ICLASS);
             TYPE_NAME(T_MOVED);
 	    TYPE_NAME(T_ZOMBIE);
+            TYPE_NAME(T_PAYLOAD);
       case T_DATA:
 	if (obj && rb_objspace_data_type_name(obj)) {
 	    return rb_objspace_data_type_name(obj);
@@ -12531,6 +12540,9 @@ rb_raw_obj_info(char *buff, const int buff_size, VALUE obj)
 	if (internal_object_p(obj)) {
 	    /* ignore */
 	}
+        else if (type == T_PAYLOAD) {
+            /* ignore */
+        }
 	else if (RBASIC(obj)->klass == 0) {
             APPENDF((BUFF_ARGS, "(temporary internal)"));
 	}
@@ -12548,6 +12560,9 @@ rb_raw_obj_info(char *buff, const int buff_size, VALUE obj)
 #endif
 
 	switch (type) {
+          case T_PAYLOAD:
+              APPENDF((BUFF_ARGS, "len: %i", RPAYLOAD(obj)->len));
+              break;
 	  case T_NODE:
 	    UNEXPECTED_NODE(rb_raw_obj_info);
 	    break;
