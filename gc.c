@@ -6450,8 +6450,9 @@ static void
 gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
+    gc_mark_and_pin(objspace, obj, 0);
 
-    for (int i = 0 ; i < RPAYLOAD(obj)->len; i++) {
+    for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
         VALUE p = obj + i * sizeof(RVALUE);
         //fprintf(stderr, "gc_mark_payload: T_PAYLOAD (%p) Marking PAYLOAD BODY %p\n", (void *)obj, (void *)p);
         gc_mark_and_pin(objspace, p, 1);
