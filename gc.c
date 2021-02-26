@@ -6292,9 +6292,10 @@ gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
         /* if we're in the middle of a payload body we want to mark the slot
          * directly instead of adding it to the mark stack */
         if (payload_body_p) {
-            MARK_IN_BITMAP(GET_HEAP_MARKING_BITS(obj), obj);
+            MARK_IN_BITMAP(GET_HEAP_MARK_BITS(obj), obj);
         } else {
-            gc_grey(objspace, obj);
+            if (BUILTIN_TYPE(obj) != T_PAYLOAD)
+                gc_grey(objspace, obj);
         }
     }
     else {
