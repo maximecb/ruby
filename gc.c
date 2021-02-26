@@ -2293,6 +2293,12 @@ rb_rvargc_payload_init(VALUE obj, size_t size)
     return (VALUE)ph + sizeof(struct RPayload);
 }
 
+VALUE
+rb_rvargc_payload_head_ptr(VALUE obj)
+{
+    return obj + sizeof(RVALUE);
+}
+
 void *
 rb_rvargc_payload_data_ptr(VALUE obj)
 {
