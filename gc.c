@@ -1256,25 +1256,13 @@ RVALUE_FLAGS_AGE(VALUE flags)
 static VALUE
 payload_or_self(VALUE obj)
 {
-    int i = 0;
     struct heap_page * p = GET_HEAP_PAGE(obj);
     uintptr_t original_obj = (uintptr_t)obj;
     unsigned long orig_num_in_page = NUM_IN_PAGE(obj);
 
-    // early return if this is the only live slot on the page
-    if (p->free_slots >= p->total_slots - 1)
-        return original_obj;
-
-    //fprintf(stderr, "in_payload_p: START: Starting descent\n\tobj: %p, page: %p, position: %i\n",
-            //(void *)obj, (void *)p, NUM_IN_PAGE(obj));
-
     while (BUILTIN_TYPE(obj) != T_PAYLOAD) {
-        //fprintf(stderr, "in_payload_p: obj (%p), page: %p, position: %i, type: 0x%lx\n",
-                //(void *)obj, (void *)GET_HEAP_PAGE(obj), NUM_IN_PAGE(obj), BUILTIN_TYPE(obj));
         if (orig_num_in_page < NUM_IN_PAGE(obj) || NUM_IN_PAGE(obj) < 1)
             return original_obj;
-
-        i++;
 
         obj = obj - sizeof(RVALUE);
     }
@@ -1284,19 +1272,12 @@ payload_or_self(VALUE obj)
         return obj;
     }
 
-    if ((uintptr_t)obj <= original_obj && 
+    if ((uintptr_t)obj <= original_obj &&
             original_obj < ((uintptr_t)obj + (RPAYLOAD(obj)->len * sizeof(RVALUE)))) {
         return obj;
     }
 
     return original_obj;
-}
-
-static int
-in_payload_p(VALUE obj)
-{
-    VALUE definitely_a_ruby_object = payload_or_self(obj);
-    return BUILTIN_TYPE(definitely_a_ruby_object) == T_PAYLOAD;
 }
 
 static int
@@ -2312,10 +2293,20 @@ rb_rvargc_payload_init(VALUE obj, size_t size)
     return (VALUE)ph + sizeof(struct RPayload);
 }
 
+/* Given a pointer, return the T_PAYLOAD object associated with the
+ * allocation or NULL */
 VALUE
-rb_rvargc_payload_head_ptr(VALUE obj)
+rb_rvargc_payload_head(void * obj)
 {
-    return obj + sizeof(RVALUE);
+    VALUE ruby_object = (VALUE)obj;
+
+    ruby_object = payload_or_self(ruby_object);
+    if (BUILTIN_TYPE(ruby_object) == T_PAYLOAD) {
+        return ruby_object;
+    }
+    else {
+        return 0;
+    }
 }
 
 void *

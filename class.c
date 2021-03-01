@@ -184,7 +184,7 @@ class_alloc(VALUE flags, VALUE klass)
 #if USE_RVARGC
     obj->ptr = rb_rvargc_payload_data_ptr((VALUE)obj);
     // super not sure about this?
-    RB_OBJ_WRITTEN(obj, Qundef, rb_rvargc_payload_head_ptr((VALUE)obj));
+    RB_OBJ_WRITTEN(obj, Qundef, rb_rvargc_payload_head((void *)obj->ptr));
 #else
     obj->ptr = ZALLOC(rb_classext_t);
 #endif
