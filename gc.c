@@ -7908,8 +7908,6 @@ rgengc_rememberset_mark(rb_objspace_t *objspace, rb_heap_t *heap)
 
 		if (bitset) {
 		    p = offset  + j * BITS_BITLENGTH;
-                    if(BUILTIN_TYPE(p) == T_CLASS)
-                        printf("");
 
 		    do {
 			if (bitset & 1) {
