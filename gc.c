@@ -1252,37 +1252,51 @@ RVALUE_FLAGS_AGE(VALUE flags)
     return (int)((flags & (FL_PROMOTED0 | FL_PROMOTED1)) >> RVALUE_AGE_SHIFT);
 }
 
-static int
-in_payload_p(VALUE obj)
+
+static VALUE
+payload_or_self(VALUE obj)
 {
     int i = 0;
     struct heap_page * p = GET_HEAP_PAGE(obj);
     uintptr_t original_obj = (uintptr_t)obj;
+    unsigned long orig_num_in_page = NUM_IN_PAGE(obj);
+
+    // early return if this is the only live slot on the page
+    if (p->free_slots >= p->total_slots - 1)
+        return original_obj;
+
+    //fprintf(stderr, "in_payload_p: START: Starting descent\n\tobj: %p, page: %p, position: %i\n",
+            //(void *)obj, (void *)p, NUM_IN_PAGE(obj));
 
     while (BUILTIN_TYPE(obj) != T_PAYLOAD) {
-        if(GET_HEAP_PAGE(obj) != p) {
-            break;
-        }
- 
-        i++;
-        obj = obj - sizeof(RVALUE);
-    }
+        //fprintf(stderr, "in_payload_p: obj (%p), page: %p, position: %i, type: 0x%lx\n",
+                //(void *)obj, (void *)GET_HEAP_PAGE(obj), NUM_IN_PAGE(obj), BUILTIN_TYPE(obj));
+        if (orig_num_in_page < NUM_IN_PAGE(obj) || NUM_IN_PAGE(obj) < 1)
+            return original_obj;
 
-    if (GET_HEAP_PAGE(obj) != p) {
-        return false;
+        i++;
+
+        obj = obj - sizeof(RVALUE);
     }
 
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
     if ((uintptr_t)obj == original_obj) {
-        return true;
+        return obj;
     }
 
     if ((uintptr_t)obj <= original_obj && 
             original_obj < ((uintptr_t)obj + (RPAYLOAD(obj)->len * sizeof(RVALUE)))) {
-        return true;
+        return obj;
     }
 
-    return false;
+    return original_obj;
+}
+
+static int
+in_payload_p(VALUE obj)
+{
+    VALUE definitely_a_ruby_object = payload_or_self(obj);
+    return BUILTIN_TYPE(definitely_a_ruby_object) == T_PAYLOAD;
 }
 
 static int
@@ -1293,9 +1307,6 @@ check_rvalue_consistency_force(const VALUE obj, int terminate)
 
     RB_VM_LOCK_ENTER_NO_BARRIER();
     {
-        if (in_payload_p(obj) && (BUILTIN_TYPE(obj)!=T_PAYLOAD))
-            return err;
-
         if (SPECIAL_CONST_P(obj)) {
             fprintf(stderr, "check_rvalue_consistency: %p is a special const.\n", (void *)obj);
             err++;
@@ -1330,10 +1341,8 @@ check_rvalue_consistency_force(const VALUE obj, int terminate)
                 err++;
             }
             if (BUILTIN_TYPE(obj) == T_NONE) {
-                if (!in_payload_p(obj)) {
-                    fprintf(stderr, "check_rvalue_consistency: %s is T_NONE.\n", obj_info(obj));
-                    err++;
-                }
+                fprintf(stderr, "check_rvalue_consistency: %s is T_NONE.\n", obj_info(obj));
+                err++;
             }
             if (BUILTIN_TYPE(obj) == T_ZOMBIE) {
                 fprintf(stderr, "check_rvalue_consistency: %s is T_ZOMBIE.\n", obj_info(obj));
@@ -1536,6 +1545,16 @@ RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
 
     if (age == RVALUE_OLD_AGE) {
 	RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, obj);
+
+        if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
+            int plen = RPAYLOAD(obj)->len;
+
+            for (int i = 1; i < plen; i++) {
+                VALUE pbody = obj + i * sizeof(RVALUE);
+                MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+                objspace->rgengc.old_objects++;
+            }
+        }
     }
     check_rvalue_consistency(obj);
 }
@@ -5048,7 +5067,6 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 	if (bitset) {
 	    p = offset  + i * BITS_BITLENGTH;
 	    do {
-                int inc = 1, plen = 1;
                 VALUE vp = (VALUE)p;
                 asan_unpoison_object(vp, false);
 		if (bitset & 1) {
@@ -5081,15 +5099,20 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 
 			/* minor cases */
                       case T_PAYLOAD:
-                        plen = RPAYLOAD(vp)->len;
-                        for (int i = 0; i < plen; i++) {
-                            VALUE pbody = vp + i * sizeof(RVALUE);
+                        {
+                            int plen = RPAYLOAD(vp)->len;
+                            fprintf(stderr, "freeing payload of size %d\n", plen);
+                            for (int i = 0; i < plen; i++) {
+                                VALUE pbody = vp + i * sizeof(RVALUE);
 
-                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
-                            heap_page_add_freeobj(objspace, sweep_page, pbody);
-                            freed_slots++;
+                                fprintf(stderr, "freeing payload body @[%d] %p\n", i, (void*) pbody);
+                                (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
+                                heap_page_add_freeobj(objspace, sweep_page, pbody);
+                                MARK_IN_BITMAP(GET_HEAP_MARK_BITS(pbody), pbody);
+                                assert(BUILTIN_TYPE(pbody) == T_NONE);
+                                freed_slots++;
+                            }
                         }
-                        inc = plen;
                         break;
 		      case T_MOVED:
                         if (objspace->flags.during_compacting) {
@@ -5123,8 +5146,8 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 			break;
 		    }
 		}
-		p += plen;
-		bitset >>= plen;
+		p++;
+		bitset >>= 1;
 	    } while (bitset);
 	}
     }
@@ -6116,16 +6139,12 @@ gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
         void *ptr = __asan_region_is_poisoned((void *)obj, SIZEOF_VALUE);
         asan_unpoison_object(obj, false);
 
+        obj = payload_or_self(obj);
+
         /* Garbage can live on the stack, so do not mark or pin */
         switch (BUILTIN_TYPE(obj)) {
           case T_ZOMBIE:
           case T_NONE:
-            break;
-          case T_CLASS:
-          case T_ICLASS:
-          case T_MODULE:
-            gc_mark_and_pin(objspace, obj, 0);
-            gc_mark_payload(objspace, (uintptr_t)RCLASS(obj)->ptr - sizeof(struct RPayload));
             break;
           default:
             gc_mark_and_pin(objspace, obj, 0);
@@ -6254,6 +6273,16 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
 	else if (is_full_marking(objspace)) {
 	    GC_ASSERT(RVALUE_PAGE_UNCOLLECTIBLE(page, obj) == FALSE);
 	    RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(objspace, page, obj);
+
+            if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
+                int plen = RPAYLOAD(obj)->len;
+
+                for (int i = 1; i < plen; i++) {
+                    VALUE pbody = obj + i * sizeof(RVALUE);
+                    MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+                    objspace->rgengc.old_objects++;
+                }
+            }
 	}
     }
     check_rvalue_consistency(obj);
@@ -6267,15 +6296,10 @@ static void reachable_objects_from_callback(VALUE obj);
 static void
 gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
 {
-    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
-        payload_body_p = 1;
-    if (!payload_body_p && in_payload_p(obj))
-        rb_bug("no");
 
     if (LIKELY(during_gc)) {
-        if(!payload_body_p)
-            rgengc_check_relation(objspace, obj);
-	if (!gc_mark_set(objspace, obj)) return; /* already marked */
+        rgengc_check_relation(objspace, obj);
+        if (!gc_mark_set(objspace, obj)) return; /* already marked */
 
         if (0) { // for debug GC marking miss
             if (objspace->rgengc.parent_object) {
@@ -6288,21 +6312,12 @@ gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
             }
         }
 
-        if (UNLIKELY(RB_TYPE_P(obj, T_NONE) && !payload_body_p)) {
+        if (UNLIKELY(RB_TYPE_P(obj, T_NONE))) {
             rp(obj);
             rb_bug("try to mark T_NONE object"); /* check here will help debugging */
         }
-        if (!payload_body_p)
-            gc_aging(objspace, obj);
-
-        /* if we're in the middle of a payload body we want to mark the slot
-         * directly instead of adding it to the mark stack */
-        if (payload_body_p) {
-            MARK_IN_BITMAP(GET_HEAP_MARK_BITS(obj), obj);
-        } else {
-            if (BUILTIN_TYPE(obj) != T_PAYLOAD)
-                gc_grey(objspace, obj);
-        }
+        gc_aging(objspace, obj);
+        gc_grey(objspace, obj);
     }
     else {
         reachable_objects_from_callback(obj);
@@ -6333,11 +6348,7 @@ gc_mark(rb_objspace_t *objspace, VALUE obj)
 {
     if (!is_markable_object(objspace, obj)) return;
 
-    if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-        gc_mark_ptr(objspace, obj, 1);
-    } else {
-        gc_mark_ptr(objspace, obj, 0);
-    }
+    gc_mark_ptr(objspace, obj, 0);
 }
 
 void
@@ -6456,12 +6467,14 @@ static void
 gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 {
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
+    // Mark payload head here
     gc_mark_and_pin(objspace, obj, 0);
 
     for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
         VALUE p = obj + i * sizeof(RVALUE);
         //fprintf(stderr, "gc_mark_payload: T_PAYLOAD (%p) Marking PAYLOAD BODY %p\n", (void *)obj, (void *)p);
-        gc_mark_and_pin(objspace, p, 1);
+        MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
+        MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
     }
 }
 
