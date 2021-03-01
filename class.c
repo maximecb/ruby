@@ -177,7 +177,7 @@ class_alloc(VALUE flags, VALUE klass)
 
 #if USE_RVARGC
     payload_size = sizeof(rb_classext_t);
-#endif 
+#endif
 
     RVARGC_NEWOBJ_OF(obj, struct RClass, klass, (flags & T_MASK) | FL_PROMOTED1 /* start from age == 2 */ | (RGENGC_WB_PROTECTED_CLASS ? FL_WB_PROTECTED : 0), payload_size);
 

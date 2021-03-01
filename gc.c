@@ -6466,6 +6466,7 @@ gc_mark_imemo(rb_objspace_t *objspace, VALUE obj)
 static void
 gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 {
+#if USE_RVARGC
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
     // Mark payload head here
     gc_mark_and_pin(objspace, obj, 0);
@@ -6476,6 +6477,7 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
         MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
         MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
     }
+#endif
 }
 
 static void
