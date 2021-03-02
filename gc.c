@@ -5101,11 +5101,9 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                       case T_PAYLOAD:
                         {
                             int plen = RPAYLOAD(vp)->len;
-                            fprintf(stderr, "freeing payload of size %d\n", plen);
                             for (int i = 0; i < plen; i++) {
                                 VALUE pbody = vp + i * sizeof(RVALUE);
 
-                                fprintf(stderr, "freeing payload body @[%d] %p\n", i, (void*) pbody);
                                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
                                 heap_page_add_freeobj(objspace, sweep_page, pbody);
                                 MARK_IN_BITMAP(GET_HEAP_MARK_BITS(pbody), pbody);
@@ -6518,8 +6516,8 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
 	if (!RCLASS_EXT(obj)) {
-            fprintf(stderr, "gc_mark_children: T_CLASS (%p) Has no payload, ptr is %p\n",
-                    (void *)obj, (void *)RCLASS(obj)->ptr);
+            //fprintf(stderr, "gc_mark_children: T_CLASS (%p) Has no payload, ptr is %p\n",
+            //        (void *)obj, (void *)RCLASS(obj)->ptr);
             break;
         }
 
@@ -6538,8 +6536,8 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
 	if (!RCLASS_EXT(obj)) {
-            fprintf(stderr, "gc_mark_children: T_ICLASS (%p) Has no payload, ptr is %p\n",
-                    (void *)obj, (void *)RCLASS(obj)->ptr);
+            //fprintf(stderr, "gc_mark_children: T_ICLASS (%p) Has no payload, ptr is %p\n",
+            //        (void *)obj, (void *)RCLASS(obj)->ptr);
             break;
         }
 	mark_m_tbl(objspace, RCLASS_CALLABLE_M_TBL(obj));
