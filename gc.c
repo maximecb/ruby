@@ -1502,6 +1502,8 @@ RVALUE_FLAGS_AGE_SET(VALUE flags, int age)
     return flags;
 }
 
+static inline void gc_make_uncollectible(rb_objspace_t * objspace, VALUE obj);
+
 /* set age to age+1 */
 static inline void
 RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
@@ -1524,8 +1526,7 @@ RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
 
             for (int i = 1; i < plen; i++) {
                 VALUE pbody = obj + i * sizeof(RVALUE);
-                MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
-                objspace->rgengc.old_objects++;
+                gc_make_uncollectible(objspace, pbody);
             }
         }
     }
@@ -6248,6 +6249,13 @@ gc_grey(rb_objspace_t *objspace, VALUE obj)
     push_mark_stack(&objspace->mark_stack, obj);
 }
 
+static inline void
+gc_make_uncollectible(rb_objspace_t *objspace, VALUE obj)
+{
+    MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(obj), obj);
+    objspace->rgengc.old_objects++;
+}
+
 static void
 gc_aging(rb_objspace_t *objspace, VALUE obj)
 {
@@ -6270,8 +6278,7 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
 
                 for (int i = 1; i < plen; i++) {
                     VALUE pbody = obj + i * sizeof(RVALUE);
-                    MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
-                    objspace->rgengc.old_objects++;
+                    gc_make_uncollectible(objspace, pbody);
                 }
             }
 	}
