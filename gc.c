@@ -2270,6 +2270,12 @@ rvargc_find_region(size_t size, struct heap_page *page, RVALUE **freelist)
     return NULL;
 }
 
+int
+rb_slot_size()
+{
+    return sizeof(RVALUE);
+}
+
 VALUE
 rb_rvargc_payload_init(VALUE obj, size_t size)
 {
@@ -2281,29 +2287,13 @@ rb_rvargc_payload_init(VALUE obj, size_t size)
     ph->len = rvargc_slot_count(size);
     objspace->total_allocated_objects += rvargc_slot_count(size);
 
-    return (VALUE)ph + sizeof(struct RPayload);
-}
-
-/* Given a pointer, return the T_PAYLOAD object associated with the
- * allocation or NULL */
-VALUE
-rb_rvargc_payload_head(void * obj)
-{
-    VALUE ruby_object = (VALUE)obj;
-
-    ruby_object = payload_or_self(ruby_object);
-    if (BUILTIN_TYPE(ruby_object) == T_PAYLOAD) {
-        return ruby_object;
-    }
-    else {
-        return 0;
-    }
+    return (VALUE)ph;
 }
 
 void *
-rb_rvargc_payload_data_ptr(VALUE obj)
+rb_rvargc_payload_data_ptr(VALUE phead)
 {
-    return (void *)(obj + sizeof(RVALUE) + sizeof(struct RPayload));
+    return (void *)(phead + sizeof(struct RPayload));
 }
 
 static inline VALUE

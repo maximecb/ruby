@@ -182,9 +182,8 @@ class_alloc(VALUE flags, VALUE klass)
     RVARGC_NEWOBJ_OF(obj, struct RClass, klass, (flags & T_MASK) | FL_PROMOTED1 /* start from age == 2 */ | (RGENGC_WB_PROTECTED_CLASS ? FL_WB_PROTECTED : 0), payload_size);
 
 #if USE_RVARGC
-    obj->ptr = rb_rvargc_payload_data_ptr((VALUE)obj);
-    // super not sure about this?
-    RB_OBJ_WRITTEN(obj, Qundef, rb_rvargc_payload_head((void *)obj->ptr));
+    obj->ptr = (rb_classext_t *)rb_rvargc_payload_data_ptr((VALUE)obj + rb_slot_size());
+    RB_OBJ_WRITTEN(obj, Qundef, (VALUE)obj + rb_slot_size());
 #else
     obj->ptr = ZALLOC(rb_classext_t);
 #endif

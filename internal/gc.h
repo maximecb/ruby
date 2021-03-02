@@ -106,7 +106,6 @@ VALUE rb_wb_unprotected_newobj_of(VALUE, VALUE, size_t);
 VALUE rb_ec_wb_protected_newobj_of(struct rb_execution_context_struct *ec, VALUE klass, VALUE flags, size_t);
 VALUE rb_rvargc_payload_init(VALUE obj, size_t size);
 void * rb_rvargc_payload_data_ptr(VALUE obj);
-VALUE rb_rvargc_payload_head(void * obj);
 size_t rb_obj_memsize_of(VALUE);
 void rb_gc_verify_internal_consistency(void);
 size_t rb_obj_gc_flags(VALUE, ID[], size_t);
@@ -115,6 +114,7 @@ void rb_gc_mark_vm_stack_values(long n, const VALUE *values);
 void *ruby_sized_xrealloc(void *ptr, size_t new_size, size_t old_size) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2));
 void *ruby_sized_xrealloc2(void *ptr, size_t new_count, size_t element_size, size_t old_count) RUBY_ATTR_RETURNS_NONNULL RUBY_ATTR_ALLOC_SIZE((2, 3));
 void ruby_sized_xfree(void *x, size_t size);
+int rb_slot_size();
 RUBY_SYMBOL_EXPORT_END
 
 MJIT_SYMBOL_EXPORT_BEGIN
