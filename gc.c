@@ -1049,8 +1049,8 @@ static void gc_sweep_continue(rb_objspace_t *objspace, rb_heap_t *heap);
 
 static inline void gc_mark(rb_objspace_t *objspace, VALUE ptr);
 static inline void gc_pin(rb_objspace_t *objspace, VALUE ptr);
-static inline void gc_mark_and_pin(rb_objspace_t *objspace, VALUE ptr, int payload_body_p);
-static void gc_mark_ptr(rb_objspace_t *objspace, VALUE ptr, int payload_body_p);
+static inline void gc_mark_and_pin(rb_objspace_t *objspace, VALUE ptr);
+static void gc_mark_ptr(rb_objspace_t *objspace, VALUE ptr);
 NO_SANITIZE("memory", static void gc_mark_maybe(rb_objspace_t *objspace, VALUE ptr));
 static void gc_mark_children(rb_objspace_t *objspace, VALUE ptr);
 
@@ -1252,11 +1252,9 @@ RVALUE_FLAGS_AGE(VALUE flags)
     return (int)((flags & (FL_PROMOTED0 | FL_PROMOTED1)) >> RVALUE_AGE_SHIFT);
 }
 
-
 static VALUE
 payload_or_self(VALUE obj)
 {
-    struct heap_page * p = GET_HEAP_PAGE(obj);
     uintptr_t original_obj = (uintptr_t)obj;
     unsigned long orig_num_in_page = NUM_IN_PAGE(obj);
 
@@ -3387,7 +3385,14 @@ objspace_each_objects_without_setup(rb_objspace_t *objspace, each_obj_callback *
         RVALUE * cursor_end = pstart;
 
         while (cursor_end < pend) {
+            int payload_len = 0;
             while(cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) != T_PAYLOAD) {
+                cursor_end++;
+            }
+
+            // Make sure the payload slot is yielded
+            if (cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) == T_PAYLOAD) {
+                payload_len = RPAYLOAD((VALUE)cursor_end)->len;
                 cursor_end++;
             }
 
@@ -3395,8 +3400,8 @@ objspace_each_objects_without_setup(rb_objspace_t *objspace, each_obj_callback *
                 break;
             }
 
-            if (cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) == T_PAYLOAD) {
-                cursor_end += (RPAYLOAD((VALUE)cursor_end)->len);
+            if (payload_len) {
+                cursor_end += (payload_len - 1);
                 pstart = cursor_end;
             }
         }
@@ -5831,7 +5836,7 @@ rb_gc_mark_values(long n, const VALUE *values)
     rb_objspace_t *objspace = &rb_objspace;
 
     for (i=0; i<n; i++) {
-        gc_mark_and_pin(objspace, values[i], 0);
+        gc_mark_and_pin(objspace, values[i]);
     }
 }
 
@@ -5842,7 +5847,7 @@ gc_mark_stack_values(rb_objspace_t *objspace, long n, const VALUE *values)
 
     for (i=0; i<n; i++) {
         if (is_markable_object(objspace, values[i])) {
-            gc_mark_and_pin(objspace, values[i], 0);
+            gc_mark_and_pin(objspace, values[i]);
         }
     }
 }
@@ -5866,7 +5871,7 @@ static int
 mark_value_pin(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)data;
-    gc_mark_and_pin(objspace, (VALUE)value, 0);
+    gc_mark_and_pin(objspace, (VALUE)value);
     return ST_CONTINUE;
 }
 
@@ -5888,7 +5893,7 @@ static int
 mark_key(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)data;
-    gc_mark_and_pin(objspace, (VALUE)key, 0);
+    gc_mark_and_pin(objspace, (VALUE)key);
     return ST_CONTINUE;
 }
 
@@ -5903,7 +5908,7 @@ static int
 pin_value(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)data;
-    gc_mark_and_pin(objspace, (VALUE)value, 0);
+    gc_mark_and_pin(objspace, (VALUE)value);
     return ST_CONTINUE;
 }
 
@@ -5935,8 +5940,8 @@ pin_key_pin_value(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)data;
 
-    gc_mark_and_pin(objspace, (VALUE)key, 0);
-    gc_mark_and_pin(objspace, (VALUE)value, 0);
+    gc_mark_and_pin(objspace, (VALUE)key);
+    gc_mark_and_pin(objspace, (VALUE)value);
     return ST_CONTINUE;
 }
 
@@ -5945,7 +5950,7 @@ pin_key_mark_value(st_data_t key, st_data_t value, st_data_t data)
 {
     rb_objspace_t *objspace = (rb_objspace_t *)data;
 
-    gc_mark_and_pin(objspace, (VALUE)key, 0);
+    gc_mark_and_pin(objspace, (VALUE)key);
     gc_mark(objspace, (VALUE)value);
     return ST_CONTINUE;
 }
@@ -6152,7 +6157,7 @@ gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
           case T_NONE:
             break;
           default:
-            gc_mark_and_pin(objspace, obj, 0);
+            gc_mark_and_pin(objspace, obj);
             break;
         }
 
@@ -6207,9 +6212,6 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 {
     const VALUE old_parent = objspace->rgengc.parent_object;
 
-    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
-        fprintf(stderr, "");
-
     if (old_parent) { /* parent object is old */
 	if (RVALUE_WB_UNPROTECTED(obj)) {
 	    if (gc_remember_unprotected(objspace, obj)) {
@@ -6245,9 +6247,6 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 static void
 gc_grey(rb_objspace_t *objspace, VALUE obj)
 {
-
-    if (BUILTIN_TYPE(obj) == T_PAYLOAD)
-        fprintf(stderr, "");
 #if RGENGC_CHECK_MODE
     if (RVALUE_MARKED(obj) == FALSE) rb_bug("gc_grey: %s is not marked.", obj_info(obj));
     if (RVALUE_MARKING(obj) == TRUE) rb_bug("gc_grey: %s is marking/remembered.", obj_info(obj));
@@ -6295,13 +6294,12 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
     objspace->marked_slots++;
 }
 
-NOINLINE(static void gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p));
+NOINLINE(static void gc_mark_ptr(rb_objspace_t *objspace, VALUE obj));
 static void reachable_objects_from_callback(VALUE obj);
 
 static void
-gc_mark_ptr(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
+gc_mark_ptr(rb_objspace_t *objspace, VALUE obj)
 {
-
     if (LIKELY(during_gc)) {
         rgengc_check_relation(objspace, obj);
         if (!gc_mark_set(objspace, obj)) return; /* already marked */
@@ -6341,11 +6339,11 @@ gc_pin(rb_objspace_t *objspace, VALUE obj)
 }
 
 static inline void
-gc_mark_and_pin(rb_objspace_t *objspace, VALUE obj, int payload_body_p)
+gc_mark_and_pin(rb_objspace_t *objspace, VALUE obj)
 {
     if (!is_markable_object(objspace, obj)) return;
     gc_pin(objspace, obj);
-    gc_mark_ptr(objspace, obj, payload_body_p);
+    gc_mark_ptr(objspace, obj);
 }
 
 static inline void
@@ -6353,7 +6351,7 @@ gc_mark(rb_objspace_t *objspace, VALUE obj)
 {
     if (!is_markable_object(objspace, obj)) return;
 
-    gc_mark_ptr(objspace, obj, 0);
+    gc_mark_ptr(objspace, obj);
 }
 
 void
@@ -6365,7 +6363,7 @@ rb_gc_mark_movable(VALUE ptr)
 void
 rb_gc_mark(VALUE ptr)
 {
-    gc_mark_and_pin(&rb_objspace, ptr, 0);
+    gc_mark_and_pin(&rb_objspace, ptr);
 }
 
 /* CAUTION: THIS FUNCTION ENABLE *ONLY BEFORE* SWEEPING.
@@ -6474,7 +6472,7 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 #if USE_RVARGC
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
     // Mark payload head here
-    gc_mark_and_pin(objspace, obj, 0);
+    gc_mark_and_pin(objspace, obj);
 
     for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
         VALUE p = obj + i * sizeof(RVALUE);
@@ -6515,9 +6513,6 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
       case T_IMEMO:
 	gc_mark_imemo(objspace, obj);
 	return;
-
-      case T_CLASS:
-        break;
 
       default:
         break;
@@ -7158,16 +7153,11 @@ check_children_i(const VALUE child, void *ptr)
 static int
 verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, void *ptr)
 {
-    size_t istride = stride;
     struct verify_internal_consistency_struct *data = (struct verify_internal_consistency_struct *)ptr;
     VALUE obj;
     rb_objspace_t *objspace = data->objspace;
 
     for (obj = (VALUE)page_start; obj != (VALUE)page_end; obj += stride) {
-        if (BUILTIN_TYPE(obj) == T_PAYLOAD)
-            fprintf(stderr, "\n");
-
-        stride = istride;
         void *poisoned = asan_poisoned_object_p(obj);
         asan_unpoison_object(obj, false);
 
@@ -7205,8 +7195,10 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, v
              * compromising the payload and skipt over the rest of the payload
              * body */
             if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
+                if (RVALUE_OLD_P(obj)) {
+                    data->old_object_count += RPAYLOAD(obj)->len - 1;
+                }
                 data->live_object_count += RPAYLOAD(obj)->len - 1;
-                stride = RPAYLOAD(obj)->len * sizeof(RVALUE);
             }
 	}
 	else {
