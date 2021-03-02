@@ -1322,7 +1322,7 @@ check_rvalue_consistency_force(const VALUE obj, int terminate)
                 err++;
             }
 
-            /* obj_memsize_of((VALUE)obj, FALSE); */
+            obj_memsize_of((VALUE)obj, FALSE);
 
             /* check generation
              *
@@ -3185,10 +3185,6 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
       case T_NODE:
 	UNEXPECTED_NODE(obj_free);
 	break;
-
-      //case T_PAYLOAD:
-        /* for (int i = 0; i<obj->len; i++) */
-        /*     heap_page_add_freeobj(obj + i); */
 
       case T_STRUCT:
         if ((RBASIC(obj)->flags & RSTRUCT_EMBED_LEN_MASK) ||
@@ -5113,7 +5109,6 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
                                 heap_page_add_freeobj(objspace, sweep_page, pbody);
                                 MARK_IN_BITMAP(GET_HEAP_MARK_BITS(pbody), pbody);
-                                assert(BUILTIN_TYPE(pbody) == T_NONE);
                                 freed_slots++;
                             }
                         }
@@ -6295,8 +6290,8 @@ static void
 gc_mark_ptr(rb_objspace_t *objspace, VALUE obj)
 {
     if (LIKELY(during_gc)) {
-        rgengc_check_relation(objspace, obj);
-        if (!gc_mark_set(objspace, obj)) return; /* already marked */
+	rgengc_check_relation(objspace, obj);
+	if (!gc_mark_set(objspace, obj)) return; /* already marked */
 
         if (0) { // for debug GC marking miss
             if (objspace->rgengc.parent_object) {
@@ -6313,8 +6308,8 @@ gc_mark_ptr(rb_objspace_t *objspace, VALUE obj)
             rp(obj);
             rb_bug("try to mark T_NONE object"); /* check here will help debugging */
         }
-        gc_aging(objspace, obj);
-        gc_grey(objspace, obj);
+	gc_aging(objspace, obj);
+	gc_grey(objspace, obj);
     }
     else {
         reachable_objects_from_callback(obj);
