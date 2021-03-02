@@ -1502,8 +1502,6 @@ RVALUE_FLAGS_AGE_SET(VALUE flags, int age)
     return flags;
 }
 
-static inline void gc_make_uncollectible(rb_objspace_t * objspace, VALUE obj);
-
 /* set age to age+1 */
 static inline void
 RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
@@ -1520,15 +1518,6 @@ RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
 
     if (age == RVALUE_OLD_AGE) {
 	RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, obj);
-
-        if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-            int plen = RPAYLOAD(obj)->len;
-
-            for (int i = 1; i < plen; i++) {
-                VALUE pbody = obj + i * sizeof(RVALUE);
-                gc_make_uncollectible(objspace, pbody);
-            }
-        }
     }
     check_rvalue_consistency(obj);
 }
@@ -1542,6 +1531,15 @@ RVALUE_AGE_SET_OLD(rb_objspace_t *objspace, VALUE obj)
 
     RBASIC(obj)->flags = RVALUE_FLAGS_AGE_SET(RBASIC(obj)->flags, RVALUE_OLD_AGE);
     RVALUE_OLD_UNCOLLECTIBLE_SET(objspace, obj);
+
+    if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
+        int plen = RPAYLOAD(obj)->len;
+
+        for (int i = 1; i < plen; i++) {
+            VALUE pbody = obj + i * sizeof(RVALUE);
+            MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+        }
+    }
 
     check_rvalue_consistency(obj);
 }
@@ -6249,13 +6247,6 @@ gc_grey(rb_objspace_t *objspace, VALUE obj)
     push_mark_stack(&objspace->mark_stack, obj);
 }
 
-static inline void
-gc_make_uncollectible(rb_objspace_t *objspace, VALUE obj)
-{
-    MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(obj), obj);
-    objspace->rgengc.old_objects++;
-}
-
 static void
 gc_aging(rb_objspace_t *objspace, VALUE obj)
 {
@@ -6272,16 +6263,16 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
 	else if (is_full_marking(objspace)) {
 	    GC_ASSERT(RVALUE_PAGE_UNCOLLECTIBLE(page, obj) == FALSE);
 	    RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(objspace, page, obj);
-
-            if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-                int plen = RPAYLOAD(obj)->len;
-
-                for (int i = 1; i < plen; i++) {
-                    VALUE pbody = obj + i * sizeof(RVALUE);
-                    gc_make_uncollectible(objspace, pbody);
-                }
-            }
 	}
+
+        if (RVALUE_UNCOLLECTIBLE(obj) && BUILTIN_TYPE(obj) == T_PAYLOAD) {
+            int plen = RPAYLOAD(obj)->len;
+
+            for (int i = 1; i < plen; i++) {
+                VALUE pbody = obj + i * sizeof(RVALUE);
+                MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+            }
+        }
     }
     check_rvalue_consistency(obj);
 
