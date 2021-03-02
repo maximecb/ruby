@@ -1255,27 +1255,21 @@ RVALUE_FLAGS_AGE(VALUE flags)
 static VALUE
 payload_or_self(VALUE obj)
 {
-    uintptr_t original_obj = (uintptr_t)obj;
-    unsigned long orig_num_in_page = NUM_IN_PAGE(obj);
+    struct heap_page *p = GET_HEAP_PAGE(obj);
+    VALUE cur = (VALUE)p->start;
 
-    while (BUILTIN_TYPE(obj) != T_PAYLOAD) {
-        if (orig_num_in_page < NUM_IN_PAGE(obj) || NUM_IN_PAGE(obj) < 1)
-            return original_obj;
-
-        obj = obj - sizeof(RVALUE);
+    while (cur != obj && GET_HEAP_PAGE(cur) == p) {
+        if (BUILTIN_TYPE(cur) == T_PAYLOAD) {
+            if (cur < obj && obj < cur + RPAYLOAD(cur)->len * sizeof(RVALUE)) {
+                return cur;
+            }
+            cur += RPAYLOAD(cur)->len * sizeof(RVALUE);
+        } else {
+            cur += sizeof(RVALUE);
+        }
     }
 
-    GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
-    if ((uintptr_t)obj == original_obj) {
-        return obj;
-    }
-
-    if ((uintptr_t)obj <= original_obj &&
-            original_obj < ((uintptr_t)obj + (RPAYLOAD(obj)->len * sizeof(RVALUE)))) {
-        return obj;
-    }
-
-    return original_obj;
+    return obj;
 }
 
 static int
@@ -6476,7 +6470,6 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 
     for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
         VALUE p = obj + i * sizeof(RVALUE);
-        //fprintf(stderr, "gc_mark_payload: T_PAYLOAD (%p) Marking PAYLOAD BODY %p\n", (void *)obj, (void *)p);
         MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
         MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
     }
