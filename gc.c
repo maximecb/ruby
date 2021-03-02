@@ -3384,9 +3384,22 @@ objspace_each_objects_without_setup(rb_objspace_t *objspace, each_obj_callback *
 	pstart = page->start;
 	pend = pstart + page->total_slots;
 
-        if ((*callback)(pstart, pend, sizeof(RVALUE), data)) {
-	    break;
-	}
+        RVALUE * cursor_end = pstart;
+
+        while (cursor_end < pend) {
+            while(cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) != T_PAYLOAD) {
+                cursor_end++;
+            }
+
+            if ((*callback)(pstart, cursor_end, sizeof(RVALUE), data)) {
+                break;
+            }
+
+            if (cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) == T_PAYLOAD) {
+                cursor_end += (RPAYLOAD((VALUE)cursor_end)->len);
+                pstart = cursor_end;
+            }
+        }
     }
 }
 
@@ -3495,6 +3508,7 @@ internal_object_p(VALUE obj)
 	  case T_IMEMO:
 	  case T_ICLASS:
 	  case T_ZOMBIE:
+	  case T_PAYLOAD:
 	    break;
 	  case T_CLASS:
 	    if (!p->as.basic.klass) break;
