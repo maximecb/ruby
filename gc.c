@@ -561,6 +561,7 @@ typedef struct RVALUE {
 	struct {
 	    VALUE flags;		/* always 0 for freed obj */
 	    struct RVALUE *next;
+            unsigned short len;
 	} free;
         struct RMoved  moved;
 	struct RBasic  basic;
@@ -1697,6 +1698,30 @@ heap_allocatable_pages_set(rb_objspace_t *objspace, size_t s)
 }
 
 static inline void
+heap_page_add_free_region(rb_objspace_t *objspace, struct heap_page *page, RVALUE *head, short len)
+{
+    ASSERT_vm_locking();
+
+    GC_ASSERT(len > 0);
+
+    asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
+
+    RVALUE *tail = head + len - 1;
+
+#if RGENGC_CHECK_MODE
+    for (RVALUE *p = head; p <= tail; p++) {
+        GC_ASSERT(BUILTIN_TYPE((VALUE)p) == T_NONE);
+    }
+#endif
+
+    tail->as.free.len = len - 1;
+    tail->as.free.next = page->freelist;
+    page->freelist = tail;
+
+    asan_poison_memory_region((void *)head, sizeof(RVALUE) * len);
+}
+
+static inline void
 heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     ASSERT_vm_locking();
@@ -1706,6 +1731,7 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
 
     p->as.free.flags = 0;
+    p->as.free.len = 0;
     p->as.free.next = page->freelist;
     page->freelist = p;
     asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
@@ -1889,10 +1915,9 @@ heap_page_allocate(rb_objspace_t *objspace)
     page->total_slots = limit;
     page_body->header.page = page;
 
-    for (p = start; p != end; p++) {
-	gc_report(3, objspace, "assign_heap_page: %p is added to freelist\n", (void *)p);
-	heap_page_add_freeobj(objspace, page, (VALUE)p);
-    }
+    RVALUE *tail = start + limit - 1;
+    tail->as.free.len = limit - 1;
+    page->freelist = tail;
     page->free_slots = limit;
 
     asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
@@ -2187,9 +2212,24 @@ ractor_cached_freeobj(rb_objspace_t *objspace, rb_ractor_t *cr)
 {
     RVALUE *p = cr->newobj_cache.freelist;
 
-    if (p) {
+    if (cr->newobj_cache.region_len) {
+        GC_ASSERT(p != NULL);
+
+        VALUE obj = (VALUE)(p - cr->newobj_cache.region_len);
+        asan_unpoison_object(obj, true);
+        cr->newobj_cache.region_len--;
+
+        return obj;
+    }
+    else if (p) {
         VALUE obj = (VALUE)p;
-        cr->newobj_cache.freelist = p->as.free.next;
+
+        RVALUE *next = p->as.free.next;
+        cr->newobj_cache.freelist = next;
+        if (next) {
+            cr->newobj_cache.region_len = next->as.free.len;
+        }
+
         asan_unpoison_object(obj, true);
         return obj;
     }
@@ -2228,6 +2268,7 @@ ractor_cache_slots(rb_objspace_t *objspace, rb_ractor_t *cr)
     struct heap_page *page = heap_next_freepage(objspace, heap_eden);
 
     cr->newobj_cache.using_page = page;
+    cr->newobj_cache.region_len = page->freelist->as.free.len;
     cr->newobj_cache.freelist = page->freelist;
     page->free_slots = 0;
     page->freelist = NULL;
@@ -4892,6 +4933,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
         }
     }
 
+    sweep_page->freelist = NULL;
     sweep_page->flags.before_sweep = FALSE;
 
     p = sweep_page->start;
@@ -4906,6 +4948,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
         bits[BITMAP_INDEX(p) + sweep_page->total_slots / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
     }
 
+    unsigned int free_region_len = 0;
     for (i=0; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
 	bitset = ~bits[i];
 	if (bitset) {
@@ -4925,6 +4968,11 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 #endif
                         if (obj_free(objspace, vp)) {
                             final_slots++;
+
+                            if (free_region_len > 0) {
+                                heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+                                free_region_len = 0;
+                            }
                         }
                         else {
                             if (heap->compact_cursor) {
@@ -4933,7 +4981,8 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                             }
                             else {
                                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, sizeof(RVALUE));
-                                heap_page_add_freeobj(objspace, sweep_page, vp);
+                                free_region_len++;
+                                p->as.free.flags = 0;
                                 gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
                                 freed_slots++;
                             }
@@ -4958,9 +5007,14 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                         else {
                             freed_slots++;
                         }
-                        heap_page_add_freeobj(objspace, sweep_page, vp);
+                        free_region_len++;
+                        p->as.free.flags = 0;
                         break;
 		      case T_ZOMBIE:
+                if (free_region_len > 0) {
+                    heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+                    free_region_len = 0;
+                }
 			/* already counted */
 			break;
 		      case T_NONE:
@@ -4969,15 +5023,41 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
                         }
                         else {
+                            free_region_len++;
                             empty_slots++; /* already freed */
                         }
 			break;
 		    }
 		}
+        else {
+            /* This slot is not free so add the region to the freelist. */
+            if (free_region_len > 0) {
+                heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+                free_region_len = 0;
+            }
+        }
+
 		p++;
 		bitset >>= 1;
 	    } while (bitset);
-	}
+
+            /* We will be skipping slots so add the region to the freelist. */
+            if (free_region_len > 0 && p != offset + (i + 1) * BITS_BITLENGTH) {
+                heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+                free_region_len = 0;
+            }
+        }
+        else {
+            if (free_region_len > 0) {
+                heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+                free_region_len = 0;
+            }
+        }
+    }
+
+    if (free_region_len > 0) {
+        heap_page_add_free_region(objspace, sweep_page, p - free_region_len, free_region_len);
+        free_region_len = 0;
     }
 
     if (heap->compact_cursor) {
@@ -5092,6 +5172,7 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
         }
 
         r->newobj_cache.using_page = NULL;
+        r->newobj_cache.region_len = 0;
         r->newobj_cache.freelist = NULL;
     }
 }

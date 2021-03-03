@@ -328,6 +328,12 @@ dump_append_string_content(struct dump_config *dc, VALUE obj)
     }
 }
 
+struct rfree {
+    VALUE flags;		/* always 0 for freed obj */
+    void *next;
+    short len;
+};
+
 static void
 dump_object(VALUE obj, struct dump_config *dc)
 {
@@ -369,6 +375,11 @@ dump_object(VALUE obj, struct dump_config *dc)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_NONE:
+        {
+            struct rfree *f = (struct rfree *)obj;
+            dump_append(dc, ", \"len\":");
+            dump_append_ld(dc, f->len);
+        }
         dump_append(dc, "}\n");
         return;
 
