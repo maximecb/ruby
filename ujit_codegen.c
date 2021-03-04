@@ -1012,6 +1012,140 @@ gen_opt_plus(jitstate_t* jit, ctx_t* ctx)
     return UJIT_KEEP_COMPILING;
 }
 
+VALUE rb_false(VALUE obj);
+
+static codegen_status_t
+gen_opt_nil_p(jitstate_t* jit, ctx_t* ctx)
+{
+    // If someone redefined nil? on NilClass, we'll never JIT this instruction
+    if (!BASIC_OP_UNREDEFINED_P(BOP_NIL_P, NIL_REDEFINED_OP_FLAG)) {
+        return UJIT_CANT_COMPILE;
+    }
+
+    // Create a size-exit to fall back to the interpreter
+    // Note: we generate the side-exit before popping operands from the stack
+    uint8_t* side_exit = ujit_side_exit(jit, ctx);
+
+    struct rb_call_data * cd = (struct rb_call_data *)jit_get_arg(jit, 0);
+
+    x86opnd_t arg0 = ctx_stack_pop(ctx, 1);
+
+    // `nil.nil?` doesn't use the inline cache, so if we compile this instruction
+    // and `klass` *isn't* set, then it's being called with `nil`
+    if (!cd->cc->klass) {
+        // If the operand is Qnil, check that nil? hasn't been redefined
+        mov(cb, RAX, const_ptr_opnd(ruby_current_vm_ptr));
+        test(cb,
+             member_opnd_idx(RAX, rb_vm_t, redefined_flag, BOP_NIL_P),
+             imm_opnd(NIL_REDEFINED_OP_FLAG));
+        // If it has been redefined, fall back to the interpreter
+        jnz_ptr(cb, side_exit);
+
+        x86opnd_t dst = ctx_stack_push(ctx, T_NONE);
+        cmp(cb, arg0, imm_opnd(Qnil));
+
+        // If it's not nil, take the side exit
+        jnz_ptr(cb, side_exit);
+
+        // nil? confirmed
+        mov(cb, dst, imm_opnd(Qtrue));
+    }
+    // Receiver is something besides Qnil
+    else {
+        x86opnd_t dst = ctx_stack_push(ctx, T_NONE);
+
+        const rb_callable_method_entry_t *me = vm_cc_cme(cd->cc);
+
+        // Refuse to JIT this instruction if the receiver isn't using the default
+        // implementation of "nil?".  The default implementation is a CFUNC that
+        // is `rb_false`
+        if (!(me->def->type == VM_METHOD_TYPE_CFUNC && me->def->body.cfunc.func == rb_false)) {
+            return UJIT_CANT_COMPILE;
+        }
+
+        assume_method_lookup_stable(cd->cc, vm_cc_cme(cd->cc), jit->block);
+
+        cmp(cb, arg0, imm_opnd(Qnil));
+        // If it's nil, take the side exit
+        je_ptr(cb, side_exit);
+
+        if (cd->cc->klass == rb_cFalseClass) {
+            // If it's not false, take the side exit
+            cmp(cb, arg0, imm_opnd(Qfalse));
+            jnz_ptr(cb, side_exit);
+        }
+        else if (cd->cc->klass == rb_cTrueClass) {
+            // If it's not true, take the side exit
+            cmp(cb, arg0, imm_opnd(Qtrue));
+            jnz_ptr(cb, side_exit);
+        }
+        else if (cd->cc->klass == rb_cInteger) {
+            // If it's not an Integer immediate, bail
+            test(cb, arg0, imm_opnd(RUBY_FIXNUM_FLAG));
+            jz_ptr(cb, side_exit);
+        }
+        else if (cd->cc->klass == rb_cFloat) {
+            // If it's not an Integer immediate, bail
+            test(cb, arg0, imm_opnd(RUBY_FLONUM_FLAG));
+            jz_ptr(cb, side_exit);
+        }
+        else if (cd->cc->klass == rb_cSymbol) {
+            int IS_STATIC_SYMBOL = cb_new_label(cb, "IS_STATIC_SYMBOL");
+
+            // If it's not an Symbol immediate, bail
+            const VALUE mask = ~(RBIMPL_VALUE_FULL << RUBY_SPECIAL_SHIFT);
+            mov(cb, REG0, arg0);
+            and(cb, REG0, imm_opnd(mask));
+            cmp(cb, REG0, imm_opnd(RUBY_SYMBOL_FLAG));
+            je_label(cb, IS_STATIC_SYMBOL);
+
+            // Might be a dynamic symbol, so lets check
+            mov(cb, REG0, arg0);
+
+            // Check that the receiver is a heap object
+            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+            jnz_ptr(cb, side_exit);
+            cmp(cb, REG0, imm_opnd(Qfalse));
+            je_ptr(cb, side_exit);
+            cmp(cb, REG0, imm_opnd(Qnil));
+            je_ptr(cb, side_exit);
+
+            // If so, check that the class is rb_cSymbol
+            mov(cb, REG1, imm_opnd(rb_cSymbol));
+            x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+            cmp(cb, klass_opnd, REG1);
+
+            // Bail if the class isn't rb_cSymbol
+            jne_ptr(cb, side_exit);
+            cb_write_label(cb, IS_STATIC_SYMBOL);
+        }
+        else {
+            mov(cb, REG0, arg0);
+
+            // Check that the receiver is a heap object
+            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+            jnz_ptr(cb, side_exit);
+            cmp(cb, REG0, imm_opnd(Qfalse));
+            je_ptr(cb, side_exit);
+            cmp(cb, REG0, imm_opnd(Qnil));
+            je_ptr(cb, side_exit);
+
+            // Check if the class is the same as the IC class
+            x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+            jit_mov_gc_ptr(jit, cb, REG1, (VALUE)cd->cc->klass);
+            cmp(cb, klass_opnd, REG1);
+
+            // Bail if the class isn't equal to the IC class
+            jne_ptr(cb, side_exit);
+        }
+
+        mov(cb, dst, imm_opnd(Qfalse));
+        cb_link_labels(cb);
+    }
+
+    return UJIT_KEEP_COMPILING;
+}
+
 void
 gen_branchif_branch(codeblock_t* cb, uint8_t* target0, uint8_t* target1, uint8_t shape)
 {
@@ -1780,6 +1914,7 @@ ujit_init_codegen(void)
     ujit_reg_op(BIN(opt_and), gen_opt_and);
     ujit_reg_op(BIN(opt_minus), gen_opt_minus);
     ujit_reg_op(BIN(opt_plus), gen_opt_plus);
+    ujit_reg_op(BIN(opt_nil_p), gen_opt_nil_p);
 
     // Map branch instruction opcodes to codegen functions
     ujit_reg_op(BIN(opt_getinlinecache), gen_opt_getinlinecache);
