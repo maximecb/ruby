@@ -1,3 +1,4 @@
+<<<<<<< HEAD:bootstraptest/test_yjit.rb
 # BOP redefined methods work when JIT compiled
 assert_equal 'false', %q{
   def less_than x
@@ -31,6 +32,102 @@ assert_equal 'false', %q{
   end
 
   less_than 2
+}
+
+# opt_nil_p checks for heap objects
+assert_equal 'false', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; end
+    check_nil Foo.new
+    check_nil Foo.new
+    check_nil Foo.new
+    check_nil 10
+}
+
+# opt_nil_p on filled IC but with nil
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; end
+    check_nil Foo.new
+    check_nil nil
+    check_nil nil
+    check_nil nil
+}
+
+# opt_nil_p on object
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; def nil?; true; end end
+    m = Foo.new
+    check_nil Object.new
+    check_nil Object.new
+    check_nil Object.new
+    check_nil m
+}
+
+# opt_nil_p on symbol
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; def nil?; true; end end
+    m = Foo.new
+    check_nil :foo
+    check_nil :foo
+    check_nil :foo
+    check_nil m
+}
+
+# opt_nil_p on immediate float
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; def nil?; true; end end
+    m = Foo.new
+    check_nil 1.3
+    check_nil 1.3
+    check_nil 1.3
+    check_nil m
+}
+
+# opt_nil_p on true
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; def nil?; true; end end
+    m = Foo.new
+    check_nil true
+    check_nil true
+    check_nil true
+    check_nil m
+}
+
+# opt_nil_p on false
+assert_equal 'true', %q{
+    def check_nil(x)
+      x.nil?
+    end
+
+    class Foo; def nil?; true; end end
+    m = Foo.new
+    check_nil false
+    check_nil false
+    check_nil false
+    check_nil m
 }
 
 # Putobject, less-than operator, fixnums
