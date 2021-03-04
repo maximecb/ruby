@@ -1,1 +1,1 @@
-The MicroJIT project has been renamed to YJIT and moved to the [yjit branch](https://github.com/Shopify/ruby/tree/yjit/doc/ujit.md) of this repo.
+The MicroJIT project has been renamed to **YJIT** and moved to the [yjit branch](https://github.com/Shopify/ruby/tree/yjit/doc/yjit.md) of this repo.
