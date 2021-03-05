@@ -66,6 +66,7 @@ total_i(VALUE v, void *ptr)
       case T_IMEMO:
       case T_ICLASS:
       case T_NODE:
+      case T_PAYLOAD:
       case T_ZOMBIE:
           return;
       default:
