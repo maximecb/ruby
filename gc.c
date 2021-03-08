@@ -1,4 +1,4 @@
-/**********************************************************************
+/*********************************************************************
 
   gc.c -
 
@@ -2225,47 +2225,102 @@ rvargc_slot_count(size_t size)
     return roomof(size, sizeof(RVALUE));
 }
 
-static void *
-rvargc_find_region(size_t size, struct heap_page *page, RVALUE **freelist)
+static RVALUE *
+rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
 {
-    int slots = (int)rvargc_slot_count(size);
-    if (!*freelist) return 0;
+    RVALUE *cursor = freelist;
+    RVALUE *end = freelist;
+    RVALUE *previous_slot = NULL;
+    RVALUE *previous_region = NULL;
 
-    RVALUE **end_ptr = freelist;
-    RVALUE *end = *freelist;
+    fprintf(stderr, "searching\n");
 
-    do {
-        // If we're right at the beginning of the page, then break.
-        if (end - slots + 1 < page->start) break;
+    for (int i = 0; i < slots; i++) {
+        fprintf(stderr, "looping %d\n", i);
+        void *poisoned = asan_poisoned_object_p((VALUE)cursor);
+        asan_unpoison_object((VALUE)cursor, false);
 
-        RVALUE *curr = end->as.free.next;
-        unsigned short i;
-        for (i = 1; i < slots; i++) {
-            if (!curr) break;
-
-            void *poisoned = asan_poisoned_object_p((VALUE)curr);
-            asan_unpoison_object((VALUE)curr, false);
-            // if any adjacent slots within range are occupied
-            // then we need to break out and try the next free region
-            if (BUILTIN_TYPE((VALUE)curr) != T_NONE) break;
-            // if the this freelist slot is not adjacent then bail
-            if (end - curr != i) break;
-            if (poisoned) asan_poison_object((VALUE)curr);
-            curr = curr->as.free.next;
-        }
-
-        if (i == slots) {
-            RVALUE *start = end - slots + 1;
-            for (RVALUE *p = start; p <= end; p++) {
-                asan_unpoison_object((VALUE)p, false);
-                GC_ASSERT(BUILTIN_TYPE((VALUE)p) == T_NONE);
-            }
-            *end_ptr = start->as.free.next;
-            return start;
+        // if the this freelist slot is not adjacent then bail
+        if (end - cursor != i) {
+            i = -1;
+            fprintf(stderr, "cursor? %p\n", (void *)cursor);
+            end = cursor;
+            previous_region = previous_slot;
         } else {
-            end_ptr = &end->as.free.next;
+            fprintf(stderr, "before write? %p\n", (void *)cursor);
+            cursor = cursor->as.free.next;
+            fprintf(stderr, "after write? %p\n", (void *)cursor);
+            previous_slot = cursor;
         }
-    } while ((end = RANY(end)->as.free.next));
+
+        if (poisoned) asan_poison_object((VALUE)cursor);
+
+        if (!cursor) {
+            break;
+        }
+    }
+
+    fprintf(stderr, "done searching\n");
+
+    // Handle the case where the contiguous regiou is *not* at the
+    // beginning of the freelist
+    if (cursor && previous_region) {
+        // Unlink the region from the freelist
+        previous_region->as.free.next = cursor->as.free.next;
+
+        // Point the next slot back at the head of the freelist
+        cursor->as.free.next = freelist;
+    }
+
+    return cursor;
+}
+
+static void *
+rvargc_find_region(size_t size, struct heap_page *page, RVALUE *freelist)
+{
+    if (size == sizeof(RVALUE))
+        return freelist;
+
+    if (!freelist) return 0;
+
+    int slots = (int)rvargc_slot_count(size);
+
+    RVALUE *end_ptr = freelist;
+
+    RVALUE *cursor = rvargc_find_contiguous_slots(slots, freelist);
+
+    // Lucky case, we found contiguous slots at the beginning
+    // of the freelist
+    if (cursor) {
+        fprintf(stderr, "we found it!\n");
+
+        asan_unpoison_memory_region(cursor, sizeof(RVALUE) * slots, false);
+
+        return cursor;
+    } else {
+        struct heap_page *free_page;
+        rb_objspace_t *objspace = &objspace;
+
+        // End of freelist condition
+        fprintf(stderr, "looking through free pages\n");
+        free_page = heap_eden->free_pages;
+
+        while (free_page) {
+            cursor = rvargc_find_contiguous_slots(slots, free_page->freelist);
+            if (cursor) {
+                cursor->as.free.next = freelist;
+                return cursor;
+            }
+            free_page = free_page->free_next;
+        }
+
+        if (!free_page) {
+            rb_bug("we don't have any free pages :(");
+        }
+
+        rb_bug("what do we do?2");
+    }
+    rb_bug("what do we do?3");
 
     return NULL;
 }
@@ -2299,7 +2354,7 @@ rb_rvargc_payload_data_ptr(VALUE phead)
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
-    RVALUE *p = rvargc_find_region(size, cr->newobj_cache.using_page, &cr->newobj_cache.freelist);
+    RVALUE *p = rvargc_find_region(size, cr->newobj_cache.using_page, cr->newobj_cache.freelist);
 
     if (p) {
         VALUE obj = (VALUE)p;
