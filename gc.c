@@ -2234,6 +2234,9 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
     RVALUE *previous_region = NULL;
 
     fprintf(stderr, "searching\n");
+    GC_ASSERT(BUILTIN_TYPE(cursor) == T_NONE);
+    fprintf(stderr, "cursor: %p, freelist: %p\n", (void *)cursor, (void *)freelist);
+    fprintf(stderr, "cursor->as.free.next: %p\n", (void *)cursor->as.free.next);
 
     while(cursor) {
         int i = 0;
@@ -2251,9 +2254,13 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
                 fprintf(stderr, "not contiguous, breaking\n");
                 break;
             } else {
-                assert(cursor != cursor->as.free.next);
-                cursor = cursor->as.free.next;
-                previous_slot = cursor;
+                // if we're at the beginning of the page
+                if (cursor->as.free.next) {
+                    cursor = cursor->as.free.next;
+                    previous_slot = cursor;
+                }
+
+                GC_ASSERT(BUILTIN_TYPE(cursor) == T_NONE);
             }
 
             if (poisoned) asan_poison_object((VALUE)cursor);
@@ -2292,21 +2299,18 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
 }
 
 static void *
-rvargc_find_region(size_t size, struct heap_page *page, RVALUE *freelist)
+rvargc_find_region(size_t size, RVALUE *freelist)
 {
+    if (!freelist) return 0;
     if (size == sizeof(RVALUE))
         return freelist;
-
-    if (!freelist) return 0;
 
     int slots = (int)rvargc_slot_count(size);
 
     RVALUE *end_ptr = freelist;
-
     RVALUE *cursor = rvargc_find_contiguous_slots(slots, freelist);
 
-    // Lucky case, we found contiguous slots at the beginning
-    // of the freelist
+    // we found a contiguous region
     if (cursor) {
         fprintf(stderr, "we found it!\n");
 
@@ -2314,10 +2318,11 @@ rvargc_find_region(size_t size, struct heap_page *page, RVALUE *freelist)
 
         return cursor;
     } else {
+        // we didn't find a contiguous region
         struct heap_page *free_page;
         rb_objspace_t *objspace = &rb_objspace;
 
-        // End of freelist condition
+        // now we need to look through the rest of the free pages
         fprintf(stderr, "looking through free pages\n");
         free_page = heap_eden->free_pages;
 
@@ -2370,7 +2375,7 @@ rb_rvargc_payload_data_ptr(VALUE phead)
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
-    RVALUE *p = rvargc_find_region(size, cr->newobj_cache.using_page, cr->newobj_cache.freelist);
+    RVALUE *p = rvargc_find_region(size, cr->newobj_cache.freelist);
 
     if (p) {
         VALUE obj = (VALUE)p;
