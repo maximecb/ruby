@@ -2315,7 +2315,7 @@ rvargc_find_region(size_t size, struct heap_page *page, RVALUE *freelist)
         return cursor;
     } else {
         struct heap_page *free_page;
-        rb_objspace_t *objspace = &objspace;
+        rb_objspace_t *objspace = &rb_objspace;
 
         // End of freelist condition
         fprintf(stderr, "looking through free pages\n");
