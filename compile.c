@@ -4936,9 +4936,8 @@ defined_expr0(rb_iseq_t *iseq, LINK_ANCHOR *const ret,
 	break;
 
       case NODE_IVAR:
-        ADD_INSN(ret, line, putnil);
-        ADD_INSN3(ret, line, defined, INT2FIX(DEFINED_IVAR),
-		  ID2SYM(node->nd_vid), needstr);
+        ADD_INSN3(ret, line, opt_ivar_defined, ID2SYM(node->nd_vid), needstr,
+                get_ivar_ic_value(iseq, node->nd_vid));
         return;
 
       case NODE_GVAR:

@@ -1111,9 +1111,9 @@ fill_ivar_cache(const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, in
     }
 }
 
-ALWAYS_INLINE(static VALUE vm_getivar(VALUE, ID, const rb_iseq_t *, IVC, const struct rb_callcache *, int));
+ALWAYS_INLINE(static VALUE vm_getivar(VALUE, ID, const rb_iseq_t *, IVC, const struct rb_callcache *, int, VALUE));
 static inline VALUE
-vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr)
+vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_callcache *cc, int is_attr, VALUE default_value)
 {
 #if OPT_IC_FOR_IVAR
     VALUE val = Qundef;
@@ -1176,7 +1176,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
             return val;
         }
         else {
-            return Qnil;
+            return default_value;
         }
     }
   general_path:
@@ -1187,7 +1187,7 @@ vm_getivar(VALUE obj, ID id, const rb_iseq_t *iseq, IVC ic, const struct rb_call
         return rb_attr_get(obj, id);
     }
     else {
-        return rb_ivar_get(obj, id);
+        return rb_ivar_lookup(obj, id, default_value);
     }
 }
 
@@ -1284,7 +1284,13 @@ vm_setivar(VALUE obj, ID id, VALUE val, const rb_iseq_t *iseq, IVC ic, const str
 static inline VALUE
 vm_getinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, IVC ic)
 {
-    return vm_getivar(obj, id, iseq, ic, NULL, FALSE);
+    return vm_getivar(obj, id, iseq, ic, NULL, FALSE, Qnil);
+}
+
+static inline bool
+vm_definedinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, IVC ic)
+{
+    return vm_getivar(obj, id, iseq, ic, NULL, FALSE, Qundef) != Qundef;
 }
 
 static inline void
@@ -2951,7 +2957,7 @@ vm_call_ivar(rb_execution_context_t *ec, rb_control_frame_t *cfp, struct rb_call
     const struct rb_callcache *cc = calling->cc;
     RB_DEBUG_COUNTER_INC(ccf_ivar);
     cfp->sp -= 1;
-    return vm_getivar(calling->recv, vm_cc_cme(cc)->def->body.attr.id, NULL, NULL, cc, TRUE);
+    return vm_getivar(calling->recv, vm_cc_cme(cc)->def->body.attr.id, NULL, NULL, cc, TRUE, Qnil);
 }
 
 static VALUE

@@ -670,6 +670,21 @@ defined
     val = vm_defined(ec, GET_CFP(), op_type, obj, needstr, v);
 }
 
+DEFINE_INSN
+opt_ivar_defined
+(ID id, VALUE needstr, IVC ic)
+()
+(VALUE val)
+// attr bool leaf = leafness_of_defined(DEFINED_IVAR);
+{
+    enum defined_type op_type = DEFINED_IVAR;
+    if (vm_definedinstancevariable(GET_ISEQ(), GET_SELF(), id, ic)) {
+        val = rb_iseq_defined_string(op_type);
+    } else {
+        val = Qnil;
+    }
+}
+
 /* check `target' matches `pattern'.
      `flag & VM_CHECKMATCH_TYPE_MASK' describe how to check pattern.
       VM_CHECKMATCH_TYPE_WHEN: ignore target and check pattern is truthy.
