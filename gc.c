@@ -2235,27 +2235,40 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
 
     fprintf(stderr, "searching\n");
 
-    for (int i = 0; i < slots; i++) {
-        fprintf(stderr, "looping %d\n", i);
-        void *poisoned = asan_poisoned_object_p((VALUE)cursor);
-        asan_unpoison_object((VALUE)cursor, false);
+    while(cursor) {
+        int i = 0;
+        for (i = 0; i < slots; i++) {
+            fprintf(stderr, "looping %d\n", i);
+            void *poisoned = asan_poisoned_object_p((VALUE)cursor);
+            asan_unpoison_object((VALUE)cursor, false);
 
-        // if the this freelist slot is not adjacent then bail
-        if (end - cursor != i) {
-            i = -1;
-            fprintf(stderr, "cursor? %p\n", (void *)cursor);
-            end = cursor;
-            previous_region = previous_slot;
-        } else {
-            fprintf(stderr, "before write? %p\n", (void *)cursor);
-            cursor = cursor->as.free.next;
-            fprintf(stderr, "after write? %p\n", (void *)cursor);
-            previous_slot = cursor;
+            fprintf(stderr, "i: %d diff %d\n", i, (end - cursor));
+            // if the this freelist slot is not adjacent then bail
+            if (end - cursor != i) {
+                fprintf(stderr, "cursor? %p diff %d\n", (void *)cursor, (end - cursor));
+                end = cursor;
+                previous_region = previous_slot;
+                fprintf(stderr, "not contiguous, breaking\n");
+                break;
+            } else {
+                assert(cursor != cursor->as.free.next);
+                cursor = cursor->as.free.next;
+                previous_slot = cursor;
+            }
+
+            if (poisoned) asan_poison_object((VALUE)cursor);
+
+            if (!cursor) {
+                fprintf(stderr, "no cursor, breaking\n");
+                break;
+            }
         }
 
-        if (poisoned) asan_poison_object((VALUE)cursor);
-
-        if (!cursor) {
+        if (i == slots) {
+            fprintf(stderr, "found region, breaking\n");
+            for (i = 0; i < slots; i++) {
+                assert(BUILTIN_TYPE((VALUE)(cursor + i)) == T_NONE);
+            }
             break;
         }
     }
@@ -2267,6 +2280,9 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
     if (cursor && previous_region) {
         // Unlink the region from the freelist
         previous_region->as.free.next = cursor->as.free.next;
+        assert(previous_region != previous_region->as.free.next);
+        if (cursor->as.free.next)
+            assert(BUILTIN_TYPE((VALUE)(cursor->as.free.next)) == T_NONE);
 
         // Point the next slot back at the head of the freelist
         cursor->as.free.next = freelist;
