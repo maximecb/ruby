@@ -677,9 +677,8 @@ opt_ivar_defined
 (VALUE val)
 // attr bool leaf = leafness_of_defined(DEFINED_IVAR);
 {
-    enum defined_type op_type = DEFINED_IVAR;
     if (vm_definedinstancevariable(GET_ISEQ(), GET_SELF(), id, ic)) {
-        val = rb_iseq_defined_string(op_type);
+        val = needstr;
     } else {
         val = Qnil;
     }
