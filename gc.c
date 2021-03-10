@@ -2342,16 +2342,18 @@ rvargc_find_region(size_t size, RVALUE *freelist)
         rb_objspace_t *objspace = &rb_objspace;
 
         // now we need to look through the rest of the free pages
-        fprintf(stderr, "looking through free pages\n");
+        fprintf(stderr, "We didn't find a region: looking through free pages\n");
         free_page = heap_eden->free_pages;
 
         while (free_page) {
+            fprintf(stderr, "free page: %p\n", (void *)free_page);
             cursor = rvargc_find_contiguous_slots(slots, free_page->freelist);
             if (cursor) {
                 cursor->as.free.next = freelist;
                 return cursor;
-            }
+            } else {
             free_page = free_page->free_next;
+            }
         }
 
         if (!free_page) {
