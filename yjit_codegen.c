@@ -122,7 +122,7 @@ yjit_load_regs(codeblock_t* cb)
 Generate an inline exit to return to the interpreter
 */
 static void
-yjit_gen_exit(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb, VALUE* exit_pc)
+yjit_gen_exit(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb, VALUE *exit_pc, const void *specific_handler)
 {
     // Write the adjusted SP back into the CFP
     if (ctx->sp_offset != 0)
@@ -147,6 +147,19 @@ yjit_gen_exit(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb, VALUE* exit_pc)
     }
 #endif
 
+    // Put where to dispatch to next into the return register
+    if (specific_handler) {
+        mov(cb, RAX, const_ptr_opnd(specific_handler));
+    }
+    else {
+        // Table mapping opcodes to interpreter handlers
+        const void * const *handler_table = rb_vm_get_insns_address_table();
+
+        int exit_opcode = opcode_at_pc(jit->iseq, exit_pc);
+        void *handler = (void*)handler_table[exit_opcode];
+        mov(cb, RAX, const_ptr_opnd(handler));
+    }
+
     // Write the post call bytes
     cb_write_post_call_bytes(cb);
 }
@@ -155,28 +168,13 @@ yjit_gen_exit(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb, VALUE* exit_pc)
 Generate an out-of-line exit to return to the interpreter
 */
 static uint8_t *
-yjit_side_exit(jitstate_t* jit, ctx_t* ctx)
+yjit_side_exit(jitstate_t *jit, ctx_t *ctx)
 {
     uint8_t* code_ptr = cb_get_ptr(ocb, ocb->write_pos);
-
-    // Table mapping opcodes to interpreter handlers
-    const void * const *handler_table = rb_vm_get_insns_address_table();
-
-    // FIXME: rewriting the old instruction is only necessary if we're
-    // exiting right at an interpreter entry point
-
-    // Write back the old instruction at the exit PC
-    // Otherwise the interpreter may jump right back to the
-    // JITted code we're trying to exit
     VALUE* exit_pc = iseq_pc_at_idx(jit->iseq, jit->insn_idx);
-    int exit_opcode = opcode_at_pc(jit->iseq, exit_pc);
-    void* handler_addr = (void*)handler_table[exit_opcode];
-    mov(ocb, RAX, const_ptr_opnd(exit_pc));
-    mov(ocb, RCX, const_ptr_opnd(handler_addr));
-    mov(ocb, mem_opnd(64, RAX, 0), RCX);
 
     // Generate the code to exit to the interpreters
-    yjit_gen_exit(jit, ctx, ocb, exit_pc);
+    yjit_gen_exit(jit, ctx, ocb, exit_pc, NULL);
 
     return code_ptr;
 }
@@ -302,7 +300,7 @@ yjit_gen_block(ctx_t* ctx, block_t* block, rb_execution_context_t* ec)
         if (!rb_st_lookup(gen_fns, opcode, (st_data_t*)&gen_fn)) {
             // If we reach an unknown instruction,
             // exit to the interpreter and stop compiling
-            yjit_gen_exit(&jit, ctx, cb, jit.pc);
+            yjit_gen_exit(&jit, ctx, cb, jit.pc, NULL);
             break;
         }
 
@@ -323,7 +321,7 @@ yjit_gen_block(ctx_t* ctx, block_t* block, rb_execution_context_t* ec)
         // If we can't compile this instruction
         // exit to the interpreter and stop compiling
         if (status == YJIT_CANT_COMPILE) {
-            yjit_gen_exit(&jit, ctx, cb, jit.pc);
+            yjit_gen_exit(&jit, ctx, cb, jit.pc, NULL);
             break;
         }
 
@@ -1632,17 +1630,34 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     // Only the return value should be on the stack
     RUBY_ASSERT(ctx->stack_size == 1);
 
-    // Create a size-exit to fall back to the interpreter
-    uint8_t* side_exit = yjit_side_exit(jit, ctx);
 
     // Load environment pointer EP from CFP
     mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, ep));
 
+    int DISPATCH = cb_new_label(cb, "DISPATCH");
+    int NOT_FINISH = cb_new_label(cb, "NOT_FINISH");
     // if (flags & VM_FRAME_FLAG_FINISH) != 0
     x86opnd_t flags_opnd = mem_opnd(64, REG0, sizeof(VALUE) * VM_ENV_DATA_INDEX_FLAGS);
     test(cb, flags_opnd, imm_opnd(VM_FRAME_FLAG_FINISH));
-    jnz_ptr(cb, COUNTED_EXIT(side_exit, leave_se_finish_frame));
+    jz_label(cb, NOT_FINISH);
+    {
+        // Update SP and exit to the interpreter
+        // Write the adjusted SP back into the CFP :copypaste:
+        if (ctx->sp_offset != 0) {
+            x86opnd_t stack_pointer = ctx_sp_opnd(ctx, 0);
+            lea(cb, REG_SP, stack_pointer);
+            mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG_SP);
+        }
 
+        const void * const *handler_table = rb_vm_get_insns_address_table();
+        mov(cb, RAX, const_ptr_opnd((void*)handler_table[BIN(opt_leave_finish_frame)]));
+        jmp_label(cb, DISPATCH);
+    }
+
+    cb_write_label(cb, NOT_FINISH);
+
+    // Create a size-exit to fall back to the interpreter
+    uint8_t *side_exit = yjit_side_exit(jit, ctx);
     // Check for interrupts
     yjit_check_ints(cb, COUNTED_EXIT(side_exit, leave_se_interrupt));
 
@@ -1671,10 +1686,15 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     // Jump to the JIT return address
     jmp_rm(cb, REG1);
 
-    // Fall back to the interpreter
-    cb_write_label(cb, FALLBACK_LABEL);
-    cb_link_labels(cb);
+    cb_write_label(cb, FALLBACK_LABEL); // Fall back to the interpreter
+    // Load the handler address
+    mov(cb, RAX, member_opnd(REG_CFP, rb_control_frame_t, pc));
+    mov(cb, RAX, mem_opnd(64, RAX, 0));
+
+
+    cb_write_label(cb, DISPATCH);
     cb_write_post_call_bytes(cb);
+    cb_link_labels(cb);
 
     return YJIT_END_BLOCK;
 }

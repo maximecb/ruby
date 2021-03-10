@@ -3409,12 +3409,13 @@ trace_set_i(void *vstart, void *vend, size_t stride, void *data)
     return 0;
 }
 
-void
+void *
 rb_yjit_empty_func_with_ec(rb_control_frame_t *cfp, rb_execution_context_t *ec)
 {
     // it's put in this file instead of say, compile.c to dodge long C compile time.
     // it just needs to be in a different unit from vm.o so the compiler can't see the definition
     // and is forced to emit a call that respects the calling convention.
+    return NULL;
 }
 
 void

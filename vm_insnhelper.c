@@ -416,6 +416,19 @@ vm_pop_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *e
     return flags & VM_FRAME_FLAG_FINISH;
 }
 
+/* return TRUE if the frame is finished */
+static inline void
+vm_pop_finish_frame(rb_execution_context_t *ec, rb_control_frame_t *cfp, const VALUE *ep)
+{
+    if (VM_CHECK_MODE >= 4) rb_gc_verify_internal_consistency();
+    if (VMDEBUG == 2)       SDR();
+
+    RUBY_ASSERT(ep[VM_ENV_DATA_INDEX_FLAGS] & VM_FRAME_FLAG_FINISH);
+
+    RUBY_VM_CHECK_INTS(ec);
+    ec->cfp = RUBY_VM_PREVIOUS_CONTROL_FRAME(cfp);
+}
+
 MJIT_STATIC void
 rb_vm_pop_frame(rb_execution_context_t *ec)
 {

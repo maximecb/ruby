@@ -932,6 +932,27 @@ leave
     }
 }
 
+/* return from a FINISH frame. */
+DEFINE_INSN
+opt_leave_finish_frame
+()
+(VALUE val)
+(VALUE val)
+/* This is super surprising but when leaving from a frame, we check
+ * for interrupts.  If any, that should be executed on top of the
+ * current execution context.  This is a method call. */
+// attr bool leaf = false; /* has rb_threadptr_execute_interrupts() */
+// attr bool handles_sp = true;
+{
+
+#if OPT_CALL_THREADED_CODE
+# error "unhandled"
+#else
+    vm_pop_finish_frame(ec, GET_CFP(), GET_EP());
+    return val;
+#endif
+}
+
 /**********************************************************/
 /* deal with control flow 3: exception                    */
 /**********************************************************/
