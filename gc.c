@@ -2293,7 +2293,7 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
         }
     }
 
-    fprintf(stderr, "rvargc_find_contiguous_slots: done searching\n");
+    fprintf(stderr, "rvargc_find_contiguous_slots: done searching, cursor: %p\n", (void *)cursor);
 
     // Handle the case where the contiguous regiou is *not* at the
     // beginning of the freelist
@@ -2325,13 +2325,12 @@ rvargc_find_region(size_t size, RVALUE *freelist)
     RVALUE *end_ptr = freelist;
     fprintf(stderr, "rvargc_find_region: Finding contiguous region of size %i\n", size);
     RVALUE *cursor = rvargc_find_contiguous_slots(slots, freelist);
-    fprintf(stderr, "rvargc_find_region: Found contiguous region of size %i starting at %p\n", size, (void *)cursor);
 
     GC_ASSERT(BUILTIN_TYPE(freelist) == T_NONE);
 
     // we found a contiguous region
     if (cursor) {
-        fprintf(stderr, "we found it!\n");
+        fprintf(stderr, "rvargc_find_region: we found a region: %p\n", (void *)cursor);
 
         asan_unpoison_memory_region(cursor, sizeof(RVALUE) * slots, false);
 
@@ -2396,15 +2395,18 @@ rb_rvargc_payload_data_ptr(VALUE phead)
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
+    fprintf(stderr, "ractor_cached_free_region: START, looking for region of size %zu\n", size);
     RVALUE *p = rvargc_find_region(size, cr->newobj_cache.freelist);
 
     if (p) {
+        fprintf(stderr, "ractor_cached_free_region: found region starting at %p\n", (void *)p);
         VALUE obj = (VALUE)p;
         cr->newobj_cache.freelist = p->as.free.next;
         asan_unpoison_object(obj, true);
         return obj;
     }
     else {
+        fprintf(stderr, "ractor_cached_free_region: no region\n", (void *)p);
         return Qfalse;
     }
 }
