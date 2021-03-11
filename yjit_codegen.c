@@ -1049,7 +1049,7 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx)
             mov(cb, REG0, const_ptr_opnd(jit->pc + insn_len(BIN(opt_aref))));
             mov(cb, member_opnd(REG_CFP, rb_control_frame_t, pc), REG0);
 
-            // About to change REG_SP which these operands depend on
+            // About to change REG_SP which these operands depend on. Yikes.
             mov(cb, R8, recv_opnd);
             mov(cb, R9, idx_opnd);
 
@@ -1058,7 +1058,7 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx)
                 x86opnd_t stack_pointer = ctx_sp_opnd(ctx, 0);
                 lea(cb, REG_SP, stack_pointer);
                 mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG_SP);
-                ctx->sp_offset = 0;
+                ctx->sp_offset = 0; // REG_SP now equals cfp->sp
             }
 
             yjit_save_regs(cb);
