@@ -1043,16 +1043,28 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx)
         cmp(cb, REG0, REG1);
         jit_chain_guard(JCC_JNE, jit, &starting_context, OPT_AREF_MAX_CHAIN_DEPTH, side_exit);
 
-        // Call VALUE rb_hash_aref(VALUE ary, long offset).
+        // Call VALUE rb_hash_aref(VALUE hash, VALUE key).
         {
             // Write incremented pc to cfp->pc as the routine can raise and allocate
             mov(cb, REG0, const_ptr_opnd(jit->pc + insn_len(BIN(opt_aref))));
             mov(cb, member_opnd(REG_CFP, rb_control_frame_t, pc), REG0);
 
+            // About to change REG_SP which these operands depend on
+            mov(cb, R8, recv_opnd);
+            mov(cb, R9, idx_opnd);
+
+            // Write sp to cfp->sp since rb_hash_aref might need to call #hash on the key
+            if (ctx->sp_offset != 0) {
+                x86opnd_t stack_pointer = ctx_sp_opnd(ctx, 0);
+                lea(cb, REG_SP, stack_pointer);
+                mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG_SP);
+                ctx->sp_offset = 0;
+            }
+
             yjit_save_regs(cb);
 
-            mov(cb, RDI, recv_opnd);
-            mov(cb, RSI, idx_opnd);
+            mov(cb, C_ARG_REGS[0], R8);
+            mov(cb, C_ARG_REGS[1], R9);
             call_ptr(cb, REG0, (void *)rb_hash_aref);
 
             yjit_load_regs(cb);
