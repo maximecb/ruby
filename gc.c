@@ -2225,143 +2225,150 @@ rvargc_slot_count(size_t size)
     return roomof(size, sizeof(RVALUE));
 }
 
+static void
+check_freelist(struct heap_page * expected_page, RVALUE * freelist) {
+    int i = 0;
+    while(freelist) {
+        struct heap_page *page = GET_HEAP_PAGE((VALUE)freelist);
+        assert(expected_page == page);
+        assert(BUILTIN_TYPE((VALUE)freelist) == T_NONE);
+        freelist = freelist->as.free.next;
+        i++;
+        assert(i < 500);
+    }
+}
+
 static RVALUE *
 rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
 {
     RVALUE *cursor = freelist;
-    RVALUE *end = freelist;
-    RVALUE *previous_slot = NULL;
     RVALUE *previous_region = NULL;
 
-    GC_ASSERT(BUILTIN_TYPE(cursor) == T_NONE);
-    fprintf(stderr, "rvargc_find_contiguous_slots: cursor: %p, freelist: %p\n", (void *)cursor, (void *)freelist);
-    fprintf(stderr, "rvargc_find_contiguous_slots: cursor->as.free.next: %p\n", (void *)cursor->as.free.next);
+    assert(BUILTIN_TYPE((VALUE)cursor) == T_NONE);
 
     while(cursor) {
-        int i = 0;
+        int i;
+        RVALUE *search = cursor;
+        assert(BUILTIN_TYPE((VALUE)(cursor)) == T_NONE);
         for (i = 0; i < slots; i++) {
-            fprintf(stderr, "rvargc_find_contiguous_slots: looping %d\n", i);
-            void *poisoned = asan_poisoned_object_p((VALUE)cursor);
-            asan_unpoison_object((VALUE)cursor, false);
+            assert(BUILTIN_TYPE((VALUE)(search)) == T_NONE);
 
-            fprintf(stderr, "rvargc_find_contiguous_slots: i: %d diff %d\n", i, (end - cursor));
-            // if the this freelist slot is not adjacent then bail
-            if (end - cursor != i) {
-                fprintf(stderr, "rvargc_find_contiguous_slots: end (%p) and cursor (%p) are not in a contiguous region\n", (void *)end, (void *)cursor);
-                fprintf(stderr, "rvargc_find_contiguous_slots: i: %i cursor? %p diff %d\n", i, (void *)cursor, (end - cursor));
-                
-                end = cursor;
-                i = -1;
-                previous_region = previous_slot;
-                fprintf(stderr, "rvargc_find_contiguous_slots: not contiguous, breaking\n");
-                break;
+            // Peek ahead to see if the region is contiguous
+            if (search->as.free.next == (search - 1)) {
+                search = search->as.free.next;
             } else {
-                fprintf(stderr, "rvargc_find_contiguous_slots: end and cursor are %i RVALUEs apart\n", i);
-                fprintf(stderr, "rvargc_find_contiguous_slots: end (%p), cursor (%p)\n", (void *)end, (void *)cursor);
+                // Next slot is not contiguous
+                if (search->as.free.next) {
+                    cursor = search->as.free.next;
+                    previous_region = search;
 
-                if (!cursor->as.free.next) {
-                    fprintf(stderr, "cursor does not have a free next slot\n");
                     break;
+                } else {
+                    // Hit the end of the free list
+                    return NULL;
                 }
-                fprintf(stderr, "cursor as a next free slot\n");
-                cursor = cursor->as.free.next;
-                previous_slot = cursor;
-                
-            }
-
-            if (poisoned) asan_poison_object((VALUE)cursor);
-
-            if (!cursor) {
-                fprintf(stderr, "rvargc_find_contiguous_slots: no cursor, breaking\n");
-                break;
             }
         }
 
         if (i == slots) {
-            fprintf(stderr, "rvargc_find_contiguous_slots: found region, breaking\n");
             for (i = 0; i < slots; i++) {
-                assert(BUILTIN_TYPE((VALUE)(cursor + i)) == T_NONE);
+                assert(BUILTIN_TYPE((VALUE)(search + i)) == T_NONE);
             }
-            break;
-        } else {
-            // if we've exited the loop, but i != slots, this is because we've
-            // got half way through a region scan and reached the end of the
-            // freelist (cursor->as.free.next is NULL)
-            // we can either early return here or we can set cursro to null.
-            cursor = NULL;
-            
+
+            if (previous_region) {
+                previous_region->as.free.next = search->as.free.next;
+                search->as.free.next = freelist;
+            }
+            return search;
         }
     }
-
-    fprintf(stderr, "rvargc_find_contiguous_slots: done searching, cursor: %p\n", (void *)cursor);
-
-    // Handle the case where the contiguous regiou is *not* at the
-    // beginning of the freelist
-    if (cursor && previous_region) {
-        fprintf(stderr, "rvargc_find_contiguous_slots: found cursor in middle of the freelist\n");
-        // Unlink the region from the freelist
-        previous_region->as.free.next = cursor->as.free.next;
-        assert(previous_region != previous_region->as.free.next);
-        if (cursor->as.free.next)
-            assert(BUILTIN_TYPE((VALUE)(cursor->as.free.next)) == T_NONE);
-
-        // Point the next slot back at the head of the freelist
-        cursor->as.free.next = freelist;
-    }
-
-    return cursor;
+    rb_bug("ohhai this is unreachable");
 }
 
+static inline bool heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
+static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap);
+static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
+
 static void *
-rvargc_find_region(size_t size, RVALUE *freelist)
+rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 {
     if (!freelist) return 0;
     GC_ASSERT(BUILTIN_TYPE(freelist) == T_NONE);
     if (size == sizeof(RVALUE))
         return freelist;
 
+    if (!freelist) return 0;
+
+    rb_objspace_t *objspace = &rb_objspace;
+
     int slots = (int)rvargc_slot_count(size);
 
-    RVALUE *end_ptr = freelist;
-    fprintf(stderr, "rvargc_find_region: Finding contiguous region of size %i\n", size);
-    RVALUE *cursor = rvargc_find_contiguous_slots(slots, freelist);
+    check_freelist(cr->newobj_cache.using_page, freelist);
 
-    GC_ASSERT(BUILTIN_TYPE(freelist) == T_NONE);
+    RVALUE * p = rvargc_find_contiguous_slots(slots, freelist);
 
-    // we found a contiguous region
-    if (cursor) {
-        fprintf(stderr, "rvargc_find_region: we found a region: %p\n", (void *)cursor);
+    // Lucky case, we found contiguous slots at the beginning
+    // of the freelist
+    if (p) {
+        asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
+        check_freelist(cr->newobj_cache.using_page, freelist);
 
-        asan_unpoison_memory_region(cursor, sizeof(RVALUE) * slots, false);
-
-        return cursor;
+        return p;
     } else {
-        // we didn't find a contiguous region
-        struct heap_page *free_page;
-        rb_objspace_t *objspace = &rb_objspace;
+        struct heap_page *search_page;
+        struct heap_page *searched_pages = NULL;
 
-        // now we need to look through the rest of the free pages
-        fprintf(stderr, "We didn't find a region: looking through free pages\n");
-        free_page = heap_eden->free_pages;
+        while (!p) {
+            search_page = heap_next_freepage(objspace, heap_eden);
+            fprintf(stderr, "heap_allocatable_pages %d\n", heap_allocatable_pages);
+            assert(heap_allocatable_pages > 0);
+            search_page->free_next = searched_pages;
 
-        while (free_page) {
-            fprintf(stderr, "free page: %p\n", (void *)free_page);
-            cursor = rvargc_find_contiguous_slots(slots, free_page->freelist);
-            if (cursor) {
-                cursor->as.free.next = freelist;
-                return cursor;
-            } else {
-            free_page = free_page->free_next;
+            check_freelist(search_page, search_page->freelist);
+
+            p = rvargc_find_contiguous_slots(slots, search_page->freelist);
+
+            if (p) {
+                // Remove the region from the freelist
+                search_page->freelist = p->as.free.next;
+                search_page->free_slots -= slots;
+                check_freelist(search_page, search_page->freelist);
+
+                // If we started sweeping, the object cache can be removed
+                // from the ractor.  Set it to the page we found
+                if (!cr->newobj_cache.using_page) {
+                    ractor_set_cache(cr, search_page);
+                }
+                // Otherwise we need to add this page back to the list of free
+                // pages.
+                else {
+                    p->as.free.next = freelist;
+                    searched_pages = search_page;
+                }
+
+                struct heap_page * next_freepage;
+
+                while (searched_pages) {
+                    next_freepage = searched_pages->free_next;
+
+                    if (searched_pages->freelist) {
+                        check_freelist(searched_pages, searched_pages->freelist);
+                        heap_add_freepage(heap_eden, searched_pages);
+                    }
+
+                    searched_pages = next_freepage;
+                }
+
+                fprintf(stderr, "found object on page %p\n", GET_HEAP_PAGE((VALUE)p));
+                return p;
             }
-        }
 
-        if (!free_page) {
-            rb_bug("we don't have any free pages :(");
-        }
+            searched_pages = search_page;
 
-        rb_bug("what do we do?2");
+        }
+        rb_bug("what do we do?3");
     }
-    rb_bug("what do we do?3");
+    rb_bug("omgomgomg do we do?3");
 
     return NULL;
 }
@@ -2396,12 +2403,14 @@ static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
     fprintf(stderr, "ractor_cached_free_region: START, looking for region of size %zu\n", size);
-    RVALUE *p = rvargc_find_region(size, cr->newobj_cache.freelist);
+    RVALUE *p = rvargc_find_region(size, cr, cr->newobj_cache.freelist);
 
     if (p) {
         fprintf(stderr, "ractor_cached_free_region: found region starting at %p\n", (void *)p);
         VALUE obj = (VALUE)p;
         cr->newobj_cache.freelist = p->as.free.next;
+        check_freelist(cr->newobj_cache.using_page, cr->newobj_cache.freelist);
+        assert(!cr->newobj_cache.freelist || (BUILTIN_TYPE((VALUE)cr->newobj_cache.freelist) == T_NONE));
         asan_unpoison_object(obj, true);
         return obj;
     }
@@ -2433,20 +2442,27 @@ heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap)
 }
 
 static inline void
-ractor_cache_slots(rb_objspace_t *objspace, rb_ractor_t *cr)
+ractor_set_cache(rb_ractor_t *cr, struct heap_page *page)
 {
-    ASSERT_vm_locking();
-
-    struct heap_page *page = heap_next_freepage(objspace, heap_eden);
-
     cr->newobj_cache.using_page = page;
     cr->newobj_cache.freelist = page->freelist;
+    check_freelist(page, page->freelist);
     page->free_slots = 0;
     page->freelist = NULL;
 
     asan_unpoison_object((VALUE)cr->newobj_cache.freelist, false);
     GC_ASSERT(RB_TYPE_P((VALUE)cr->newobj_cache.freelist, T_NONE));
     asan_poison_object((VALUE)cr->newobj_cache.freelist);
+}
+
+static inline void
+ractor_cache_slots(rb_objspace_t *objspace, rb_ractor_t *cr)
+{
+    ASSERT_vm_locking();
+
+    struct heap_page *page = heap_next_freepage(objspace, heap_eden);
+
+    ractor_set_cache(cr, page);
 }
 
 static inline VALUE
