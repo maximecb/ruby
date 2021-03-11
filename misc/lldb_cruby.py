@@ -525,6 +525,29 @@ def rb_backtrace(debugger, command, result, internal_dict):
 
     bt.print_bt(val)
 
+def dump_page(debugger, command, result, internal_dict):
+    target = debugger.GetSelectedTarget()
+    process = target.GetProcess()
+    thread = process.GetSelectedThread()
+    frame = thread.GetSelectedFrame()
+
+    tHeapPageP = target.FindFirstType("struct heap_page").GetPointerType()
+    page = frame.EvaluateExpression(command)
+    page = page.Cast(tHeapPageP)
+
+    tRBasic = target.FindFirstType("struct RBasic")
+    tRValue = target.FindFirstType("struct RVALUE")
+
+    obj_address = page.GetChildMemberWithName('start').GetValueAsUnsigned();
+    num_slots = page.GetChildMemberWithName('total_slots').unsigned
+
+    for j in range(0, num_slots):
+        offset = obj_address + (j * tRValue.GetByteSize())
+        obj_addr = lldb.SBAddress(offset, target)
+        p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
+        print("Obj [%d]: Addr: %0#x (flags: %0#x)" % (j, offset, p.GetChildMemberWithName('flags').GetValueAsUnsigned()), file=result)
+
+
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.lldb_rp rp")
     debugger.HandleCommand("command script add -f lldb_cruby.count_objects rb_count_objects")
@@ -533,5 +556,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page heap_page")
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
+    debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
+
     lldb_init(debugger)
     print("lldb scripts for ruby has been installed.")
