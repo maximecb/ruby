@@ -2318,6 +2318,8 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
         struct heap_page *search_page;
         struct heap_page *searched_pages = NULL;
 
+        heap_allocatable_pages_set(objspace, heap_allocatable_pages + 1);
+
         while (!p) {
             search_page = heap_next_freepage(objspace, heap_eden);
             fprintf(stderr, "heap_allocatable_pages %d\n", heap_allocatable_pages);
