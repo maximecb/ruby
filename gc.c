@@ -2295,7 +2295,6 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
     RVALUE * p = rvargc_find_contiguous_slots(slots, freelist);
 
-
     // We found a contiguous space on the freelist stored in the ractor cache
     if (p) {
         asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
@@ -5304,6 +5303,7 @@ gc_mode_name(enum gc_mode mode)
 static void
 gc_mode_transition(rb_objspace_t *objspace, enum gc_mode mode)
 {
+    gc_verify_internal_consistency(objspace);
 #if RGENGC_CHECK_MODE
     enum gc_mode prev_mode = gc_mode(objspace);
     switch (prev_mode) {
@@ -5312,6 +5312,7 @@ gc_mode_transition(rb_objspace_t *objspace, enum gc_mode mode)
       case gc_mode_sweeping: GC_ASSERT(mode == gc_mode_none); break;
     }
 #endif
+    gc_verify_internal_consistency(objspace);
     if (0) fprintf(stderr, "gc_mode_transition: %s->%s\n", gc_mode_name(gc_mode(objspace)), gc_mode_name(mode));
     gc_mode_set(objspace, mode);
 }
@@ -5362,8 +5363,11 @@ __attribute__((noinline))
 static void
 gc_sweep_start(rb_objspace_t *objspace)
 {
+    gc_verify_internal_consistency(objspace);
     gc_mode_transition(objspace, gc_mode_sweeping);
+    gc_verify_internal_consistency(objspace);
     gc_sweep_start_heap(objspace, heap_eden);
+    gc_verify_internal_consistency(objspace);
 }
 
 static void
@@ -5571,10 +5575,12 @@ gc_sweep(rb_objspace_t *objspace)
     gc_report(1, objspace, "gc_sweep: immediate: %d\n", immediate_sweep);
 
     if (immediate_sweep) {
+        gc_verify_internal_consistency(objspace);
 #if !GC_ENABLE_LAZY_SWEEP
 	gc_prof_sweep_timer_start(objspace);
 #endif
 	gc_sweep_start(objspace);
+        gc_verify_internal_consistency(objspace);
         if (objspace->flags.during_compacting) {
             struct heap_page *page = NULL;
 
@@ -5585,6 +5591,7 @@ gc_sweep(rb_objspace_t *objspace)
             gc_compact_start(objspace, heap_eden);
         }
 
+        gc_verify_internal_consistency(objspace);
 	gc_sweep_rest(objspace);
 #if !GC_ENABLE_LAZY_SWEEP
 	gc_prof_sweep_timer_stop(objspace);
@@ -7229,6 +7236,9 @@ check_children_i(const VALUE child, void *ptr)
 static int
 verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, void *ptr)
 {
+    //first time through
+    //page start is the start of hte page
+    //page end is the address of the slot after a payload head
     struct verify_internal_consistency_struct *data = (struct verify_internal_consistency_struct *)ptr;
     VALUE obj;
     rb_objspace_t *objspace = data->objspace;
@@ -7272,7 +7282,7 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, v
              * body */
             if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
                 if (RVALUE_OLD_P(obj)) {
-                    data->old_object_count += RPAYLOAD(obj)->len - 1;
+                   data->old_object_count += RPAYLOAD(obj)->len - 1;
                 }
                 data->live_object_count += RPAYLOAD(obj)->len - 1;
             }
@@ -7439,7 +7449,9 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
     }
 
     /* check heap_page status */
+    check_free_pages(heap_eden->free_pages);
     gc_verify_heap_pages(objspace);
+    check_free_pages(heap_eden->free_pages);
 
     /* check counters */
 
@@ -7837,7 +7849,9 @@ gc_marks(rb_objspace_t *objspace, int full_mark)
 
     gc_marks_start(objspace, full_mark);
     if (!is_incremental_marking(objspace)) {
+        gc_verify_internal_consistency(objspace);
         gc_marks_rest(objspace);
+        gc_verify_internal_consistency(objspace);
     }
 
 #if RGENGC_PROFILE > 0
