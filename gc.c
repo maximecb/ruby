@@ -7301,13 +7301,21 @@ gc_verify_heap_page(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
     int remembered_old_objects = 0;
     int free_objects = 0;
     int zombie_objects = 0;
+    int stride = 1, default_stride = 1;
 
-    for (i=0; i<page->total_slots; i++) {
+    for (i=0; i<page->total_slots; i+=stride) {
 	VALUE val = (VALUE)&page->start[i];
         void *poisoned = asan_poisoned_object_p(val);
         asan_unpoison_object(val, false);
 
+        if (BUILTIN_TYPE(val) == T_PAYLOAD) {
+            stride = RPAYLOAD(val)->len + 1;
+        } else {
+            stride = default_stride;
+        }
+
 	if (RBASIC(val) == 0) free_objects++;
+        if (BUILTIN_TYPE(val) == T_PAYLOAD) stride = RPAYLOAD(val)->len;
 	if (BUILTIN_TYPE(val) == T_ZOMBIE) zombie_objects++;
 	if (RVALUE_PAGE_UNCOLLECTIBLE(page, val) && RVALUE_PAGE_WB_UNPROTECTED(page, val)) {
 	    has_remembered_shady = TRUE;
