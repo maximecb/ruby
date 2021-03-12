@@ -2269,6 +2269,15 @@ static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_heap_t 
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
 
 static void *
+check_free_pages(struct heap_page * free_page)
+{
+    while (free_page) {
+        GC_ASSERT(free_page->free_slots > 0);
+        free_page = free_page->free_next;
+    }
+}
+
+static void *
 rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 {
     if (!freelist) return 0;
@@ -2284,6 +2293,7 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
     RVALUE * p = rvargc_find_contiguous_slots(slots, freelist);
 
+
     // We found a contiguous space on the freelist stored in the ractor cache
     if (p) {
         asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
@@ -2295,9 +2305,13 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
         heap_allocatable_pages_set(objspace, heap_allocatable_pages + 1);
 
+        check_free_pages(heap_eden->free_pages);
+
         while (!p) {
             // search_page is the page we're going to search for contiguous slots
             search_page = heap_next_freepage(objspace, heap_eden);
+
+            check_free_pages(heap_eden->free_pages);
 
             search_page->free_next = searched_pages;
 
@@ -2325,10 +2339,12 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
                 while (searched_pages) {
                     next_freepage = searched_pages->free_next;
+                    check_free_pages(searched_pages);
 
                     if (searched_pages->freelist) {
                         heap_add_freepage(heap_eden, searched_pages);
                     }
+                    check_free_pages(heap_eden->free_pages);
 
                     searched_pages = next_freepage;
                 }
@@ -2337,6 +2353,7 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
             }
 
             searched_pages = search_page;
+            check_free_pages(heap_eden->free_pages);
 
         }
         rb_bug("what do we do?3");
