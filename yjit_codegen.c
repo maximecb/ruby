@@ -690,7 +690,7 @@ gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const bool attr, struct rb_call_data *
     VALUE comptime_val;
     if (attr) {
         // attr_reader method. Receiver is on the top of the stack.
-        comptime_val = jit_peek_at_stack(jit, ctx);
+        comptime_val = jit_peek_at_stack(jit, ctx, 0);
     }
     else {
         // getinstancevariable on self
