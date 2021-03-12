@@ -6361,6 +6361,7 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
             for (int i = 1; i < plen; i++) {
                 VALUE pbody = obj + i * sizeof(RVALUE);
                 MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+                objspace->rgengc.old_objects++;
             }
         }
     }
