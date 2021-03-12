@@ -623,7 +623,7 @@ enum jcc_kinds {
 // Generate a jump to a stub that recompiles the current YARV instruction on failure.
 // When depth_limitk is exceeded, generate a jump to a side exit.
 static void
-jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
+jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, const ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
 {
     branchgen_fn target0_gen_fn;
 
@@ -667,17 +667,34 @@ enum {
 };
 
 static codegen_status_t
-gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
+gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const bool attr, struct rb_call_data *cd, const rb_callable_method_entry_t *cme)
 {
+    // Only compile call to attrs that go through
+    // TODO: check whether call is simple
+    if (attr && vm_ci_argc(cd->ci) != 0) {
+        GEN_COUNTER_INC(cb, oswb_getter_arity);
+        return YJIT_CANT_COMPILE;
+    }
+
     // Defer compilation so we can specialize a runtime `self`
     if (!jit_at_current_insn(jit)) {
         defer_compilation(jit->block, jit->insn_idx, ctx);
         return YJIT_END_BLOCK;
     }
 
-    // Specialize base on the compile time self
-    VALUE self_val = jit_peek_at_self(jit, ctx);
-    VALUE self_klass = rb_class_of(self_val);
+    const ctx_t starting_context = *ctx;
+
+    // Specialize base on compile time value
+    VALUE comptime_val;
+    if (attr) {
+        // attr_reader method. Receiver is on the top of the stack.
+        comptime_val = jit_peek_at_stack(jit, ctx);
+    }
+    else {
+        // getinstancevariable on self
+        comptime_val = jit_peek_at_self(jit, ctx);
+    }
+    VALUE comptime_val_klass = CLASS_OF(comptime_val);
 
     // Create a size-exit to fall back to the interpreter
     uint8_t *side_exit = yjit_side_exit(jit, ctx);
@@ -686,41 +703,79 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
     // NOTE: This assumes nobody changes the allocator of the class after allocation.
     //       Eventually, we can encode whether an object is T_OBJECT or not
     //       inside object shapes.
-    if (rb_get_alloc_func(self_klass) != rb_class_allocate_instance) {
-        jmp_ptr(cb, side_exit);
+    if (rb_get_alloc_func(comptime_val_klass) != rb_class_allocate_instance) {
+        jmp_ptr(cb, COUNTED_EXIT(side_exit, getivar_not_object));
         return YJIT_END_BLOCK;
     }
-    RUBY_ASSERT(BUILTIN_TYPE(self_val) == T_OBJECT); // because we checked the allocator
+    RUBY_ASSERT(BUILTIN_TYPE(comptime_val) == T_OBJECT); // because we checked the allocator
 
-    ID id = (ID)jit_get_arg(jit, 0);
+    // ID for the name of the ivar
+    ID id;
+    if (attr) {
+        id = cme->def->body.attr.id;
+    }
+    else {
+        id = (ID)jit_get_arg(jit, 0);
+    }
     struct rb_iv_index_tbl_entry *ent;
-    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(self_val);
+    struct st_table *iv_index_tbl = ROBJECT_IV_INDEX_TBL(comptime_val);
 
     // Lookup index for the ivar the instruction loads
     if (iv_index_tbl && rb_iv_index_tbl_lookup(iv_index_tbl, id, &ent)) {
         uint32_t ivar_index = ent->index;
 
-        // Load self from CFP
-        mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
+        // Load receiver into REG0 and guard that that it's a heap object
+        if (attr) {
+            // Check for interrupts
+            yjit_check_ints(cb, side_exit);
 
-        guard_self_is_object(cb, REG0, COUNTED_EXIT(side_exit, getivar_se_self_not_heap), ctx);
+            // Points to the receiver operand on the stack
+            x86opnd_t recv = ctx_stack_pop(ctx, 1);
+            mov(cb, REG0, recv);
 
-        // Guard that self has a known class
+            // Check that the receiver is a heap object
+            {
+                uint8_t *receiver_not_heap = COUNTED_EXIT(side_exit, oswb_se_receiver_not_heap);
+                test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+                jnz_ptr(cb, receiver_not_heap);
+                cmp(cb, REG0, imm_opnd(Qfalse));
+                je_ptr(cb, receiver_not_heap);
+                cmp(cb, REG0, imm_opnd(Qnil));
+                je_ptr(cb, receiver_not_heap);
+            }
+
+            // Pointer to the klass field of the receiver &(recv->klass)
+            x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+
+            // FIXME: This leaks when st_insert raises NoMemoryError
+            assume_method_lookup_stable(cd->cc, cme, jit->block);
+
+            // Bail if receiver class is different from compile-time call cache class
+            jit_mov_gc_ptr(jit, cb, REG1, (VALUE)cd->cc->klass);
+            cmp(cb, klass_opnd, REG1);
+            jne_ptr(cb, COUNTED_EXIT(side_exit, oswb_se_cc_klass_differ));
+        }
+        else {
+            mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
+            guard_self_is_object(cb, REG0, COUNTED_EXIT(side_exit, getivar_se_self_not_heap), ctx);
+        }
+
+        // Guard that the receiver has a known class
         x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
         mov(cb, REG1, klass_opnd);
         x86opnd_t serial_opnd = mem_opnd(64, REG1, offsetof(struct RClass, class_serial));
-        cmp(cb, serial_opnd, imm_opnd(RCLASS_SERIAL(self_klass)));
-        jit_chain_guard(JCC_JNE, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
+        cmp(cb, serial_opnd, imm_opnd(RCLASS_SERIAL(comptime_val_klass)));
+        jit_chain_guard(JCC_JNE, jit, &starting_context, GETIVAR_MAX_DEPTH, side_exit);
 
         // Compile time self is embedded and the ivar index is within the object
-        if (RB_FL_TEST_RAW(self_val, ROBJECT_EMBED) && ivar_index < ROBJECT_EMBED_LEN_MAX) {
+        if (RB_FL_TEST_RAW(comptime_val, ROBJECT_EMBED) && ivar_index < ROBJECT_EMBED_LEN_MAX) {
             // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
 
             // Guard that self is embedded
             // TODO: BT and JC is shorter
             x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
             test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-            jit_chain_guard(JCC_JZ, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
+            jit_chain_guard(JCC_JZ, jit, &starting_context, GETIVAR_MAX_DEPTH, side_exit);
 
             // Load the variable
             x86opnd_t ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
@@ -735,13 +790,13 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
             mov(cb, out_opnd, REG1);
         }
         else {
-            // Compile time self is *not* embeded.
+            // Compile value is *not* embeded.
 
-            // Guard that self is *not* embedded
+            // Guard that value is *not* embedded
             // See ROBJECT_IVPTR() from include/ruby/internal/core/robject.h
             x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
             test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-            jit_chain_guard(JCC_JNZ, jit, ctx, GETIVAR_MAX_DEPTH, side_exit);
+            jit_chain_guard(JCC_JNZ, jit, &starting_context, GETIVAR_MAX_DEPTH, side_exit);
 
             // check that the extended table is big enough
             if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
@@ -788,8 +843,14 @@ gen_getinstancevariable(jitstate_t* jit, ctx_t* ctx)
 
     // Take side exit because YJIT_CANT_COMPILE can exit to a JIT entry point and
     // form an infinite loop when chain_depth > 0.
-    jmp_ptr(cb, side_exit);
+    jmp_ptr(cb, COUNTED_EXIT(side_exit, getivar_name_not_mapped));
     return YJIT_END_BLOCK;
+}
+
+static codegen_status_t
+gen_getinstancevariable(jitstate_t *jit, ctx_t *ctx)
+{
+    return gen_get_ivar(jit, ctx, false, NULL, NULL);
 }
 
 static codegen_status_t
@@ -1693,14 +1754,13 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
         return gen_oswb_iseq(jit, ctx, cd, cme, argc);
     case VM_METHOD_TYPE_CFUNC:
         return gen_oswb_cfunc(jit, ctx, cd, cme, argc);
+    case VM_METHOD_TYPE_IVAR:
+        return gen_get_ivar(jit, ctx, true, cd, cme);
     case VM_METHOD_TYPE_ATTRSET:
         GEN_COUNTER_INC(cb, oswb_ivar_set_method);
         return YJIT_CANT_COMPILE;
     case VM_METHOD_TYPE_BMETHOD:
         GEN_COUNTER_INC(cb, oswb_bmethod);
-        return YJIT_CANT_COMPILE;
-    case VM_METHOD_TYPE_IVAR:
-        GEN_COUNTER_INC(cb, oswb_ivar_get_method);
         return YJIT_CANT_COMPILE;
     case VM_METHOD_TYPE_ZSUPER:
         GEN_COUNTER_INC(cb, oswb_zsuper_method);
