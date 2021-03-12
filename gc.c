@@ -2222,7 +2222,7 @@ static unsigned long
 rvargc_slot_count(size_t size)
 {
     // roomof == ceiling division, so we don't have to do div then mod
-    return roomof(size, sizeof(RVALUE));
+    return roomof(size + sizeof(struct RPayload), sizeof(RVALUE));
 }
 
 static RVALUE *
