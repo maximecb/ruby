@@ -9688,6 +9688,9 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace,
           case T_MOVED:
           case T_ZOMBIE:
             break;
+          case T_PAYLOAD:
+              v += (RPAYLOAD(v)->len - 1);
+            break;
           default:
             if (RVALUE_WB_UNPROTECTED(v)) {
                 page->flags.has_uncollectible_shady_objects = TRUE;
