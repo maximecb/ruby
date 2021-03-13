@@ -1259,6 +1259,10 @@ payload_or_self(VALUE obj)
     VALUE cur = (VALUE)p->start;
 
     while (cur != obj && GET_HEAP_PAGE(cur) == p) {
+        VALUE p = cur;
+        void *poisoned = asan_poisoned_object_p((VALUE)p);
+        asan_unpoison_object((VALUE)p, false);
+
         if (BUILTIN_TYPE(cur) == T_PAYLOAD) {
             if (cur < obj && obj < cur + RPAYLOAD(cur)->len * sizeof(RVALUE)) {
                 return cur;
@@ -1266,6 +1270,9 @@ payload_or_self(VALUE obj)
             cur += RPAYLOAD(cur)->len * sizeof(RVALUE);
         } else {
             cur += sizeof(RVALUE);
+        }
+        if (poisoned) {
+            asan_poison_object((VALUE)p);
         }
     }
 
@@ -2268,20 +2275,28 @@ static inline bool heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
 static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap);
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
 
-static void *
+static void
 check_free_pages(struct heap_page * free_page)
 {
     while (free_page) {
         GC_ASSERT(free_page->free_slots > 0);
         free_page = free_page->free_next;
     }
+    return;
 }
 
 static void *
 rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 {
     if (!freelist) return 0;
+
+    void *poisoned = asan_poisoned_object_p((VALUE)freelist);
+    asan_unpoison_object((VALUE)freelist, false);
     GC_ASSERT(BUILTIN_TYPE(freelist) == T_NONE);
+    if (poisoned) {
+        asan_poison_object((VALUE)freelist);
+    }
+
     if (size == sizeof(RVALUE))
         return freelist;
 
@@ -2340,14 +2355,16 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
                     next_freepage = searched_pages->free_next;
                     check_free_pages(searched_pages);
 
+                    asan_unpoison_memory_region(&searched_pages->freelist, sizeof(RVALUE*), false);
                     if (searched_pages->freelist) {
                         heap_add_freepage(heap_eden, searched_pages);
                     }
-                    check_free_pages(heap_eden->free_pages);
+                    asan_poison_memory_region(&searched_pages->freelist, sizeof(RVALUE*));
 
                     searched_pages = next_freepage;
                 }
 
+                asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
                 return p;
             }
 
@@ -2396,7 +2413,6 @@ ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
     if (p) {
         VALUE obj = (VALUE)p;
         cr->newobj_cache.freelist = p->as.free.next;
-        assert(!cr->newobj_cache.freelist || (BUILTIN_TYPE((VALUE)cr->newobj_cache.freelist) == T_NONE));
         asan_unpoison_object(obj, true);
         return obj;
     }
@@ -5149,7 +5165,6 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
     if (out_of_range_bits != 0) { // sizeof(RVALUE) == 64
         bits[BITMAP_INDEX(p) + sweep_page->total_slots / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
     }
-
     for (i=0; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
 	bitset = ~bits[i];
 	if (bitset) {
@@ -6225,10 +6240,10 @@ gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
     (void)VALGRIND_MAKE_MEM_DEFINED(&obj, sizeof(obj));
 
     if (is_pointer_to_heap(objspace, (void *)obj)) {
+        obj = payload_or_self(obj);
+
         void *ptr = __asan_region_is_poisoned((void *)obj, SIZEOF_VALUE);
         asan_unpoison_object(obj, false);
-
-        obj = payload_or_self(obj);
 
         /* Garbage can live on the stack, so do not mark or pin */
         switch (BUILTIN_TYPE(obj)) {
