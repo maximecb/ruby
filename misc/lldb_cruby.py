@@ -257,29 +257,16 @@ def lldb_inspect(debugger, target, result, val):
     else:
         tRBasic = target.FindFirstType("struct RBasic").GetPointerType()
         tRValue = target.FindFirstType("struct RVALUE")
-        tUintPtr = target.FindFirstType("uintptr_t") # bits_t
 
         val = val.Cast(tRBasic)
         flags = val.GetValueForExpressionPath("->flags").GetValueAsUnsigned()
         flaginfo = ""
 
-        num_in_page = (val.GetValueAsUnsigned() & HEAP_PAGE_ALIGN_MASK) // tRValue.GetByteSize();
-        bits_bitlength = tUintPtr.GetByteSize() * 8
-        bitmap_index = num_in_page // bits_bitlength
-        bitmap_offset = num_in_page & (bits_bitlength - 1)
-        bitmap_bit = 1 << bitmap_offset
-
         page = get_page(lldb, target, val)
         page_type = target.FindFirstType("struct heap_page").GetPointerType()
         page.Cast(page_type)
 
-        print("bits [%s%s%s%s%s]" % (
-            check_bits(page, "uncollectible_bits", bitmap_index, bitmap_bit, "L"),
-            check_bits(page, "mark_bits", bitmap_index, bitmap_bit, "M"),
-            check_bits(page, "pinned_bits", bitmap_index, bitmap_bit, "P"),
-            check_bits(page, "marking_bits", bitmap_index, bitmap_bit, "R"),
-            check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
-            ), file=result)
+        dump_bits(target, result, page, val.GetValueAsUnsigned())
 
         if (flags & RUBY_FL_PROMOTED) == RUBY_FL_PROMOTED:
             flaginfo += "[PROMOTED] "
@@ -525,6 +512,24 @@ def rb_backtrace(debugger, command, result, internal_dict):
 
     bt.print_bt(val)
 
+def dump_bits(target, result, page, object_address, end = "\n"):
+    tRValue = target.FindFirstType("struct RVALUE")
+    tUintPtr = target.FindFirstType("uintptr_t") # bits_t
+
+    num_in_page = (object_address & HEAP_PAGE_ALIGN_MASK) // tRValue.GetByteSize();
+    bits_bitlength = tUintPtr.GetByteSize() * 8
+    bitmap_index = num_in_page // bits_bitlength
+    bitmap_offset = num_in_page & (bits_bitlength - 1)
+    bitmap_bit = 1 << bitmap_offset
+
+    print("bits [%s%s%s%s%s]" % (
+        check_bits(page, "uncollectible_bits", bitmap_index, bitmap_bit, "L"),
+        check_bits(page, "mark_bits", bitmap_index, bitmap_bit, "M"),
+        check_bits(page, "pinned_bits", bitmap_index, bitmap_bit, "P"),
+        check_bits(page, "marking_bits", bitmap_index, bitmap_bit, "R"),
+        check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
+        ), end=end, file=result)
+
 def dump_page(debugger, command, result, internal_dict):
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
@@ -545,7 +550,8 @@ def dump_page(debugger, command, result, internal_dict):
         offset = obj_address + (j * tRValue.GetByteSize())
         obj_addr = lldb.SBAddress(offset, target)
         p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
-        print("Obj [%d]: Addr: %0#x (flags: %0#x)" % (j, offset, p.GetChildMemberWithName('flags').GetValueAsUnsigned()), file=result)
+        dump_bits(target, result, page, offset, end = " ")
+        print("Obj [%3d]: Addr: %0#x (flags: %0#x)" % (j, offset, p.GetChildMemberWithName('flags').GetValueAsUnsigned()), file=result)
 
 
 def __lldb_init_module(debugger, internal_dict):
