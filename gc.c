@@ -5191,13 +5191,13 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                       case T_PAYLOAD:
                         {
                             int plen = RPAYLOAD(vp)->len;
+                            freed_slots++;
+
                             for (int i = 0; i < plen; i++) {
                                 VALUE pbody = vp + i * sizeof(RVALUE);
 
                                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
                                 heap_page_add_freeobj(objspace, sweep_page, pbody);
-                                MARK_IN_BITMAP(GET_HEAP_MARK_BITS(pbody), pbody);
-                                freed_slots++;
                             }
                         }
                         break;
