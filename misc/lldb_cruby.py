@@ -531,6 +531,9 @@ def dump_bits(target, result, page, object_address, end = "\n"):
         ), end=end, file=result)
 
 def dump_page(debugger, command, result, internal_dict):
+    if not ('RUBY_Qfalse' in globals()):
+        lldb_init(debugger)
+
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
     thread = process.GetSelectedThread()
@@ -546,13 +549,37 @@ def dump_page(debugger, command, result, internal_dict):
     obj_address = page.GetChildMemberWithName('start').GetValueAsUnsigned();
     num_slots = page.GetChildMemberWithName('total_slots').unsigned
 
+    ruby_type_map = ruby_types(debugger)
+
     for j in range(0, num_slots):
         offset = obj_address + (j * tRValue.GetByteSize())
         obj_addr = lldb.SBAddress(offset, target)
         p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
         dump_bits(target, result, page, offset, end = " ")
-        print("Obj [%3d]: Addr: %0#x (flags: %0#x)" % (j, offset, p.GetChildMemberWithName('flags').GetValueAsUnsigned()), file=result)
+        flags = p.GetChildMemberWithName('flags').GetValueAsUnsigned()
+        print("%s [%3d]: Addr: %0#x (flags: %0#x)" % (rb_type(flags, ruby_type_map), j, offset, flags), file=result)
 
+def rb_type(flags, ruby_types):
+    flType = flags & RUBY_T_MASK
+    return "%-10s" % (ruby_types.get(flType, ("%0#x" % flType)))
+
+
+def ruby_types(debugger):
+    target = debugger.GetSelectedTarget()
+
+    types = {}
+    for enum in target.FindFirstGlobalVariable('ruby_dummy_gdb_enums'):
+        enum = enum.GetType()
+        members = enum.GetEnumMembers()
+        for i in range(0, members.GetSize()):
+            member = members.GetTypeEnumMemberAtIndex(i)
+            name = member.GetName()
+            value = member.GetValueAsUnsigned()
+
+            if name.startswith('RUBY_T_'):
+                types[value] = name.replace('RUBY_', '')
+
+    return types
 
 def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.lldb_rp rp")
@@ -562,6 +589,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page heap_page")
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
+    debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
 
     lldb_init(debugger)
