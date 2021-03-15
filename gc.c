@@ -1486,10 +1486,8 @@ RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *pag
             VALUE pbody = obj + i * sizeof(RVALUE);
             MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
         }
-        objspace->rgengc.old_objects += plen;
-    } else {
-        objspace->rgengc.old_objects++;
     }
+    objspace->rgengc.old_objects++;
     rb_transient_heap_promote(obj);
 
 #if RGENGC_PROFILE >= 2
