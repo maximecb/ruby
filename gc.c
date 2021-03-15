@@ -7311,7 +7311,7 @@ gc_verify_heap_page(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
         asan_unpoison_object(val, false);
 
         if (BUILTIN_TYPE(val) == T_PAYLOAD) {
-            stride = RPAYLOAD(val)->len + 1;
+            stride = RPAYLOAD(val)->len;
         } else {
             stride = default_stride;
         }
