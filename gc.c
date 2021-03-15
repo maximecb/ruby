@@ -5191,7 +5191,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                       case T_PAYLOAD:
                         {
                             int plen = RPAYLOAD(vp)->len;
-                            freed_slots++;
+                            freed_slots += plen;
 
                             for (int i = 0; i < plen; i++) {
                                 VALUE pbody = vp + i * sizeof(RVALUE);
