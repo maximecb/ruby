@@ -5922,6 +5922,10 @@ gc_mark_stack_values(rb_objspace_t *objspace, long n, const VALUE *values)
 
     for (i=0; i<n; i++) {
         if (is_markable_object(objspace, values[i])) {
+            VALUE v = values[i];
+            if (v != payload_or_self(v)) {
+                rb_bug("oh no!");
+            }
             gc_mark_and_pin(objspace, values[i]);
         }
     }
