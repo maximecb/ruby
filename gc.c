@@ -4626,6 +4626,7 @@ type_sym(size_t type)
         COUNT_TYPE(T_ICLASS);
         COUNT_TYPE(T_ZOMBIE);
         COUNT_TYPE(T_MOVED);
+        COUNT_TYPE(T_PAYLOAD);
 #undef COUNT_TYPE
         default:              return SIZET2NUM(type); break;
     }
@@ -4689,13 +4690,19 @@ count_objects(int argc, VALUE *argv, VALUE os)
     for (i = 0; i < heap_allocated_pages; i++) {
 	struct heap_page *page = heap_pages_sorted[i];
 	RVALUE *p, *pend;
+        int stride = 1;
 
 	p = page->start; pend = p + page->total_slots;
-	for (;p < pend; p++) {
+	for (;p < pend; p += stride) {
+            stride = 1;
             VALUE vp = (VALUE)p;
+
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
-	    if (p->as.basic.flags) {
+            if (RB_TYPE_P(vp, T_PAYLOAD)) {
+                stride = RPAYLOAD(vp)->len;
+                counts[BUILTIN_TYPE(vp)] += RPAYLOAD(vp)->len;
+            }else if (p->as.basic.flags) {
                 counts[BUILTIN_TYPE(vp)]++;
 	    }
 	    else {
