@@ -90,13 +90,13 @@ jit_at_current_insn(jitstate_t* jit)
 
 // Peek at the topmost value on the Ruby stack
 static VALUE
-jit_peek_at_stack(jitstate_t* jit, ctx_t* ctx)
+jit_peek_at_stack(jitstate_t* jit, ctx_t* ctx, int n_from_top)
 {
     RUBY_ASSERT(jit_at_current_insn(jit));
 
     VALUE* sp = jit->ec->cfp->sp + ctx->sp_offset;
 
-    return *(sp - 1);
+    return *(sp - 1 - n_from_top);
 }
 
 static VALUE
@@ -1109,19 +1109,89 @@ VALUE rb_false(VALUE obj);
 static codegen_status_t
 gen_opt_nil_p(jitstate_t* jit, ctx_t* ctx)
 {
-    // If someone redefined nil? on NilClass, we'll never JIT this instruction
-    if (!BASIC_OP_UNREDEFINED_P(BOP_NIL_P, NIL_REDEFINED_OP_FLAG)) {
-        return YJIT_CANT_COMPILE;
+    // Defer compilation so we can specialize bsae on the receiver
+    if (!jit_at_current_insn(jit)) {
+        defer_compilation(jit->block, jit->insn_idx, ctx);
+        return YJIT_END_BLOCK;
     }
+
+    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+
+    if (!assume_bop_not_redefined(jit->block, TRUE_REDEFINED_OP_FLAG, BOP_NIL_P)) {
+
+        puts("yes");
+        jmp_ptr(cb, side_exit);
+        return YJIT_END_BLOCK;
+    }
+
+
+    return YJIT_CANT_COMPILE;
+
+#if 0
 
     // Create a size-exit to fall back to the interpreter
     // Note: we generate the side-exit before popping operands from the stack
     uint8_t *side_exit = yjit_side_exit(jit, ctx);
 
-    struct rb_call_data * cd = (struct rb_call_data *)jit_get_arg(jit, 0);
+    // If someone redefined nil? on NilClass, we'll never JIT this instruction
+    if (!assume_bop_not_redefined(jit, ctx, NIL_REDEFINED_OP_FLAG, BOP_NIL_P)) {
+        jmp_ptr(cb, side_exit);
+        return YJIT_END_BLOCK;
+    }
 
-    x86opnd_t arg0 = ctx_stack_pop(ctx, 1);
+    VALUE comptime_receiver = jit_peek_at_stack(jit, ctx, 0);
 
+    if (comptime_receiver == Qnil) {
+        x86opnd_t receiver = ctx_stack_opnd(ctx, 0);
+        mov(cb, REG0, receiver);
+        cmp(cb, REG0, imm_opnd(Qnil));
+        // If it's not nil, recompile
+        jit_chain_guard(JCC_JNE, jit, ctx, OPT_NIL_P_MAX_DEPTH, side_exit);
+
+        // nil? confirmed
+        x86opnd_t dst = ctx_stack_push(ctx, T_NONE);
+        mov(cb, dst, imm_opnd(Qtrue));
+
+        // TODO JUMP TO THE NEXT INSTRUCTION
+    }
+    else if (!SPECIAL_CONST_P(comptime_receiver)) { // specialization for heap receivers
+        x86opnd_t receiver = ctx_stack_opnd(ctx, 0);
+        mov(cb, REG0, receiver);
+
+        // Check that the receiver is a heap object
+        test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+        jit_chain_guard(JCC_JNE, jit, ctx, OPT_NIL_P_MAX_DEPTH, side_exit);
+        cmp(cb, REG0, imm_opnd(Qfalse));
+        jit_chain_guard(JCC_JE, jit, ctx, OPT_NIL_P_MAX_DEPTH, side_exit);
+        cmp(cb, REG0, imm_opnd(Qnil));
+        jit_chain_guard(JCC_JE, jit, ctx, OPT_NIL_P_MAX_DEPTH, side_exit);
+
+        // Check if the class is the same as the IC class
+        x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+        jit_mov_gc_ptr(jit, cb, REG1, (VALUE)cd->cc->klass);
+        cmp(cb, klass_opnd, REG1);
+
+        // Bail if the class isn't equal to the IC class
+        jne_ptr(cb, side_exit);
+    }
+
+    jmp_ptr(cb, side_exit);
+    return YJIT_END_BLOCK;
+
+        STATIC_ASSERT(qfalse_is_zero, Qfalse == 0);
+
+        x86opnd_t receiver = ctx_stack_opnd(ctx, 0);
+        mov(cb, REG0, receiver);
+        test(cb, REG0, REG0); // check for zero
+        jit_chain_guard(JCC_JNZ, jit, ctx, OPT_NIP_P_MAX_DEPTH, side_exit);
+
+        // can't define nil
+        x86opnd_t dst = ctx_stack_push(ctx, T_NONE);
+        mov(cb, dst, imm_opnd(Qfalse));
+    }
+
+
+    struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
     // `nil.nil?` doesn't use the inline cache, so if we compile this instruction
     // and `klass` *isn't* set, then it's being called with `nil`
     if (!cd->cc->klass) {
@@ -1133,14 +1203,6 @@ gen_opt_nil_p(jitstate_t* jit, ctx_t* ctx)
         // If it has been redefined, fall back to the interpreter
         jnz_ptr(cb, side_exit);
 
-        x86opnd_t dst = ctx_stack_push(ctx, T_NONE);
-        cmp(cb, arg0, imm_opnd(Qnil));
-
-        // If it's not nil, take the side exit
-        jnz_ptr(cb, side_exit);
-
-        // nil? confirmed
-        mov(cb, dst, imm_opnd(Qtrue));
     }
     // Receiver is something besides Qnil
     else {
@@ -1236,6 +1298,7 @@ gen_opt_nil_p(jitstate_t* jit, ctx_t* ctx)
     }
 
     return YJIT_KEEP_COMPILING;
+#endif
 }
 
 void
