@@ -1,4 +1,3 @@
-<<<<<<< HEAD:bootstraptest/test_yjit.rb
 # BOP redefined methods work when JIT compiled
 assert_equal 'false', %q{
   def less_than x
