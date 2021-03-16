@@ -2312,6 +2312,9 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
     // We found a contiguous space on the freelist stored in the ractor cache
     if (p) {
+        struct heap_page *page = GET_HEAP_PAGE(p);
+
+        page->free_slots -= slots;
         asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
         return p;
     }
