@@ -1823,6 +1823,7 @@ heap_page_free(rb_objspace_t *objspace, struct heap_page *page)
     heap_allocated_pages--;
     objspace->profile.total_freed_pages++;
     rb_aligned_free(GET_PAGE_BODY(page->start), HEAP_PAGE_SIZE);
+    gc_report(3, objspace, "heap_page_free: freeing page %p\n", (void *)GET_PAGE_BODY(page->start));
     free(page);
 }
 
@@ -1932,6 +1933,7 @@ heap_page_allocate(rb_objspace_t *objspace)
     page->total_slots = limit;
     page_body->header.page = page;
 
+    gc_report(3, objspace, "assign_heap_page: page %p created\n", (void *)page_body); 
     for (p = start; p != end; p++) {
 	gc_report(3, objspace, "assign_heap_page: %p is added to freelist\n", (void *)p);
 	heap_page_add_freeobj(objspace, page, (VALUE)p);
@@ -2445,6 +2447,7 @@ heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap)
 static inline void
 ractor_set_cache(rb_ractor_t *cr, struct heap_page *page)
 {
+    gc_report(3, &rb_objspace, "ractor_set_cache: Using page %p\n", (void *)GET_PAGE_BODY(page->start));
     cr->newobj_cache.using_page = page;
     cr->newobj_cache.freelist = page->freelist;
     page->free_slots = 0;
@@ -5439,6 +5442,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 	    unlink_limit--;
 	    /* there are no living objects -> move this page to tomb heap */
 	    heap_unlink_page(objspace, heap, sweep_page);
+            gc_report(3, objspace, "gc_sweep_step: Adding page %p to tomb heap\n", (void *)GET_PAGE_BODY(sweep_page->start));
 	    heap_add_page(objspace, heap_tomb, sweep_page);
 	}
 	else if (free_slots > 0) {
