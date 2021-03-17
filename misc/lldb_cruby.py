@@ -572,9 +572,14 @@ def dump_page(debugger, command, result, internal_dict):
     for (page_index, obj_addr, obj) in HeapPageIter(page, target):
         dump_bits(target, result, page, obj_addr, end= " ")
         flags = obj.GetChildMemberWithName('flags').GetValueAsUnsigned()
+        freelist = page.GetChildMemberWithName('freelist').GetValueAsUnsigned()
 
-        print("%s [%3d]: Addr: %0#x (flags: %0#x)"
-                % (rb_type(flags, ruby_type_map), page_index, obj_addr, flags), 
+        freelist_p = ' '
+        if obj_addr == freelist:
+            freelist_p = '*'
+
+        print("%s [%3d]: {%s} Addr: %0#x (flags: %0#x)"
+                % (rb_type(flags, ruby_type_map), page_index, freelist_p, obj_addr, flags), 
                 file=result)
 
 def rb_type(flags, ruby_types):
