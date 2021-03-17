@@ -2243,7 +2243,7 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
     while(cursor) {
         int i;
         RVALUE *search = cursor;
-        for (i = 0; i < slots; i++) {
+        for (i = 0; i < (slots - 1); i++) {
 
             // Peek ahead to see if the region is contiguous
             if (search->as.free.next == (search - 1)) {
@@ -2262,7 +2262,7 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
             }
         }
 
-        if (i == slots) {
+        if (i == slots - 1) {
             if (previous_region) {
                 previous_region->as.free.next = search->as.free.next;
                 search->as.free.next = freelist;
