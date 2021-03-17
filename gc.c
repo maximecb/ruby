@@ -2282,6 +2282,7 @@ check_free_pages(struct heap_page * free_page)
 {
     while (free_page) {
         GC_ASSERT(free_page->free_slots > 0);
+        GC_ASSERT(free_page->free_slots <= free_page->total_slots);
         free_page = free_page->free_next;
     }
     return;
