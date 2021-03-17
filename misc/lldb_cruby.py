@@ -530,6 +530,30 @@ def dump_bits(target, result, page, object_address, end = "\n"):
         check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
         ), end=end, file=result)
 
+class HeapPageIter:
+    def __init__(self, page, target):
+        self.page = page
+        self.target = target
+        self.start = page.GetChildMemberWithName('start').GetValueAsUnsigned();
+        self.num_slots = page.GetChildMemberWithName('total_slots').unsigned
+        self.counter = 0
+        self.tRBasic = target.FindFirstType("struct RBasic")
+        self.tRValue = target.FindFirstType("struct RVALUE")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.counter < self.num_slots:
+            obj_addr_i = self.start + (self.counter * self.tRValue.GetByteSize())
+            obj_addr = lldb.SBAddress(obj_addr_i, self.target)
+            slot_info = (self.counter, obj_addr_i, self.target.CreateValueFromAddress("object", obj_addr, self.tRBasic))
+            self.counter += 1
+
+            return slot_info
+        else:
+            raise StopIteration
+
 def dump_page(debugger, command, result, internal_dict):
     if not ('RUBY_Qfalse' in globals()):
         lldb_init(debugger)
@@ -543,30 +567,14 @@ def dump_page(debugger, command, result, internal_dict):
     page = frame.EvaluateExpression(command)
     page = page.Cast(tHeapPageP)
 
-    tRBasic = target.FindFirstType("struct RBasic")
-    tRValue = target.FindFirstType("struct RVALUE")
-
-    obj_address = page.GetChildMemberWithName('start').GetValueAsUnsigned();
-    freelist_address = page.GetChildMemberWithName('freelist').GetValueAsUnsigned();
-    num_slots = page.GetChildMemberWithName('total_slots').unsigned
-
     ruby_type_map = ruby_types(debugger)
 
-    for j in range(0, num_slots):
-        freelist_p = ""
-        offset = obj_address + (j * tRValue.GetByteSize())
-        obj_addr = lldb.SBAddress(offset, target)
-        p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
-        dump_bits(target, result, page, offset, end = " ")
+    for (page_index, obj_addr, obj) in HeapPageIter(page, target):
+        dump_bits(target, result, page, obj_addr, end= " ")
+        flags = obj.GetChildMemberWithName('flags').GetValueAsUnsigned()
 
-        flags = p.GetChildMemberWithName('flags').GetValueAsUnsigned()
-        print("%0#x" % offset)
-        print("%0#x" % freelist_address)
-        if freelist_address == offset:
-            freelist_p = "{F}"
-
-        print("%s [%3d]: Addr: %0#x (flags: %0#x) %s"
-                % (rb_type(flags, ruby_type_map), j, offset, flags, freelist_p), 
+        print("%s [%3d]: Addr: %0#x (flags: %0#x)"
+                % (rb_type(flags, ruby_type_map), page_index, obj_addr, flags), 
                 file=result)
 
 def rb_type(flags, ruby_types):
