@@ -5221,7 +5221,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                             int plen = RPAYLOAD(vp)->len;
                             freed_slots += plen;
 
-                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
+                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, sizeof(RVALUE));
                             heap_page_add_freeobj(objspace, sweep_page, vp);
 
                             // This loop causes slots *following this slot* to be marked as
