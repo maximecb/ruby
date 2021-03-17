@@ -2359,10 +2359,10 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
                 while (searched_pages) {
                     next_freepage = searched_pages->free_next;
-                    check_free_pages(searched_pages);
 
                     asan_unpoison_memory_region(&searched_pages->freelist, sizeof(RVALUE*), false);
                     if (searched_pages->freelist) {
+                        check_free_pages(searched_pages);
                         heap_add_freepage(heap_eden, searched_pages);
                     }
                     asan_poison_memory_region(&searched_pages->freelist, sizeof(RVALUE*));
