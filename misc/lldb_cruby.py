@@ -547,17 +547,27 @@ def dump_page(debugger, command, result, internal_dict):
     tRValue = target.FindFirstType("struct RVALUE")
 
     obj_address = page.GetChildMemberWithName('start').GetValueAsUnsigned();
+    freelist_address = page.GetChildMemberWithName('freelist').GetValueAsUnsigned();
     num_slots = page.GetChildMemberWithName('total_slots').unsigned
 
     ruby_type_map = ruby_types(debugger)
 
     for j in range(0, num_slots):
+        freelist_p = ""
         offset = obj_address + (j * tRValue.GetByteSize())
         obj_addr = lldb.SBAddress(offset, target)
         p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
         dump_bits(target, result, page, offset, end = " ")
+
         flags = p.GetChildMemberWithName('flags').GetValueAsUnsigned()
-        print("%s [%3d]: Addr: %0#x (flags: %0#x)" % (rb_type(flags, ruby_type_map), j, offset, flags), file=result)
+        print("%0#x" % offset)
+        print("%0#x" % freelist_address)
+        if freelist_address == offset:
+            freelist_p = "{F}"
+
+        print("%s [%3d]: Addr: %0#x (flags: %0#x) %s"
+                % (rb_type(flags, ruby_type_map), j, offset, flags, freelist_p), 
+                file=result)
 
 def rb_type(flags, ruby_types):
     flType = flags & RUBY_T_MASK
