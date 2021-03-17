@@ -543,6 +543,7 @@ typedef struct gc_profile_record {
 } gc_profile_record;
 
 #define FL_FROM_FREELIST FL_USER0
+#define FL_FROM_PAYLOAD FL_USER0
 
 struct RMoved {
     VALUE flags;
@@ -5220,11 +5221,26 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                             int plen = RPAYLOAD(vp)->len;
                             freed_slots += plen;
 
-                            for (int i = 0; i < plen; i++) {
+                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
+                            heap_page_add_freeobj(objspace, sweep_page, vp);
+
+                            // This loop causes slots *following this slot* to be marked as
+                            // T_NONE.  On the next iteration of this sweep loop, the T_NONE slots
+                            // can be double counted.  Mutating the bit plane is difficult because it's
+                            // copied to a local variable.  So we would need special logic to mutate
+                            // local bitmap plane (stored in `bitset`) plane, versus T_PAYLOAD objects that span
+                            // bitplanes. (Imagine a T_PAYLOAD at positions 0-3 versus positions 62-65,
+                            // their mark bits would be on different planes. We would have to mutate only `bitset`
+                            // for the first case, but `bitset` and `bits[i+1]` for the second
+                            for (int i = 1; i < plen; i++) {
                                 VALUE pbody = vp + i * sizeof(RVALUE);
 
                                 (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)pbody, sizeof(RVALUE));
                                 heap_page_add_freeobj(objspace, sweep_page, pbody);
+
+                                // Lets set a bit on the object so that the T_NONE branch
+                                // will know to avoid double counting this slot.
+                                FL_SET(pbody, FL_FROM_PAYLOAD);
                             }
                         }
                         break;
@@ -5255,7 +5271,14 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
                             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
                         }
                         else {
-                            empty_slots++; /* already freed */
+                            // This slot came from a T_PAYLOAD object and
+                            // has already been counted
+                            if (FL_TEST(vp, FL_FROM_PAYLOAD)) {
+                                FL_UNSET(vp, FL_FROM_PAYLOAD);
+                            }
+                            else {
+                                empty_slots++; /* already freed */
+                            }
                         }
 			break;
 		    }
