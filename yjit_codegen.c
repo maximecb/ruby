@@ -147,6 +147,9 @@ yjit_gen_exit(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         mov(cb, REG0, const_ptr_opnd(exit_pc));
         mov(cb, REG1, const_ptr_opnd(handler_addr));
         mov(cb, mem_opnd(64, REG0, 0), REG1);
+
+        // FIXME: this leaks the entry in the table mapping direct threading
+        // addresses to information about bytecode instructions. See map_addr2insn().
     }
 
     // Generate the code to exit to the interpreters
