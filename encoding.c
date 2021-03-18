@@ -1233,6 +1233,10 @@ rb_enc_mbclen(const char *p, const char *e, rb_encoding *enc)
 int
 rb_enc_precise_mbclen(const char *p, const char *e, rb_encoding *enc)
 {
+    if (enc_autoload_p(enc)) {
+      enc_autoload(enc);
+    }
+
     int n;
     if (e <= p)
         return ONIGENC_CONSTRUCT_MBCLEN_NEEDMORE(1);
