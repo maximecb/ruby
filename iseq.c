@@ -3142,14 +3142,6 @@ typedef struct insn_data_struct {
 } insn_data_t;
 static insn_data_t insn_data[VM_INSTRUCTION_SIZE/2];
 
-
-
-
-#include "yjit_asm.h"
-
-
-
-
 void
 rb_vm_encoded_insn_data_table_init(void)
 {
