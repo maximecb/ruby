@@ -3181,7 +3181,9 @@ rb_vm_insn_addr2insn(const void *addr)
     st_data_t key = (st_data_t)addr;
     st_data_t val;
 
+    if (rb_native_mutex_trylock(&GET_VM()->addr2insn_lock) != 0) rb_bug("there is contention!");
     if (st_lookup(rb_encoded_insn_data, key, &val)) {
+        rb_native_mutex_unlock(&GET_VM()->addr2insn_lock);
         insn_data_t *e = (insn_data_t *)val;
         return (int)e->insn;
     }
@@ -3196,7 +3198,9 @@ rb_vm_insn_addr2opcode(const void *addr)
     st_data_t key = (st_data_t)addr;
     st_data_t val;
 
+    if (rb_native_mutex_trylock(&GET_VM()->addr2insn_lock) != 0) rb_bug("there is contention!");
     if (st_lookup(rb_encoded_insn_data, key, &val)) {
+        rb_native_mutex_unlock(&GET_VM()->addr2insn_lock);
         insn_data_t *e = (insn_data_t *)val;
         int opcode = e->insn;
         if (addr == e->trace_encoded_insn) {
@@ -3214,7 +3218,9 @@ encoded_iseq_trace_instrument(VALUE *iseq_encoded_insn, rb_event_flag_t turnon, 
     st_data_t key = (st_data_t)*iseq_encoded_insn;
     st_data_t val;
 
+    if (rb_native_mutex_trylock(&GET_VM()->addr2insn_lock) != 0) rb_bug("there is contention!");
     if (st_lookup(rb_encoded_insn_data, key, &val)) {
+        rb_native_mutex_unlock(&GET_VM()->addr2insn_lock);
         insn_data_t *e = (insn_data_t *)val;
         if (remain_current_trace && key == (st_data_t)e->trace_encoded_insn) {
             turnon = 1;

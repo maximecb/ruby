@@ -5408,6 +5408,10 @@ Init_Thread_Mutex(void)
     rb_native_mutex_initialize(&th->vm->waitpid_lock);
     rb_native_mutex_initialize(&th->vm->workqueue_lock);
     rb_native_mutex_initialize(&th->interrupt_lock);
+
+
+
+    rb_native_mutex_initialize(&th->vm->addr2insn_lock);
 }
 
 /*

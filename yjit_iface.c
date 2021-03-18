@@ -80,12 +80,14 @@ map_addr2insn(void *code_ptr, int insn)
     const void * const *table = rb_vm_get_insns_address_table();
     const void * const translated_address = table[insn];
     st_data_t encoded_insn_data;
+    if (rb_native_mutex_trylock(&GET_VM()->addr2insn_lock) != 0) rb_bug("there is contention!");
     if (st_lookup(rb_encoded_insn_data, (st_data_t)translated_address, &encoded_insn_data)) {
         st_insert(rb_encoded_insn_data, (st_data_t)code_ptr, encoded_insn_data);
     }
     else {
         rb_bug("yjit: failed to find info for original instruction while dealing with addr2insn");
     }
+    rb_native_mutex_unlock(&GET_VM()->addr2insn_lock); // For robustness, handle when st_insert above throws NoMemoryError
 }
 
 int
