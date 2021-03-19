@@ -2275,23 +2275,12 @@ rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
             return search;
         }
     }
-    rb_bug("ohhai this is unreachable");
+    rb_bug("rvargc_find_contiguous_slots: unreachable");
 }
 
 static inline bool heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
 static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap);
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
-
-static void
-check_free_pages(struct heap_page * free_page)
-{
-    while (free_page) {
-        GC_ASSERT(free_page->free_slots > 0);
-        GC_ASSERT(free_page->free_slots <= free_page->total_slots);
-        free_page = free_page->free_next;
-    }
-    return;
-}
 
 static void *
 rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
@@ -2300,7 +2289,7 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
     void *poisoned = asan_poisoned_object_p((VALUE)freelist);
     asan_unpoison_object((VALUE)freelist, false);
-    GC_ASSERT(BUILTIN_TYPE(freelist) == T_NONE);
+
     if (poisoned) {
         asan_poison_object((VALUE)freelist);
     }
@@ -2330,14 +2319,9 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
         heap_allocatable_pages_set(objspace, heap_allocatable_pages + 1);
 
-        check_free_pages(heap_eden->free_pages);
-
         while (!p) {
             // search_page is the page we're going to search for contiguous slots
             search_page = heap_next_freepage(objspace, heap_eden);
-
-            check_free_pages(heap_eden->free_pages);
-
             search_page->free_next = searched_pages;
 
             p = rvargc_find_contiguous_slots(slots, search_page->freelist);
@@ -2367,7 +2351,6 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 
                     asan_unpoison_memory_region(&searched_pages->freelist, sizeof(RVALUE*), false);
                     if (searched_pages->freelist) {
-                        check_free_pages(searched_pages);
                         heap_add_freepage(heap_eden, searched_pages);
                     }
                     asan_poison_memory_region(&searched_pages->freelist, sizeof(RVALUE*));
@@ -2380,13 +2363,8 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
             }
 
             searched_pages = search_page;
-            check_free_pages(heap_eden->free_pages);
-
         }
-        rb_bug("what do we do?3");
     }
-    rb_bug("omgomgomg do we do?3");
-
     return NULL;
 }
 
@@ -7500,9 +7478,7 @@ gc_verify_internal_consistency_(rb_objspace_t *objspace)
     }
 
     /* check heap_page status */
-    check_free_pages(heap_eden->free_pages);
     gc_verify_heap_pages(objspace);
-    check_free_pages(heap_eden->free_pages);
 
     /* check counters */
 
