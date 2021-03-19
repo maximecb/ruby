@@ -2664,6 +2664,8 @@ ruby_vm_destruct(rb_vm_t *vm)
 	if (objspace) {
 	    rb_objspace_free(objspace);
 	}
+        rb_native_mutex_destroy(&vm->waitpid_lock);
+        rb_native_mutex_destroy(&vm->workqueue_lock);
 	/* after freeing objspace, you *can't* use ruby_xfree() */
 	ruby_mimfree(vm);
 	ruby_current_vm_ptr = NULL;
@@ -2675,15 +2677,11 @@ ruby_vm_destruct(rb_vm_t *vm)
 static size_t
 vm_memsize(const void *ptr)
 {
-    const rb_vm_t *vmobj = ptr;
     size_t size = sizeof(rb_vm_t);
 
     // TODO
     // size += vmobj->ractor_num * sizeof(rb_ractor_t);
 
-    if (vmobj->defined_strings) {
-	size += DEFINED_EXPR * sizeof(VALUE);
-    }
     return size;
 }
 

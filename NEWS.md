@@ -21,6 +21,11 @@ Outstanding ones only.
 
     * Enumerator::Lazy#compact is added. [[Feature #17312]]
 
+* File
+
+    * File.dirname now accepts an optional argument for the level to
+      strip path components. [[Feature #12194]]
+
 * Module
 
     * Module#prepend now modifies the ancestor chain if the receiver
@@ -79,6 +84,7 @@ Excluding feature bug fixes.
 ## Miscellaneous changes
 
 
+[Feature #12194]: https://bugs.ruby-lang.org/issues/12194
 [Feature #14256]: https://bugs.ruby-lang.org/issues/14256
 [Feature #16043]: https://bugs.ruby-lang.org/issues/16043
 [Feature #16806]: https://bugs.ruby-lang.org/issues/16806

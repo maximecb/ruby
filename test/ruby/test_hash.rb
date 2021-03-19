@@ -113,13 +113,33 @@ class TestHash < Test::Unit::TestCase
     assert_equal(2, h[1])
   end
 
-  def test_dup_will_rehash
-    set1 = @cls[]
-    set2 = @cls[set1 => true]
+  def test_dup_will_not_rehash
+    assert_hash_does_not_rehash(&:dup)
+  end
 
-    set1[set1] = true
+  def assert_hash_does_not_rehash
+    obj = Object.new
+    class << obj
+      attr_accessor :hash_calls
+      def hash
+        @hash_calls += 1
+        super
+      end
+    end
+    obj.hash_calls = 0
+    hash = {obj => 42}
+    assert_equal(1, obj.hash_calls)
+    yield hash
+    assert_equal(1, obj.hash_calls)
+  end
 
-    assert_equal set2, set2.dup
+  def test_select_reject_will_not_rehash
+    assert_hash_does_not_rehash do |hash|
+      hash.select { true }
+    end
+    assert_hash_does_not_rehash do |hash|
+      hash.reject { false }
+    end
   end
 
   def test_s_AREF
@@ -455,6 +475,7 @@ class TestHash < Test::Unit::TestCase
     h1 = @cls[h => 1]
     assert_equal(h1, h1.dup)
     h[1] = 2
+    h1.rehash
     assert_equal(h1, h1.dup)
   end
 

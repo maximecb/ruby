@@ -2,13 +2,46 @@ dnl Process this file with autoconf to produce a configure script.
 AC_INIT
 {
 AC_CONFIG_AUX_DIR(tool)
-AC_CONFIG_MACRO_DIRS(tool/m4)
 
 AC_PREREQ(2.67)
 
 tooldir="$srcdir/tool"
 
 AC_DISABLE_OPTION_CHECKING
+
+m4_include([tool/m4/_colorize_result_prepare.m4])
+m4_include([tool/m4/ac_msg_result.m4])
+m4_include([tool/m4/colorize_result.m4])
+m4_include([tool/m4/ruby_append_option.m4])
+m4_include([tool/m4/ruby_append_options.m4])
+m4_include([tool/m4/ruby_check_builtin_func.m4])
+m4_include([tool/m4/ruby_check_builtin_setjmp.m4])
+m4_include([tool/m4/ruby_check_printf_prefix.m4])
+m4_include([tool/m4/ruby_check_setjmp.m4])
+m4_include([tool/m4/ruby_check_signedness.m4])
+m4_include([tool/m4/ruby_check_sizeof.m4])
+m4_include([tool/m4/ruby_check_sysconf.m4])
+m4_include([tool/m4/ruby_cppoutfile.m4])
+m4_include([tool/m4/ruby_decl_attribute.m4])
+m4_include([tool/m4/ruby_default_arch.m4])
+m4_include([tool/m4/ruby_define_if.m4])
+m4_include([tool/m4/ruby_defint.m4])
+m4_include([tool/m4/ruby_dtrace_available.m4])
+m4_include([tool/m4/ruby_dtrace_postprocess.m4])
+m4_include([tool/m4/ruby_func_attribute.m4])
+m4_include([tool/m4/ruby_mingw32.m4])
+m4_include([tool/m4/ruby_prepend_option.m4])
+m4_include([tool/m4/ruby_prog_gnu_ld.m4])
+m4_include([tool/m4/ruby_replace_funcs.m4])
+m4_include([tool/m4/ruby_replace_type.m4])
+m4_include([tool/m4/ruby_rm_recursive.m4])
+m4_include([tool/m4/ruby_setjmp_type.m4])
+m4_include([tool/m4/ruby_stack_grow_direction.m4])
+m4_include([tool/m4/ruby_try_cflags.m4])
+m4_include([tool/m4/ruby_try_cxxflags.m4])
+m4_include([tool/m4/ruby_try_ldflags.m4])
+m4_include([tool/m4/ruby_universal_arch.m4])
+m4_include([tool/m4/ruby_werror_flag.m4])
 
 AC_ARG_VAR([cflags], [additional CFLAGS (ignored when CFLAGS is given)])
 AC_ARG_VAR([cppflags], [additional CPPFLAGS (ignored when CPPFLAGS is given)])
@@ -1084,7 +1117,7 @@ main()
 		ac_cv_func_memcmp_working=yes
 		ac_cv_lib_dl_dlopen=no
 		rb_cv_binary_elf=no
-		rb_cv_negative_time_t=no
+		rb_cv_negative_time_t=yes
 		ac_cv_func_fcntl=yes
 		ac_cv_func_flock=yes
 		ac_cv_func_gmtime_r=yes
@@ -1098,10 +1131,9 @@ main()
 		AS_IF([test "$target_cpu" = x64], [
 		    ac_cv_func___builtin_setjmp=yes
 		    ac_cv_func_round=no
-		    rb_cv_coroutine=yes
+		    coroutine_type=yes
 		])
 		ac_cv_func_tgamma=no
-		rb_cv_negative_time_t=yes
 		AC_CHECK_TYPE([NET_LUID], [], [],
 			      [@%:@include <winsock2.h>
 			      @%:@include <iphlpapi.h>])
@@ -1144,8 +1176,8 @@ main()
 		])
 		],
 [emscripten*], [LIBS="-lm -lc $LIBS"
-		RUBY_APPEND_OPTIONS(LDFLAGS, "-s ALLOW_MEMORY_GROWTH=1")
-		RUBY_APPEND_OPTIONS(LDFLAGS, "-s ASYNCIFY")
+		RUBY_APPEND_OPTIONS(LDFLAGS, "-sALLOW_MEMORY_GROWTH=1")
+		RUBY_APPEND_OPTIONS(LDFLAGS, "-sASYNCIFY")
 		],
 [	LIBS="-lm $LIBS"])
 : ${ORIG_LIBS=$LIBS}
@@ -2418,78 +2450,78 @@ AS_IF([test "${universal_binary-no}" = yes ], [
 
 AC_ARG_WITH(coroutine,
     AS_HELP_STRING([--with-coroutine=IMPLEMENTATION], [specify the coroutine implementation to use]),
-    [rb_cv_coroutine=$withval])
-AS_CASE([$rb_cv_coroutine], [yes|''], [
+    [coroutine_type=$withval], [coroutine_type=])
+AS_CASE([$coroutine_type], [yes|''], [
     AC_MSG_CHECKING(native coroutine implementation for ${target_cpu}-${target_os})
-    rb_cv_coroutine=
+    coroutine_type=
     AS_CASE(["$target_cpu-$target_os"],
         [universal-darwin*], [
-            rb_cv_coroutine=universal
+            coroutine_type=universal
         ],
         [x*64-darwin*], [
-            rb_cv_coroutine=amd64
+            coroutine_type=amd64
         ],
         [arm64-darwin*], [
-            rb_cv_coroutine=arm64
+            coroutine_type=arm64
         ],
         [x*64-linux*], [
             AS_CASE(["$ac_cv_sizeof_voidp"],
-                [8], [ rb_cv_coroutine=amd64 ],
-                [4], [ rb_cv_coroutine=x86 ],
+                [8], [ coroutine_type=amd64 ],
+                [4], [ coroutine_type=x86 ],
                 dnl unknown pointer size, bail out as no Context.h soon.
             )
         ],
         [*86-linux*], [
-            rb_cv_coroutine=x86
+            coroutine_type=x86
         ],
         [x64-mingw32], [
-            rb_cv_coroutine=win64
+            coroutine_type=win64
         ],
         [*86-mingw32], [
-            rb_cv_coroutine=win32
+            coroutine_type=win32
         ],
         [arm*-linux*], [
-            rb_cv_coroutine=arm32
+            coroutine_type=arm32
         ],
         [aarch64-linux*], [
-            rb_cv_coroutine=arm64
+            coroutine_type=arm64
         ],
         [powerpc64le-linux*], [
-            rb_cv_coroutine=ppc64le
+            coroutine_type=ppc64le
         ],
         [x86_64-openbsd*], [
-            rb_cv_coroutine=amd64
+            coroutine_type=amd64
         ],
         [i386-openbsd*], [
-            rb_cv_coroutine=x86
+            coroutine_type=x86
         ],
         [*-openbsd*], [
-            rb_cv_coroutine=copy
+            coroutine_type=copy
         ],
         [*-haiku*], [
-            rb_cv_coroutine=copy
+            coroutine_type=copy
         ],
         [*-emscripten*], [
-            rb_cv_coroutine=emscripten
+            coroutine_type=emscripten
         ],
         [
             AC_CHECK_FUNCS([getcontext swapcontext makecontext],
-                [rb_cv_coroutine=ucontext],
-                [rb_cv_coroutine=copy; break]
+                [coroutine_type=ucontext],
+                [coroutine_type=copy; break]
             )
         ]
     )
-    AC_MSG_RESULT(${rb_cv_coroutine})
+    AC_MSG_RESULT(${coroutine_type})
 ])
-COROUTINE_H=coroutine/$rb_cv_coroutine/Context.h
+COROUTINE_H=coroutine/$coroutine_type/Context.h
 AS_IF([test ! -f "$srcdir/$COROUTINE_H"],
-      [AC_MSG_ERROR('$rb_cv_coroutine' is not supported as coroutine)])
-AS_CASE([$rb_cv_coroutine],
+      [AC_MSG_ERROR('$coroutine_type' is not supported as coroutine)])
+AS_CASE([$coroutine_type],
     [copy|ucontext], [
-        COROUTINE_SRC=coroutine/$rb_cv_coroutine/Context.c
+        COROUTINE_SRC=coroutine/$coroutine_type/Context.c
     ],
     [
-        COROUTINE_SRC=coroutine/$rb_cv_coroutine/Context.'$(ASMEXT)'
+        COROUTINE_SRC=coroutine/$coroutine_type/Context.'$(ASMEXT)'
     ]
 )
 AC_DEFINE_UNQUOTED(COROUTINE_H, ["$COROUTINE_H"])
@@ -2534,7 +2566,8 @@ AS_IF([test x"$enable_pthread" = xyes], [
 	pthread_get_stackaddr_np pthread_get_stacksize_np \
 	thr_stksegment pthread_stackseg_np pthread_getthrds_np \
 	pthread_condattr_setclock \
-	pthread_sigmask pthread_setname_np pthread_set_name_np)
+	pthread_setname_np pthread_set_name_np)
+    AS_CASE(["$target_os"],[emscripten*],[ac_cv_func_pthread_sigmask=no],[AC_CHECK_FUNCS(pthread_sigmask)])
     AS_CASE(["$target_os"],[aix*],[ac_cv_func_pthread_getattr_np=no],[AC_CHECK_FUNCS(pthread_getattr_np)])
     set_current_thread_name=
     AS_IF([test "$ac_cv_func_pthread_setname_np" = yes], [
@@ -3601,14 +3634,15 @@ AS_CASE(["$target_os"],
 	RUBY_APPEND_OPTION(CFLAGS, -pipe)
 	AC_COMPILE_IFELSE([
 	    AC_LANG_BOOL_COMPILE_TRY([@%:@include <AvailabilityMacros.h>],
-		[MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7])],
+		[MAC_OS_X_VERSION_MIN_REQUIRED >= MAC_OS_X_VERSION_10_7 &&
+		 MAC_OS_X_VERSION_MIN_REQUIRED < MAC_OS_X_VERSION_10_10])],
 	    [dnl
 		RUBY_APPEND_OPTION(XLDFLAGS, [-framework Security])
 		RUBY_APPEND_OPTION(LIBRUBYARG_STATIC, [-framework Security])
 	    ]dnl
 	)
-	RUBY_APPEND_OPTION(XLDFLAGS, [-framework Foundation])
-	RUBY_APPEND_OPTION(LIBRUBYARG_STATIC, [-framework Foundation])
+	RUBY_APPEND_OPTION(XLDFLAGS, [-framework CoreFoundation])
+	RUBY_APPEND_OPTION(LIBRUBYARG_STATIC, [-framework CoreFoundation])
 	],
     [osf*], [
 	AS_IF([test "$GCC" != "yes" ], [
@@ -4213,7 +4247,7 @@ config_summary "vendor path"         "$vendordir"
 config_summary "target OS"           "$target_os"
 config_summary "compiler"            "$CC"
 config_summary "with pthread"        "$enable_pthread"
-config_summary "with coroutine"      "$rb_cv_coroutine"
+config_summary "with coroutine"      "$coroutine_type"
 config_summary "enable shared libs"  "$ENABLE_SHARED"
 config_summary "dynamic library ext" "$DLEXT"
 config_summary "CFLAGS"              "$cflags"

@@ -522,7 +522,7 @@ def dump_bits(target, result, page, object_address, end = "\n"):
     bitmap_offset = num_in_page & (bits_bitlength - 1)
     bitmap_bit = 1 << bitmap_offset
 
-    print("bits [%s%s%s%s%s]" % (
+    print("bits: [%s%s%s%s%s]" % (
         check_bits(page, "uncollectible_bits", bitmap_index, bitmap_bit, "L"),
         check_bits(page, "mark_bits", bitmap_index, bitmap_bit, "M"),
         check_bits(page, "pinned_bits", bitmap_index, bitmap_bit, "P"),
@@ -585,17 +585,11 @@ def dump_page(debugger, command, result, internal_dict):
         flType = flags & RUBY_T_MASK
 
         flidx = '   '
-
         if flType == RUBY_T_NONE:
             try:
                 flidx = "%3d" % freelist.index(obj_addr)
             except ValueError:
                 flidx = '   '
-
-
-        freelist_p = ' '
-        if obj_addr == freelist:
-            freelist_p = '*'
 
         print("%s [%3d]: {%s} Addr: %0#x (flags: %0#x)"
                 % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags),
@@ -604,7 +598,6 @@ def dump_page(debugger, command, result, internal_dict):
 def rb_type(flags, ruby_types):
     flType = flags & RUBY_T_MASK
     return "%-10s" % (ruby_types.get(flType, ("%0#x" % flType)))
-
 
 def ruby_types(debugger):
     target = debugger.GetSelectedTarget()

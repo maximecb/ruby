@@ -71,6 +71,10 @@
 
 #include <sys/types.h>
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
 #include "constant.h"
 #include "debug_counter.h"
 #include "eval_intern.h"
@@ -6191,6 +6195,7 @@ mark_const_tbl(rb_objspace_t *objspace, struct rb_id_table *tbl)
 static void mark_stack_locations(rb_objspace_t *objspace, const rb_execution_context_t *ec,
 				 const VALUE *stack_start, const VALUE *stack_end);
 
+#ifndef __EMSCRIPTEN__
 static void
 mark_current_machine_context(rb_objspace_t *objspace, rb_execution_context_t *ec)
 {
@@ -6215,6 +6220,27 @@ mark_current_machine_context(rb_objspace_t *objspace, rb_execution_context_t *ec
 
     mark_stack_locations(objspace, ec, stack_start, stack_end);
 }
+#else
+
+static VALUE *rb_emscripten_stack_range_tmp[2];
+
+static void
+rb_emscripten_mark_locations(void *begin, void *end)
+{
+    rb_emscripten_stack_range_tmp[0] = begin;
+    rb_emscripten_stack_range_tmp[1] = end;
+}
+
+static void
+mark_current_machine_context(rb_objspace_t *objspace, rb_execution_context_t *ec)
+{
+    emscripten_scan_stack(rb_emscripten_mark_locations);
+    mark_stack_locations(objspace, ec, rb_emscripten_stack_range_tmp[0], rb_emscripten_stack_range_tmp[1]);
+
+    emscripten_scan_registers(rb_emscripten_mark_locations);
+    mark_stack_locations(objspace, ec, rb_emscripten_stack_range_tmp[0], rb_emscripten_stack_range_tmp[1]);
+}
+#endif
 
 void
 rb_gc_mark_machine_stack(const rb_execution_context_t *ec)
@@ -10376,7 +10402,7 @@ gc_get_auto_compact(rb_execution_context_t *ec, VALUE _)
 static int
 get_envparam_size(const char *name, size_t *default_value, size_t lower_bound)
 {
-    char *ptr = getenv(name);
+    const char *ptr = getenv(name);
     ssize_t val;
 
     if (ptr != NULL && *ptr) {
@@ -10434,7 +10460,7 @@ get_envparam_size(const char *name, size_t *default_value, size_t lower_bound)
 static int
 get_envparam_double(const char *name, double *default_value, double lower_bound, double upper_bound, int accept_zero)
 {
-    char *ptr = getenv(name);
+    const char *ptr = getenv(name);
     double val;
 
     if (ptr != NULL && *ptr) {
