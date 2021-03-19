@@ -1486,6 +1486,7 @@ static inline void
 RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
     MARK_IN_BITMAP(&page->uncollectible_bits[0], obj);
+    objspace->rgengc.old_objects++;
 
     if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
         int plen = RPAYLOAD(obj)->len;
@@ -1494,8 +1495,8 @@ RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *pag
             VALUE pbody = obj + i * sizeof(RVALUE);
             MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
         }
+        objspace->rgengc.old_objects += plen - 1;
     }
-    objspace->rgengc.old_objects++;
     rb_transient_heap_promote(obj);
 
 #if RGENGC_PROFILE >= 2
@@ -1526,7 +1527,7 @@ RVALUE_AGE_INC(rb_objspace_t *objspace, VALUE obj)
     VALUE flags = RBASIC(obj)->flags;
     int age = RVALUE_FLAGS_AGE(flags);
 
-    if (RGENGC_CHECK_MODE && age == RVALUE_OLD_AGE) {
+    if (RGENGC_CHECK_MODE && age >= RVALUE_OLD_AGE) {
 	rb_bug("RVALUE_AGE_INC: can not increment age of OLD object %s.", obj_info(obj));
     }
 
@@ -1585,6 +1586,9 @@ RVALUE_DEMOTE(rb_objspace_t *objspace, VALUE obj)
 
     if (RVALUE_MARKED(obj)) {
 	objspace->rgengc.old_objects--;
+        if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
+            objspace->rgengc.old_objects -= RPAYLOAD(obj)->len - 1;
+        }
     }
 
     check_rvalue_consistency(obj);
@@ -6417,7 +6421,6 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
             for (int i = 1; i < plen; i++) {
                 VALUE pbody = obj + i * sizeof(RVALUE);
                 MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
-                objspace->rgengc.old_objects++;
             }
         }
     }
