@@ -1832,7 +1832,6 @@ heap_page_free(rb_objspace_t *objspace, struct heap_page *page)
     heap_allocated_pages--;
     objspace->profile.total_freed_pages++;
     rb_aligned_free(GET_PAGE_BODY(page->start), HEAP_PAGE_SIZE);
-    gc_report(3, objspace, "heap_page_free: freeing page %p\n", (void *)GET_PAGE_BODY(page->start));
     free(page);
 }
 
@@ -1942,7 +1941,6 @@ heap_page_allocate(rb_objspace_t *objspace)
     page->total_slots = limit;
     page_body->header.page = page;
 
-    gc_report(3, objspace, "assign_heap_page: page %p created\n", (void *)page_body); 
     for (p = start; p != end; p++) {
 	gc_report(3, objspace, "assign_heap_page: %p is added to freelist\n", (void *)p);
 	heap_page_add_freeobj(objspace, page, (VALUE)p);
@@ -3601,7 +3599,7 @@ internal_object_p(VALUE obj)
 	  case T_IMEMO:
 	  case T_ICLASS:
 	  case T_ZOMBIE:
-	  case T_PAYLOAD:
+          case T_PAYLOAD:
 	    break;
 	  case T_CLASS:
 	    if (!p->as.basic.klass) break;
@@ -4687,7 +4685,7 @@ count_objects(int argc, VALUE *argv, VALUE os)
         int stride = 1;
 
 	p = page->start; pend = p + page->total_slots;
-	for (;p < pend; p += stride) {
+        for (;p < pend; p += stride) {
             stride = 1;
             VALUE vp = (VALUE)p;
 
@@ -5455,7 +5453,6 @@ gc_sweep_step(rb_objspace_t *objspace, rb_heap_t *heap)
 	    unlink_limit--;
 	    /* there are no living objects -> move this page to tomb heap */
 	    heap_unlink_page(objspace, heap, sweep_page);
-            gc_report(3, objspace, "gc_sweep_step: Adding page %p to tomb heap\n", (void *)GET_PAGE_BODY(sweep_page->start));
 	    heap_add_page(objspace, heap_tomb, sweep_page);
 	}
 	else if (free_slots > 0) {
@@ -6667,9 +6664,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         if (RCLASS_SUPER(obj)) {
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
-	if (!RCLASS_EXT(obj)) {
-            //fprintf(stderr, "gc_mark_children: T_CLASS (%p) Has no payload, ptr is %p\n",
-            //        (void *)obj, (void *)RCLASS(obj)->ptr);
+        if (!RCLASS_EXT(obj)) {
             break;
         }
 
@@ -6687,9 +6682,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         if (RCLASS_SUPER(obj)) {
             gc_mark(objspace, RCLASS_SUPER(obj));
         }
-	if (!RCLASS_EXT(obj)) {
-            //fprintf(stderr, "gc_mark_children: T_ICLASS (%p) Has no payload, ptr is %p\n",
-            //        (void *)obj, (void *)RCLASS(obj)->ptr);
+        if (!RCLASS_EXT(obj)) {
             break;
         }
 	mark_m_tbl(objspace, RCLASS_CALLABLE_M_TBL(obj));
@@ -7291,9 +7284,6 @@ check_children_i(const VALUE child, void *ptr)
 static int
 verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, void *ptr)
 {
-    //first time through
-    //page start is the start of hte page
-    //page end is the address of the slot after a payload head
     struct verify_internal_consistency_struct *data = (struct verify_internal_consistency_struct *)ptr;
     VALUE obj;
     rb_objspace_t *objspace = data->objspace;
@@ -7332,9 +7322,7 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, v
 		}
 	    }
 
-            /* if obj is a payload header we need to mark the other slots
-             * compromising the payload and skipt over the rest of the payload
-             * body */
+            /* make sure we have counted the payload body slots */
             if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
                 if (RVALUE_OLD_P(obj)) {
                    data->old_object_count += RPAYLOAD(obj)->len - 1;
