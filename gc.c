@@ -2317,14 +2317,12 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
     }
     else {
         struct heap_page *search_page;
-        struct heap_page *searched_pages = NULL;
 
         heap_allocatable_pages_set(objspace, heap_allocatable_pages + 1);
 
         while (!p) {
             // search_page is the page we're going to search for contiguous slots
             search_page = heap_next_freepage(objspace, heap_eden);
-            search_page->free_next = searched_pages;
 
             p = rvargc_find_contiguous_slots(slots, search_page->freelist);
 
@@ -2343,28 +2341,11 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
                 else {
                     // make this pointer point at the Ractor's freelist
                     p->as.free.next = freelist;
-                    searched_pages = search_page;
-                }
-
-                struct heap_page * next_freepage;
-
-                while (searched_pages) {
-                    next_freepage = searched_pages->free_next;
-
-                    asan_unpoison_memory_region(&searched_pages->freelist, sizeof(RVALUE*), false);
-                    if (searched_pages->freelist) {
-                        heap_add_freepage(heap_eden, searched_pages);
-                    }
-                    asan_poison_memory_region(&searched_pages->freelist, sizeof(RVALUE*));
-
-                    searched_pages = next_freepage;
                 }
 
                 asan_unpoison_memory_region(p, sizeof(RVALUE) * slots, false);
                 return p;
             }
-
-            searched_pages = search_page;
         }
     }
     return NULL;
