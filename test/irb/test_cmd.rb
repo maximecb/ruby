@@ -374,5 +374,39 @@ module TestIRB
           /=> "bug17564"\n/,
         ], out)
     end
+
+    def test_ls
+      IRB.init_config(nil)
+      workspace = IRB::WorkSpace.new(self)
+      irb = IRB::Irb.new(workspace)
+      IRB.conf[:MAIN_CONTEXT] = irb.context
+      input = TestInputMethod.new([
+        "ls Object.new.tap { |o| o.instance_variable_set(:@a, 1) }\n",
+      ])
+      irb = IRB::Irb.new(IRB::WorkSpace.new(Object.new), input)
+      irb.context.return_format = "=> %s\n"
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_match(/^instance variables:\s+@a\n/m, out)
+    end
+
+    def test_whereami
+      IRB.init_config(nil)
+      workspace = IRB::WorkSpace.new(self)
+      irb = IRB::Irb.new(workspace)
+      IRB.conf[:MAIN_CONTEXT] = irb.context
+      input = TestInputMethod.new([
+        "whereami\n",
+      ])
+      irb = IRB::Irb.new(IRB::WorkSpace.new(Object.new), input)
+      irb.context.return_format = "=> %s\n"
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_match(/^From: .+ @ line \d+ :\n/, out)
+    end
   end
 end
