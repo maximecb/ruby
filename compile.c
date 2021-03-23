@@ -4252,8 +4252,17 @@ compile_array(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *node, int pop
 
             if ((first_chunk && stack_len == 0 && !node_tmp) || count >= min_tmp_ary_len) {
                 /* The literal contains only optimizable elements, or the subarray is long enough */
-                VALUE ary = rb_ary_tmp_new(count);
+#if USE_RVARGC
+                VALUE ary;
 
+                if (count < 250) {
+                    ary = rb_ary_new_rvargc(count);
+                } else {
+                    ary = rb_ary_tmp_new(count);
+                }
+#else
+                VALUE ary = rb_ary_tmp_new(count);
+#endif
                 /* Create a hidden array */
                 for (; count; count--, node = node->nd_next)
                     rb_ary_push(ary, static_literal_value(node, iseq));

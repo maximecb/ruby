@@ -84,6 +84,8 @@ should_not_be_shared_and_embedded(VALUE ary)
 
 #define ARY_OWNS_HEAP_P(a) (assert(should_be_T_ARRAY((VALUE)(a))), \
                             !FL_TEST_RAW((a), ELTS_SHARED|RARRAY_EMBED_FLAG))
+#define RVARGC_ARY_OWNS_HEAP_P(a) (assert(should_be_T_ARRAY((VALUE)(a))), \
+                            !FL_TEST_RAW((a), ELTS_SHARED|RARRAY_RVARGC_EMBED_FLAG))
 
 #define FL_SET_EMBED(a) do { \
     assert(!ARY_SHARED_P(a)); \
@@ -98,6 +100,12 @@ should_not_be_shared_and_embedded(VALUE ary)
     FL_SET((ary), ELTS_SHARED); \
 } while (0)
 #define FL_UNSET_SHARED(ary) FL_UNSET((ary), ELTS_SHARED)
+
+#define FL_SET_RVARGC_EMBED(ary) do { \
+    assert(!ARY_EMBED_P(ary)); \
+    FL_SET((ary), RARRAY_RVARGC_EMBED_FLAG); \
+} while (0)
+#define FL_UNSET_GC_EMBED(ary) FL_UNSET((ary), RARRAY_RVARGC_EMBED_FLAG)
 
 #define ARY_SET_PTR(ary, p) do { \
     assert(!ARY_EMBED_P(ary)); \
@@ -739,6 +747,36 @@ ary_new(VALUE klass, long capa)
     return ary;
 }
 
+static VALUE
+ary_new_rvargc(VALUE klass, long capa)
+{
+    void * ptr;
+    unsigned long payload_len = capa * sizeof(VALUE);
+
+    if (capa < 0) {
+	rb_raise(rb_eArgError, "negative array size (or size too big)");
+    }
+    if (capa > ARY_MAX_SIZE) {
+	rb_raise(rb_eArgError, "array size too big");
+    }
+
+    RUBY_DTRACE_CREATE_HOOK(ARRAY, capa);
+
+    RVARGC_NEWOBJ_OF(ary, struct RArray, klass, T_ARRAY | RARRAY_EMBED_FLAG | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0), payload_len);
+
+    if (capa > RARRAY_EMBED_LEN_MAX) {
+        ptr = rb_rvargc_payload_data_ptr((VALUE)ary + rb_slot_size());
+        RB_OBJ_WRITTEN(ary, Qundef, (VALUE)ary + rb_slot_size());
+        FL_UNSET_EMBED((VALUE)ary);
+        FL_SET_RVARGC_EMBED((VALUE)ary);
+        ARY_SET_PTR((VALUE)ary, ptr);
+        ARY_SET_CAPA((VALUE)ary, capa);
+        ARY_SET_HEAP_LEN((VALUE)ary, 0);
+    }
+
+    return (VALUE)ary;
+}
+
 VALUE
 rb_ary_new_capa(long capa)
 {
@@ -851,6 +889,14 @@ rb_ary_tmp_new(long capa)
 }
 
 VALUE
+rb_ary_new_rvargc(long capa)
+{
+    VALUE ary = ary_new_rvargc(0, capa);
+    rb_ary_transient_heap_evacuate(ary, TRUE);
+    return ary;
+}
+
+VALUE
 rb_ary_tmp_new_fill(long capa)
 {
     VALUE ary = ary_new(0, capa);
@@ -863,6 +909,9 @@ rb_ary_tmp_new_fill(long capa)
 void
 rb_ary_free(VALUE ary)
 {
+    if (RVARGC_ARY_OWNS_HEAP_P(ary)) {
+        return;
+    }
     if (ARY_OWNS_HEAP_P(ary)) {
         if (USE_DEBUG_COUNTER &&
             !ARY_SHARED_ROOT_P(ary) &&
