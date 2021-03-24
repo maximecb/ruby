@@ -153,8 +153,8 @@ int ctx_diff(const ctx_t* src, const ctx_t* dst)
 }
 
 // Get all blocks for a particular place in an iseq.
-static rb_yjit_block_array_t
-get_version_array(const rb_iseq_t *iseq, unsigned idx)
+rb_yjit_block_array_t
+yjit_get_version_array(const rb_iseq_t *iseq, unsigned idx)
 {
     struct rb_iseq_constant_body *body = iseq->body;
 
@@ -169,7 +169,7 @@ get_version_array(const rb_iseq_t *iseq, unsigned idx)
 // Count the number of block versions matching a given blockid
 static size_t get_num_versions(blockid_t blockid)
 {
-    return rb_darray_size(get_version_array(blockid.iseq, blockid.idx));
+    return rb_darray_size(yjit_get_version_array(blockid.iseq, blockid.idx));
 }
 
 // Keep track of a block version. Block should be fully constructed.
@@ -228,7 +228,7 @@ add_block_version(blockid_t blockid, block_t* block)
 // Retrieve a basic block version for an (iseq, idx) tuple
 block_t* find_block_version(blockid_t blockid, const ctx_t* ctx)
 {
-    rb_yjit_block_array_t versions = get_version_array(blockid.iseq, blockid.idx);
+    rb_yjit_block_array_t versions = yjit_get_version_array(blockid.iseq, blockid.idx);
 
     // Best match found
     block_t* best_version = NULL;
@@ -377,7 +377,7 @@ branch_stub_hit(uint32_t branch_idx, uint32_t target_idx, rb_execution_context_t
 
     // Update the PC in the current CFP, because it
     // may be out of sync in JITted code
-    ec->cfp->pc = iseq_pc_at_idx(target.iseq, target.idx);
+    ec->cfp->pc = yjit_iseq_pc_at_idx(target.iseq, target.idx);
 
     // If either of the target blocks will be placed next
     if (cb->write_pos == branch->end_pos)
@@ -703,7 +703,7 @@ invalidate_block_version(block_t* block)
     // fprintf(stderr, "block=%p\n", block);
 
     // Remove this block from the version array
-    rb_yjit_block_array_t versions = get_version_array(iseq, block->blockid.idx);
+    rb_yjit_block_array_t versions = yjit_get_version_array(iseq, block->blockid.idx);
     RB_UNUSED_VAR(bool removed);
     removed = block_array_remove(versions, block);
     RUBY_ASSERT(removed);
@@ -755,8 +755,8 @@ invalidate_block_version(block_t* block)
     uint32_t idx = block->blockid.idx;
     // FIXME: the following says "if", but it's unconditional.
     // If the block is an entry point, it needs to be unmapped from its iseq
-    VALUE* entry_pc = iseq_pc_at_idx(iseq, idx);
-    int entry_opcode = opcode_at_pc(iseq, entry_pc);
+    VALUE* entry_pc = yjit_iseq_pc_at_idx(iseq, idx);
+    int entry_opcode = yjit_opcode_at_pc(iseq, entry_pc);
 
     // TODO: unmap_addr2insn in yjit_iface.c? Maybe we can write a function to encompass this logic?
     // Should check how it's used in exit and side-exit
