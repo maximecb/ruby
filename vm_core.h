@@ -231,6 +231,7 @@ struct iseq_inline_constant_cache_entry {
 
 struct iseq_inline_constant_cache {
     struct iseq_inline_constant_cache_entry *entry;
+    unsigned get_insn_idx; // The index to the opt_getinlinecache instruction in the same iseq
 };
 
 struct iseq_inline_iv_cache_entry {
