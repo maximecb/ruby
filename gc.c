@@ -2275,42 +2275,30 @@ rvargc_slot_count(size_t size)
 }
 
 static RVALUE *
-rvargc_find_contiguous_slots(int slots, RVALUE *freelist)
+rvargc_find_contiguous_slots(size_t slots, RVALUE *freelist)
 {
     RVALUE *cursor = freelist;
     RVALUE *previous_region = NULL;
 
     while(cursor) {
-        int i;
-        RVALUE *search = cursor;
-        for (i = 0; i < (slots - 1); i++) {
+        size_t region_slots = cursor->as.free.len;
 
-            // Peek ahead to see if the region is contiguous
-            if (search->as.free.next == (search - 1)) {
-                search = search->as.free.next;
-            } else {
-                // Next slot is not contiguous
-                if (search->as.free.next) {
-                    cursor = search->as.free.next;
-                    previous_region = search;
-
-                    break;
-                } else {
-                    // Hit the end of the free list
-                    return NULL;
-                }
-            }
+        /* If this region is not large enough, move to the next slot. */
+        if (region_slots < slots) {
+            previous_region = cursor;
+            continue;
         }
 
-        if (i == slots - 1) {
-            if (previous_region) {
-                previous_region->as.free.next = search->as.free.next;
-                search->as.free.next = freelist;
-            }
-            return search;
+        /* If the whole region will be filled, then remove this region from the list. */
+        if (region_slots == slots && previous_region) {
+            previous_region->as.free.next = cursor;
+            cursor->as.free.next = freelist;
         }
+
+        return cursor;
     }
-    rb_bug("rvargc_find_contiguous_slots: unreachable");
+
+    return NULL;
 }
 
 static inline bool heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
@@ -2413,25 +2401,22 @@ rb_rvargc_payload_data_ptr(VALUE phead)
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
+    size_t slots = size == sizeof(RVALUE) ? 1 : rvargc_slot_count(size);
     RVALUE *p = rvargc_find_region(size, cr, cr->newobj_cache.freelist);
 
     if (p) {
         size_t region_len = p->as.free.len;
-        VALUE obj;
 
-        if (LIKELY(region_len > 1)) {
-            obj = (VALUE)(p - region_len + 1);
-            asan_unpoison_object(obj, true);
-            p->as.free.len = region_len - 1;
+        if (region_len > slots) {
+            p->as.free.len = region_len - slots;
 
 #if RGENGC_PROFILE
             objspace->profile.total_bump_pointer_allocated_count++;
 #endif
         }
         else {
-            GC_ASSERT(region_len == 1);
+            GC_ASSERT(region_len == slots);
 
-            obj = (VALUE)p;
             RVALUE *next = p->as.free.next;
             cr->newobj_cache.freelist = next;
 
@@ -2440,6 +2425,7 @@ ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 #endif
         }
 
+        VALUE obj = (VALUE)(p - region_len + 1);
         asan_unpoison_object(obj, true);
         return obj;
     }
