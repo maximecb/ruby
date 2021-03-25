@@ -955,7 +955,7 @@ rb_yjit_call_threshold(void)
 void
 rb_yjit_init(struct rb_yjit_options *options)
 {
-    if (!yjit_scrape_successful || !PLATFORM_SUPPORTED_P) {
+    if (!yjit_scrape_successful || !PLATFORM_SUPPORTED_P || !USE_FLONUM) {
         return;
     }
 

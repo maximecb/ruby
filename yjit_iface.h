@@ -18,7 +18,17 @@ static char yjit_counter_names[] = #__VA_ARGS__;
 YJIT_DECLARE_COUNTERS(
     exec_instruction,
 
+    oswb_guard_integer,
+    oswb_guard_float,
+    oswb_guard_symbol,
+    oswb_guard_nil,
+    oswb_guard_true,
+    oswb_guard_false,
     oswb_callsite_not_simple,
+    oswb_cant_guard_known_klass,
+    oswb_nonexistent_method,
+    oswb_bad_private_call,
+    oswb_getter_unknown_allocator,
     oswb_kw_splat,
     oswb_ic_empty,
     oswb_invalid_cme,
@@ -43,6 +53,8 @@ YJIT_DECLARE_COUNTERS(
     oswb_se_cf_overflow,
     oswb_se_cc_klass_differ,
     oswb_se_protected_check_failed,
+    oswb_se_megamorphic,
+
 
     leave_se_finish_frame,
     leave_se_interrupt,
@@ -52,6 +64,7 @@ YJIT_DECLARE_COUNTERS(
     getivar_undef,
     getivar_name_not_mapped,
     getivar_not_object,
+    getivar_unknown_allocator,
 
     oaref_filled_cc,
     oaref_argc_not_one,

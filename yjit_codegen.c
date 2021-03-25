@@ -739,6 +739,12 @@ gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, const bool 
     //       Eventually, we can encode whether an object is T_OBJECT or not
     //       inside object shapes.
     if (rb_get_alloc_func(comptime_val_klass) != rb_class_allocate_instance) {
+        if (ivar_call) {
+            GEN_COUNTER_INC(cb, oswb_getter_unknown_allocator);
+        }
+        else {
+            GEN_COUNTER_INC(cb, getivar_unknown_allocator);
+        }
         return YJIT_CANT_COMPILE;
     }
     RUBY_ASSERT(BUILTIN_TYPE(comptime_val) == T_OBJECT); // because we checked the allocator
@@ -1363,7 +1369,7 @@ gen_jump(jitstate_t* jit, ctx_t* ctx)
 static bool
 jit_guard_known_klass(jitstate_t *jit, const ctx_t *recompile_context, VALUE known_klass, x86opnd_t recv_opnd, const int max_chain_depth, uint8_t *side_exit)
 {
-    // Can't guard for for these classes because some of they are sometimes immediate (special const).
+    // Can't guard for for these classes because they have instances that can be immediates (special const).
     // Can remove this by adding appropriate dynamic checks.
     if (known_klass == rb_cInteger ||
         known_klass == rb_cSymbol ||
@@ -1792,14 +1798,43 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
     // Points to the receiver operand on the stack
     x86opnd_t recv = ctx_stack_opnd(ctx, argc);
     mov(cb, REG0, recv);
-    if (!jit_guard_known_klass(jit, ctx, comptime_recv_klass, REG0, OSWB_MAX_DEPTH, side_exit)) {
+
+    if (comptime_recv_klass == rb_cInteger) {
+        GEN_COUNTER_INC(cb, oswb_guard_integer);
+        return YJIT_CANT_COMPILE;
+    }
+    else if (comptime_recv_klass == rb_cSymbol) {
+        GEN_COUNTER_INC(cb, oswb_guard_symbol);
+        return YJIT_CANT_COMPILE;
+    }
+    else if (comptime_recv_klass == rb_cFloat) {
+        GEN_COUNTER_INC(cb, oswb_guard_float);
+        return YJIT_CANT_COMPILE;
+    }
+    else if (comptime_recv_klass == rb_cNilClass) {
+        GEN_COUNTER_INC(cb, oswb_guard_nil);
+        return YJIT_CANT_COMPILE;
+    }
+    else if (comptime_recv_klass == rb_cTrueClass) {
+        GEN_COUNTER_INC(cb, oswb_guard_true);
+        return YJIT_CANT_COMPILE;
+    }
+    else if (comptime_recv_klass == rb_cFalseClass) {
+        GEN_COUNTER_INC(cb, oswb_guard_false);
+        return YJIT_CANT_COMPILE;
+    }
+
+    // Guard that receiver has a known class
+    uint8_t *last_resort = COUNTED_EXIT(side_exit, oswb_se_megamorphic);
+    if (!jit_guard_known_klass(jit, ctx, comptime_recv_klass, REG0, OSWB_MAX_DEPTH, last_resort)) {
+        GEN_COUNTER_INC(cb, oswb_cant_guard_known_klass);
         return YJIT_CANT_COMPILE;
     }
 
     // Do method lookup
     const rb_callable_method_entry_t *cme = rb_callable_method_entry(comptime_recv_klass, mid);
     if (!cme) {
-        // TODO: counter
+        GEN_COUNTER_INC(cb, oswb_nonexistent_method);
         return YJIT_CANT_COMPILE;
     }
 
@@ -1811,6 +1846,7 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
         if (!(vm_ci_flag(ci) & VM_CALL_FCALL)) {
             // Can only call private methods with FCALL callsites.
             // (at the moment they are callsites without a receiver or an explicit `self` receiver)
+            GEN_COUNTER_INC(cb, oswb_bad_private_call);
             return YJIT_CANT_COMPILE;
         }
         break;
