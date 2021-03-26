@@ -1966,6 +1966,7 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
         return YJIT_CANT_COMPILE;
     // no default case so compiler issues a warning if this is not exhaustive
     }
+    return YJIT_CANT_COMPILE;
 }
 
 static codegen_status_t
