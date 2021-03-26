@@ -2023,24 +2023,32 @@ static VALUE
 specific_eval(int argc, const VALUE *argv, VALUE klass, VALUE self, int kw_splat)
 {
     if (rb_block_given_p()) {
-	rb_check_arity(argc, 0, 0);
+        rb_check_arity(argc, 0, 0);
         return yield_under(klass, self, 1, &self, kw_splat);
     }
     else {
-	VALUE file = Qundef;
-	int line = 1;
-	VALUE code;
+        VALUE file = Qundef;
+        int line = 1;
+        VALUE code;
 
-	rb_check_arity(argc, 1, 3);
-	code = argv[0];
-	SafeStringValue(code);
-	if (argc > 2)
-	    line = NUM2INT(argv[2]);
-	if (argc > 1) {
-	    file = argv[1];
-	    if (!NIL_P(file)) StringValue(file);
-	}
-	return eval_under(klass, self, code, file, line);
+        rb_check_arity(argc, 1, 3);
+        code = argv[0];
+        SafeStringValue(code);
+        if (argc > 2)
+            line = NUM2INT(argv[2]);
+        if (argc > 1) {
+            file = argv[1];
+            if (!NIL_P(file)) StringValue(file);
+        } else {
+            VALUE location = rb_caller_location();
+            if (!NIL_P(location)) {
+                VALUE location_path = rb_funcall(location, rb_intern("path"), 0);
+                int location_line = NUM2INT(rb_funcall(location, rb_intern("lineno"), 0));
+                file = rb_sprintf("(eval %s:%d)", RSTRING_PTR(location_path), location_line);
+            }
+        }
+
+        return eval_under(klass, self, code, file, line);
     }
 }
 

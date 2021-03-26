@@ -1249,6 +1249,14 @@ rb_f_caller_locations(int argc, VALUE *argv, VALUE _)
     return ec_backtrace_to_ary(GET_EC(), argc, argv, 1, 1, 0);
 }
 
+VALUE
+rb_caller_location(void) {
+    VALUE argv[2];
+    argv[0] = argv[1] = INT2FIX(1);
+    VALUE locations = rb_f_caller_locations(2, argv, Qnil);
+    return rb_ary_pop(locations);
+}
+
 /* called from Init_vm() in vm.c */
 void
 Init_vm_backtrace(void)

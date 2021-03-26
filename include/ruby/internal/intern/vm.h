@@ -70,6 +70,7 @@ RUBY_EXTERN VALUE (*const rb_f_notimplement_)(int, const VALUE *, VALUE, VALUE m
 /* vm_backtrace.c */
 void rb_backtrace(void);
 VALUE rb_make_backtrace(void);
+VALUE rb_caller_location(void);
 
 RBIMPL_SYMBOL_EXPORT_END()
 
