@@ -1,7 +1,6 @@
 #ifndef YJIT_CODEGEN_H
 #define YJIT_CODEGEN_H 1
 
-#include "stddef.h"
 #include "yjit_core.h"
 
 // Code blocks we generate code into
@@ -38,7 +37,12 @@ typedef enum codegen_status {
 // Code generation function signature
 typedef codegen_status_t (*codegen_fn)(jitstate_t* jit, ctx_t* ctx);
 
-uint8_t* yjit_entry_prologue();
+uint8_t *yjit_entry_prologue(codeblock_t *cb);
+void yjit_entry_epilogue(codeblock_t *cb);
+
+void yjit_call_iseq_pos(const rb_iseq_t *iseq, uint32_t insn_idx);
+void yjit_save_regs(codeblock_t *cb);
+void yjit_load_regs(codeblock_t *cb);
 
 void yjit_gen_block(ctx_t* ctx, block_t* block, rb_execution_context_t* ec);
 

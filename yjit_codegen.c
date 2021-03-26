@@ -113,26 +113,45 @@ jit_peek_at_self(jitstate_t *jit, ctx_t *ctx)
 static bool jit_guard_known_klass(jitstate_t *jit, const ctx_t *recompile_context, VALUE known_klass, x86opnd_t recv_opnd, const int max_chain_depth, uint8_t *side_exit);
 
 // Save YJIT registers prior to a C call
-static void
-yjit_save_regs(codeblock_t* cb)
+void
+yjit_save_regs(codeblock_t *cb)
 {
-    push(cb, REG_CFP);
-    push(cb, REG_EC);
-    push(cb, REG_SP);
-    push(cb, REG_SP); // Maintain 16-byte RSP alignment
+    sub(cb, RSP, imm_opnd(8)); // Maintain 16-byte RSP alignment
 }
 
 // Restore YJIT registers after a C call
-static void
-yjit_load_regs(codeblock_t* cb)
+void
+yjit_load_regs(codeblock_t *cb)
 {
-    pop(cb, REG_SP); // Maintain 16-byte RSP alignment
-    pop(cb, REG_SP);
-    pop(cb, REG_EC);
-    pop(cb, REG_CFP);
+    add(cb, RSP, imm_opnd(8)); // Maintain 16-byte RSP alignment
 }
 
-// Generate an inline exit to return to the interpreter
+// for yjit_call_iseq_pos()
+static void
+genbranch_rel32call(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+{
+    switch (shape) {
+    case SHAPE_NEXT0:
+    case SHAPE_NEXT1:
+        RUBY_ASSERT(false);
+        break;
+
+    case SHAPE_DEFAULT:
+        call_ptr(cb, REG0, target0);
+        break;
+    }
+}
+
+// Generate a call to a position in an iseq
+void
+yjit_call_iseq_pos(const rb_iseq_t *iseq, uint32_t insn_idx)
+{
+    blockid_t pos = { iseq, insn_idx };
+    gen_branch(&DEFAULT_CTX, pos, &DEFAULT_CTX, BLOCKID_NULL, NULL, genbranch_rel32call);
+}
+
+// Generate an exit to return to the interpreter.
+// Reconstruct interpreter state and return from the pretend function.
 static uint8_t *
 yjit_gen_exit(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 {
@@ -178,7 +197,8 @@ yjit_gen_exit(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 #endif
 
-    cb_write_post_call_bytes(cb);
+    // Pop JIT frames and dispatch to interpreter.
+    yjit_entry_epilogue(cb);
 
     return code_ptr;
 }
@@ -226,8 +246,8 @@ _counted_side_exit(uint8_t *existing_side_exit, int64_t *counter)
 Compile an interpreter entry block to be inserted into an iseq
 Returns `NULL` if compilation fails.
 */
-uint8_t*
-yjit_entry_prologue(void)
+uint8_t *
+yjit_entry_prologue(codeblock_t *cb)
 {
     RUBY_ASSERT(cb != NULL);
 
@@ -243,10 +263,56 @@ yjit_entry_prologue(void)
     // Write the interpreter entry prologue
     cb_write_pre_call_bytes(cb);
 
-    // Load the current SP from the CFP into REG_SP
-    mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
+    // Setup JIT registers for generated code.
+    // The pre call bytes sets it up such that we have can expect the
+    // parameters to rb_yjit_empty_func_with_ec() to be in registers according
+    // to its calling convention (which is SysV x86_64 for now). Since we enter
+    // the body of the pretend function without going through a call
+    // instruction, RSP is aligned to 16 instead of 8 here.
+    //
+    // When generated code that have these registers setup call other pieces
+    // of generated code, they don't need to refill the registers. Call targets
+    // in the generated code that make this assumption cannot be called with
+    // the platform calling convention.
+    //
+    // For reference:
+    // void rb_yjit_empty_func_with_ec(rb_control_frame_t *cfp, rb_execution_context_t *ec)
+
+    // Save callee saved registers onto the stack.
+    // 4 pushes, RSP is aligned to 16.
+    push(cb, RBP);
+    push(cb, RBX);
+    push(cb, R12);
+    push(cb, R13);
+
+    // Save RSP into RBP for quickly unwind all frames construted in the generated code.
+    mov(cb, RBP, RSP);
+    // Use R12 for REG_CFP
+    mov(cb, R12, C_ARG_REGS[0]);
+    // Use R13 for REG_EC
+    mov(cb, R13, C_ARG_REGS[1]);
+    // Use RBX for REG_SP. Load from REG_CFP
+    mov(cb, RBX, member_opnd(REG_CFP, rb_control_frame_t, sp));
 
     return code_ptr;
+}
+
+void
+yjit_entry_epilogue(codeblock_t *cb)
+{
+    // Adhere to the calling convention. Undo setup done in yjit_entry_prologue().
+
+    // Pop all generated code frames
+    mov(cb, RSP, RBP);
+    // Restore callee saved registers
+    pop(cb, R13);
+    pop(cb, R12);
+    pop(cb, RBX);
+    pop(cb, RBP);
+    // With these pops, RSP is restored to what it was before entry
+
+    // Write interpreter dispatch
+    cb_write_post_call_bytes(cb);
 }
 
 
@@ -1717,7 +1783,7 @@ gen_oswb_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, pc), REG0);
 
     // Stub so we can return to JITted code
-    blockid_t return_block = { jit->iseq, jit_next_insn_idx(jit) };
+    blockid_t return_pos = { jit->iseq, jit_next_insn_idx(jit) };
 
     // Pop arguments and receiver in return context, push the return value
     // After the return, the JIT and interpreter SP will match up
@@ -1727,26 +1793,21 @@ gen_oswb_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
     return_ctx.sp_offset = 0;
     return_ctx.chain_depth = 0;
 
-    // Write the JIT return address on the callee frame
-    gen_branch(
-        ctx,
-        return_block,
-        &return_ctx,
-        return_block,
-        &return_ctx,
-        gen_return_branch
-    );
-
     //print_str(cb, "calling Ruby func:");
     //print_str(cb, rb_id2name(vm_ci_mid(ci)));
 
     // Load the updated SP
     mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
 
-    // Directly jump to the entry point of the callee
+    // Call entry point of the callee
+    yjit_save_regs(cb); // XXX hmmm not really saving and loading is it really? just maintaing mis alignment
+    yjit_call_iseq_pos(iseq, 0);
+    yjit_load_regs(cb);
+
+    // Jump to block for after the call
     gen_direct_jump(
-        &DEFAULT_CTX,
-        (blockid_t){ iseq, 0 }
+        &return_ctx,
+        return_pos
     );
 
     return YJIT_END_BLOCK;
@@ -1822,6 +1883,13 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
     else if (comptime_recv_klass == rb_cFalseClass) {
         GEN_COUNTER_INC(cb, oswb_guard_false);
         return YJIT_CANT_COMPILE;
+    }
+
+    if (false && ctx->chain_depth >= OSWB_MAX_DEPTH) {
+        if (rb_iseq_line_no(jit->iseq, jit->insn_idx) == 90) {
+            fprintf(stderr, "line 90: calling %s\n", rb_id2name(mid));
+        }
+        jit_print_loc(jit, "megamorphic site");
     }
 
     // Guard that receiver has a known class
@@ -1923,9 +1991,6 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     // Load the return value
     mov(cb, REG0, ctx_stack_pop(ctx, 1));
 
-    // Load the JIT return address
-    mov(cb, REG1, member_opnd(REG_CFP, rb_control_frame_t, jit_return));
-
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
     add(cb, REG_CFP, imm_opnd(sizeof(rb_control_frame_t)));
@@ -1937,18 +2002,8 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
     mov(cb, mem_opnd(64, REG_SP, -SIZEOF_VALUE), REG0);
 
-    // If the return address is NULL, fall back to the interpreter
-    int FALLBACK_LABEL = cb_new_label(cb, "FALLBACK");
-    test(cb, REG1, REG1);
-    jz_label(cb, FALLBACK_LABEL);
-
-    // Jump to the JIT return address
-    jmp_rm(cb, REG1);
-
-    // Fall back to the interpreter
-    cb_write_label(cb, FALLBACK_LABEL);
-    cb_link_labels(cb);
-    cb_write_post_call_bytes(cb);
+    // Return to caller
+    ret(cb);
 
     return YJIT_END_BLOCK;
 }

@@ -324,23 +324,21 @@ block_t* gen_block_version(blockid_t blockid, const ctx_t* start_ctx, rb_executi
     return first_block;
 }
 
+
 // Generate a block version that is an entry point inserted into an iseq
-uint8_t* gen_entry_point(const rb_iseq_t *iseq, uint32_t insn_idx, rb_execution_context_t *ec)
+uint8_t *
+gen_entry_point(const rb_iseq_t *iseq, uint32_t insn_idx, rb_execution_context_t *ec)
 {
-    // The entry context makes no assumptions about types
-    blockid_t blockid = { iseq, insn_idx };
+    // Write the interpreter entry prologue.
+    // It leaves RSP aligned to 16
+    uint8_t *code_ptr = yjit_entry_prologue(cb);
 
-    // Write the interpreter entry prologue
-    uint8_t* code_ptr = yjit_entry_prologue();
+    // Generate a call to the entry block
+    // Callee's RSP is aligned to 8 because the call pushes the return address
+    yjit_call_iseq_pos(iseq, insn_idx);
 
-    // Try to generate code for the entry block
-    block_t* block = gen_block_version(blockid, &DEFAULT_CTX, ec);
-
-    // If we couldn't generate any code
-    if (block->end_idx == insn_idx)
-    {
-        return NULL;
-    }
+    // Write the interpreter entry epilogue
+    (void)yjit_entry_epilogue(cb);
 
     return code_ptr;
 }
@@ -459,10 +457,7 @@ uint8_t* get_branch_target(
     uint8_t* stub_addr = cb_get_ptr(ocb, ocb->write_pos);
 
     // Save the yjit registers
-    push(ocb, REG_CFP);
-    push(ocb, REG_EC);
-    push(ocb, REG_SP);
-    push(ocb, REG_SP);
+    yjit_save_regs(ocb);
 
     // Call branch_stub_hit(branch_idx, target_idx, ec)
     mov(ocb, C_ARG_REGS[2], REG_EC);
@@ -471,10 +466,7 @@ uint8_t* get_branch_target(
     call_ptr(ocb, REG0, (void *)&branch_stub_hit);
 
     // Restore the yjit registers
-    pop(ocb, REG_SP);
-    pop(ocb, REG_SP);
-    pop(ocb, REG_EC);
-    pop(ocb, REG_CFP);
+    yjit_load_regs(ocb);
 
     // Jump to the address returned by the
     // branch_stub_hit call
