@@ -328,6 +328,9 @@ def lldb_inspect(debugger, target, result, val):
         elif flType == RUBY_T_HASH:
             result.write("T_HASH: %s" % flaginfo)
             append_command_output(debugger, "p *(struct RHash *) %0#x" % val.GetValueAsUnsigned(), result)
+        elif flType == RUBY_T_PAYLOAD:
+            result.write("T_PAYLOAD: %s" % flaginfo)
+            append_command_output(debugger, "p *(struct RPayload *) %0#x" % val.GetValueAsUnsigned(), result)
         elif flType == RUBY_T_BIGNUM:
             tRBignum = target.FindFirstType("struct RBignum").GetPointerType()
             val = val.Cast(tRBignum)
@@ -527,6 +530,30 @@ def dump_bits(target, result, page, object_address, end = "\n"):
         check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
         ), end=end, file=result)
 
+class HeapPageIter:
+    def __init__(self, page, target):
+        self.page = page
+        self.target = target
+        self.start = page.GetChildMemberWithName('start').GetValueAsUnsigned();
+        self.num_slots = page.GetChildMemberWithName('total_slots').unsigned
+        self.counter = 0
+        self.tRBasic = target.FindFirstType("struct RBasic")
+        self.tRValue = target.FindFirstType("struct RVALUE")
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.counter < self.num_slots:
+            obj_addr_i = self.start + (self.counter * self.tRValue.GetByteSize())
+            obj_addr = lldb.SBAddress(obj_addr_i, self.target)
+            slot_info = (self.counter, obj_addr_i, self.target.CreateValueFromAddress("object", obj_addr, self.tRBasic))
+            self.counter += 1
+
+            return slot_info
+        else:
+            raise StopIteration
+
 def dump_page(debugger, command, result, internal_dict):
     if not ('RUBY_Qfalse' in globals()):
         lldb_init(debugger)
@@ -540,21 +567,33 @@ def dump_page(debugger, command, result, internal_dict):
     page = frame.EvaluateExpression(command)
     page = page.Cast(tHeapPageP)
 
-    tRBasic = target.FindFirstType("struct RBasic")
-    tRValue = target.FindFirstType("struct RVALUE")
-
-    obj_address = page.GetChildMemberWithName('start').GetValueAsUnsigned();
-    num_slots = page.GetChildMemberWithName('total_slots').unsigned
-
     ruby_type_map = ruby_types(debugger)
 
-    for j in range(0, num_slots):
-        offset = obj_address + (j * tRValue.GetByteSize())
-        obj_addr = lldb.SBAddress(offset, target)
-        p = target.CreateValueFromAddress("object", obj_addr, tRBasic)
-        dump_bits(target, result, page, offset, end = " ")
-        flags = p.GetChildMemberWithName('flags').GetValueAsUnsigned()
-        print("%s [%3d]: Addr: %0#x (flags: %0#x)" % (rb_type(flags, ruby_type_map), j, offset, flags), file=result)
+    freelist = []
+    fl_start = page.GetChildMemberWithName('freelist').GetValueAsUnsigned()
+    tRVALUE = target.FindFirstType("struct RVALUE")
+
+    while fl_start > 0:
+        freelist.append(fl_start)
+        obj_addr = lldb.SBAddress(fl_start, target)
+        obj = target.CreateValueFromAddress("object", obj_addr, tRVALUE)
+        fl_start = obj.GetChildMemberWithName("as").GetChildMemberWithName("free").GetChildMemberWithName("next").GetValueAsUnsigned()
+
+    for (page_index, obj_addr, obj) in HeapPageIter(page, target):
+        dump_bits(target, result, page, obj_addr, end= " ")
+        flags = obj.GetChildMemberWithName('flags').GetValueAsUnsigned()
+        flType = flags & RUBY_T_MASK
+
+        flidx = '   '
+        if flType == RUBY_T_NONE:
+            try:
+                flidx = "%3d" % freelist.index(obj_addr)
+            except ValueError:
+                flidx = '   '
+
+        print("%s [%3d]: {%s} Addr: %0#x (flags: %0#x)"
+                % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags),
+                file=result)
 
 def rb_type(flags, ruby_types):
     flType = flags & RUBY_T_MASK
@@ -585,6 +624,7 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page heap_page")
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
+    debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
 
     lldb_init(debugger)
