@@ -6678,7 +6678,9 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
         break;
     }
 
-    gc_mark(objspace, any->as.basic.klass);
+    if (BUILTIN_TYPE(obj) != T_PAYLOAD) {
+        gc_mark(objspace, any->as.basic.klass);
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       case T_PAYLOAD:
