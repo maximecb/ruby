@@ -563,9 +563,20 @@ struct RMoved {
 
 struct RPayload {
     VALUE flags;
-    short len;
 };
 #define RPAYLOAD(obj) ((struct RPayload *)obj)
+static unsigned short
+RPAYLOAD_LEN(VALUE obj) {
+    unsigned short len = (unsigned short)(RPAYLOAD(obj)->flags >> FL_USHIFT);
+    return len;
+}
+
+static void
+RPAYLOAD_LEN_SET(VALUE obj, unsigned short len)
+{
+    // as len is the only thing in the user bits, we can overwrite it every time
+    RPAYLOAD(obj)->flags = T_PAYLOAD | (len << FL_USHIFT);
+}
 
 typedef struct RVALUE {
     union {
@@ -1269,10 +1280,10 @@ payload_or_self(VALUE obj)
         asan_unpoison_object((VALUE)p, false);
 
         if (BUILTIN_TYPE(cur) == T_PAYLOAD) {
-            if (cur < obj && obj < cur + RPAYLOAD(cur)->len * sizeof(RVALUE)) {
+            if (cur < obj && obj < cur + RPAYLOAD_LEN(cur) * sizeof(RVALUE)) {
                 return cur;
             }
-            cur += RPAYLOAD(cur)->len * sizeof(RVALUE);
+            cur += RPAYLOAD_LEN(cur) * sizeof(RVALUE);
         } else {
             cur += sizeof(RVALUE);
         }
@@ -1493,7 +1504,7 @@ RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *pag
     objspace->rgengc.old_objects++;
 
     if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-        int plen = RPAYLOAD(obj)->len;
+        int plen = RPAYLOAD_LEN(obj);
 
         for (int i = 1; i < plen; i++) {
             VALUE pbody = obj + i * sizeof(RVALUE);
@@ -1591,7 +1602,7 @@ RVALUE_DEMOTE(rb_objspace_t *objspace, VALUE obj)
     if (RVALUE_MARKED(obj)) {
 	objspace->rgengc.old_objects--;
         if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-            objspace->rgengc.old_objects -= RPAYLOAD(obj)->len - 1;
+            objspace->rgengc.old_objects -= RPAYLOAD_LEN(obj) - 1;
         }
     }
 
@@ -2365,7 +2376,7 @@ rb_rvargc_payload_init(VALUE obj, size_t size)
     memset(ph, 0, rvargc_slot_count(size) * sizeof(RVALUE));
 
     ph->flags = T_PAYLOAD;
-    ph->len = rvargc_slot_count(size);
+    RPAYLOAD_LEN_SET((VALUE)ph, rvargc_slot_count(size));
     objspace->total_allocated_objects += rvargc_slot_count(size);
 
     return (VALUE)ph;
@@ -3487,7 +3498,7 @@ objspace_each_objects_try(VALUE arg)
 
             //Make sure the Payload header slot is yielded
             if (cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) == T_PAYLOAD) {
-                payload_len = RPAYLOAD((VALUE)cursor_end)->len;
+                payload_len = RPAYLOAD_LEN((VALUE)cursor_end);
                 cursor_end++;
             }
 
@@ -4717,8 +4728,8 @@ count_objects(int argc, VALUE *argv, VALUE os)
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
             if (RB_TYPE_P(vp, T_PAYLOAD)) {
-                stride = RPAYLOAD(vp)->len;
-                counts[BUILTIN_TYPE(vp)] += RPAYLOAD(vp)->len;
+                stride = RPAYLOAD_LEN(vp);
+                counts[BUILTIN_TYPE(vp)] += RPAYLOAD_LEN(vp);
             }else if (p->as.basic.flags) {
                 counts[BUILTIN_TYPE(vp)]++;
 	    }
@@ -5227,7 +5238,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_
 			/* minor cases */
                       case T_PAYLOAD:
                         {
-                            int plen = RPAYLOAD(vp)->len;
+                            int plen = RPAYLOAD_LEN(vp);
                             freed_slots += plen;
 
                             (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)vp, sizeof(RVALUE));
@@ -6442,7 +6453,7 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
 	}
 
         if (RVALUE_UNCOLLECTIBLE(obj) && BUILTIN_TYPE(obj) == T_PAYLOAD) {
-            int plen = RPAYLOAD(obj)->len;
+            int plen = RPAYLOAD_LEN(obj);
 
             for (int i = 1; i < plen; i++) {
                 VALUE pbody = obj + i * sizeof(RVALUE);
@@ -6635,7 +6646,7 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
     // Mark payload head here
     gc_mark_and_pin(objspace, obj);
 
-    for (int i = 1 ; i < RPAYLOAD(obj)->len; i++) {
+    for (int i = 1 ; i < RPAYLOAD_LEN(obj); i++) {
         VALUE p = obj + i * sizeof(RVALUE);
         MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
         MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
@@ -7352,9 +7363,9 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, v
             /* make sure we have counted the payload body slots */
             if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
                 if (RVALUE_OLD_P(obj)) {
-                   data->old_object_count += RPAYLOAD(obj)->len - 1;
+                   data->old_object_count += RPAYLOAD_LEN(obj) - 1;
                 }
-                data->live_object_count += RPAYLOAD(obj)->len - 1;
+                data->live_object_count += RPAYLOAD_LEN(obj) - 1;
             }
 	}
 	else {
@@ -7389,13 +7400,13 @@ gc_verify_heap_page(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
         asan_unpoison_object(val, false);
 
         if (BUILTIN_TYPE(val) == T_PAYLOAD) {
-            stride = RPAYLOAD(val)->len;
+            stride = RPAYLOAD_LEN(val);
         } else {
             stride = default_stride;
         }
 
 	if (RBASIC(val) == 0) free_objects++;
-        if (BUILTIN_TYPE(val) == T_PAYLOAD) stride = RPAYLOAD(val)->len;
+        if (BUILTIN_TYPE(val) == T_PAYLOAD) stride = RPAYLOAD_LEN(val);
 	if (BUILTIN_TYPE(val) == T_ZOMBIE) zombie_objects++;
 	if (RVALUE_PAGE_UNCOLLECTIBLE(page, val) && RVALUE_PAGE_WB_UNPROTECTED(page, val)) {
 	    has_remembered_shady = TRUE;
@@ -9755,7 +9766,7 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace,
           case T_ZOMBIE:
             break;
           case T_PAYLOAD:
-              v += (stride * (RPAYLOAD(v)->len - 1));
+              v += (stride * (RPAYLOAD_LEN(v) - 1));
             break;
           default:
             if (RVALUE_WB_UNPROTECTED(v)) {
@@ -12744,7 +12755,7 @@ rb_raw_obj_info(char *buff, const int buff_size, VALUE obj)
 
 	switch (type) {
           case T_PAYLOAD:
-              APPENDF((BUFF_ARGS, "len: %i", RPAYLOAD(obj)->len));
+              APPENDF((BUFF_ARGS, "len: %i", RPAYLOAD_LEN(obj)));
               break;
 	  case T_NODE:
 	    UNEXPECTED_NODE(rb_raw_obj_info);
