@@ -530,6 +530,12 @@ def dump_bits(target, result, page, object_address, end = "\n"):
         check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
         ), end=end, file=result)
 
+def address_as(addr, struct_name, target):
+    type = target.FindFirstType("struct %s" % struct_name)
+
+
+
+
 class HeapPageIter:
     def __init__(self, page, target):
         self.page = page
@@ -578,11 +584,15 @@ def dump_page(debugger, command, result, internal_dict):
         obj_addr = lldb.SBAddress(fl_start, target)
         obj = target.CreateValueFromAddress("object", obj_addr, tRVALUE)
         fl_start = obj.GetChildMemberWithName("as").GetChildMemberWithName("free").GetChildMemberWithName("next").GetValueAsUnsigned()
-
+        
+    payload_len = 0
     for (page_index, obj_addr, obj) in HeapPageIter(page, target):
         dump_bits(target, result, page, obj_addr, end= " ")
         flags = obj.GetChildMemberWithName('flags').GetValueAsUnsigned()
         flType = flags & RUBY_T_MASK
+
+        if flType == RUBY_T_PAYLOAD:
+            payload_len = (flags >> RUBY_FL_USHIFT);
 
         flidx = '   '
         if flType == RUBY_T_NONE:
@@ -591,8 +601,17 @@ def dump_page(debugger, command, result, internal_dict):
             except ValueError:
                 flidx = '   '
 
+        if flType == RUBY_T_PAYLOAD:
+            type_name = rb_type(flags, ruby_type_map)
+            payload_len -= 1
+        elif payload_len > 0:
+            type_name = "%-10s" % "B_PAYLOAD"
+            payload_len -= 1
+        else:
+            type_name = rb_type(flags, ruby_type_map)
+
         print("%s [%3d]: {%s} Addr: %0#x (flags: %0#x)"
-                % (rb_type(flags, ruby_type_map), page_index, flidx, obj_addr, flags),
+                % (type_name, page_index, flidx, obj_addr, flags),
                 file=result)
 
 def rb_type(flags, ruby_types):
