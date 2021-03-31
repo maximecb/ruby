@@ -2072,8 +2072,9 @@ rcongc_pages_mutex_lock(rb_objspace_t *objspace, bool time)
     }
     /*struct timespec end;*/
     /*clock_gettime(CLOCK_MONOTONIC, &end);*/
-    /*if (time)*/
-    /*fprintf(stderr, "mutex lock time: %ld\n", end.tv_nsec - start.tv_nsec);*/
+    /*if (time) {*/
+        /*fprintf(stderr, "mutex lock time: %ld, total: %ld\n", end.tv_nsec - start.tv_nsec, mutex_lock_wait);*/
+    /*}*/
 }
 
 static inline void
@@ -2269,13 +2270,12 @@ heap_next_freepage(rb_objspace_t *objspace, rb_heap_t *heap)
         }
 
         if (rcongc_pages_mutex_locked && heap->free_pages == NULL) {
-            /*fprintf(stderr, "before cond, free pages is %p\n", heap->free_pages);*/
             /*struct timespec start;*/
             /*clock_gettime(CLOCK_MONOTONIC, &start);*/
             pthread_cond_wait(&objspace->rcongc.pages_cond, &objspace->rcongc.pages_mutex);
             /*struct timespec end;*/
             /*clock_gettime(CLOCK_MONOTONIC, &end);*/
-            /*fprintf(stderr, "cond waited time: %ld\n", end.tv_nsec - start.tv_nsec);*/
+            /*fprintf(stderr, "cond waited time: %ld, total: %ld\n", end.tv_nsec - start.tv_nsec, total_cond_wait);*/
         }
     }
     page = heap->free_pages;
@@ -5555,9 +5555,11 @@ gc_sweep(rb_objspace_t *objspace)
 	gc_prof_sweep_timer_start(objspace);
 #endif
         // TODO: if use rcongc
-        if (1) {
+        if (!objspace->flags.during_minor_gc) {
+            /*fprintf(stderr, "run rcongc\n");*/
             gc_concurrent_sweep(objspace);
         } else {
+            /*fprintf(stderr, "run minor gc\n");*/
             gc_sweep_start(objspace);
             if (objspace->flags.during_compacting) {
                 struct heap_page *page = NULL;
