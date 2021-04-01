@@ -4144,7 +4144,11 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
                 GC_ASSERT(BUILTIN_TYPE(vp) == T_NONE);
                 asan_poison_object(vp);
             }
-	    p++;
+            if (BUILTIN_TYPE(vp) == T_PAYLOAD) {
+                p += RPAYLOAD_LEN(vp);
+            } else {
+                p++;
+            }
 	}
     }
 
