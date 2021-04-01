@@ -767,7 +767,7 @@ ary_new_rvargc(VALUE klass, long capa)
     RVARGC_NEWOBJ_OF(ary, struct RArray, klass, T_ARRAY | RARRAY_EMBED_FLAG | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0), payload_len);
 
     if (capa > RARRAY_EMBED_LEN_MAX) {
-        ptr = rb_rvargc_payload_data_ptr((VALUE)ary + rb_slot_size());
+        ptr = (VALUE *)rb_rvargc_payload_data_ptr((VALUE)ary + rb_slot_size());
         RB_OBJ_WRITTEN(ary, Qundef, (VALUE)ary + rb_slot_size());
         FL_UNSET_EMBED((VALUE)ary);
         FL_SET_RVARGC_EMBED((VALUE)ary);
