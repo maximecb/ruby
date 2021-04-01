@@ -3088,7 +3088,9 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 	rb_str_free(obj);
 	break;
       case T_ARRAY:
-        rb_ary_free(obj);
+        if (!FL_TEST_RAW(obj, RARRAY_RVARGC_EMBED_FLAG)) {
+            rb_ary_free(obj);
+        }
 	break;
       case T_HASH:
 #if USE_DEBUG_COUNTER
