@@ -750,14 +750,17 @@ ary_new(VALUE klass, long capa)
 static VALUE
 ary_new_rvargc(VALUE klass, long capa)
 {
-    void * ptr;
-    unsigned long payload_len = capa * sizeof(VALUE);
+    VALUE * ptr;
+    unsigned long payload_len = 0;
 
     if (capa < 0) {
 	rb_raise(rb_eArgError, "negative array size (or size too big)");
     }
     if (capa > ARY_MAX_SIZE) {
 	rb_raise(rb_eArgError, "array size too big");
+    }
+    if (capa > RARRAY_EMBED_LEN_MAX) {
+        payload_len = capa * sizeof(VALUE);
     }
 
     RUBY_DTRACE_CREATE_HOOK(ARRAY, capa);
