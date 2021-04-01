@@ -105,7 +105,6 @@ should_not_be_shared_and_embedded(VALUE ary)
     assert(!ARY_EMBED_P(ary)); \
     FL_SET((ary), RARRAY_RVARGC_EMBED_FLAG); \
 } while (0)
-#define FL_UNSET_GC_EMBED(ary) FL_UNSET((ary), RARRAY_RVARGC_EMBED_FLAG)
 
 #define ARY_SET_PTR(ary, p) do { \
     assert(!ARY_EMBED_P(ary)); \
