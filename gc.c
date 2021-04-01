@@ -1271,6 +1271,7 @@ RVALUE_FLAGS_AGE(VALUE flags)
 static VALUE
 payload_or_self(VALUE obj)
 {
+#if USE_RVARGC
     struct heap_page *p = GET_HEAP_PAGE(obj);
     VALUE cur = (VALUE)p->start;
 
@@ -1291,6 +1292,7 @@ payload_or_self(VALUE obj)
             asan_poison_object((VALUE)p);
         }
     }
+#endif
 
     return obj;
 }
