@@ -6723,10 +6723,7 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 	break;
 
       case T_ARRAY:
-        if (FL_TEST(obj, RARRAY_RVARGC_EMBED_FLAG)) {
-            gc_mark_payload(objspace, ((VALUE)RARRAY_PTR(obj) - sizeof(struct RPayload)));
-        }
-        else if (FL_TEST(obj, ELTS_SHARED)) {
+        if (FL_TEST(obj, ELTS_SHARED)) {
             VALUE root = any->as.array.as.heap.aux.shared_root;
             gc_mark(objspace, root);
 	}
@@ -6742,6 +6739,10 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
                     RARRAY_TRANSIENT_P(obj)) {
                     rb_transient_heap_mark(obj, ptr);
                 }
+            }
+
+            if (FL_TEST(obj, RARRAY_RVARGC_EMBED_FLAG)) {
+                gc_mark_payload(objspace, ((VALUE)RARRAY_PTR(obj) - sizeof(struct RPayload)));
             }
         }
 	break;
