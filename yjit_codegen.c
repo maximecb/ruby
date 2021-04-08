@@ -262,6 +262,7 @@ yjit_check_ints(codeblock_t* cb, uint8_t* side_exit)
 {
     // Check for interrupts
     // see RUBY_VM_CHECK_INTS(ec) macro
+    ADD_COMMENT(cb, "check for interrupts");
     mov(cb, REG0_32, member_opnd(REG_EC, rb_execution_context_t, interrupt_mask));
     not(cb, REG0_32);
     test(cb, member_opnd(REG_EC, rb_execution_context_t, interrupt_flag), REG0_32);
@@ -372,6 +373,189 @@ yjit_gen_block(ctx_t* ctx, block_t* block, rb_execution_context_t* ec)
             idx += insn_len(opcode);
         }
     }
+}
+
+// Generate a stubbed unconditional jump to the next bytecode instruction.
+// Blocks that are part of a guard chain can use this to share the same successor.
+static void
+jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
+{
+    // Reset the depth since in current usages we only ever jump to to
+    // chain_depth > 0 from the same instruction.
+    ctx_t reset_depth = *current_context;
+    reset_depth.chain_depth = 0;
+
+    blockid_t jump_block = { jit->iseq, jit_next_insn_idx(jit) };
+
+    // Generate the jump instruction
+    gen_direct_jump(
+        &reset_depth,
+        jump_block
+    );
+}
+
+enum jcc_kinds {
+    JCC_JNE,
+    JCC_JNZ,
+    JCC_JZ,
+    JCC_JE,
+};
+
+static void
+gen_jnz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+{
+    switch (shape)
+    {
+        case SHAPE_NEXT0:
+        case SHAPE_NEXT1:
+        RUBY_ASSERT(false);
+        break;
+
+        case SHAPE_DEFAULT:
+        jnz_ptr(cb, target0);
+        break;
+    }
+}
+
+static void
+gen_jz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+{
+    switch (shape)
+    {
+        case SHAPE_NEXT0:
+        case SHAPE_NEXT1:
+        RUBY_ASSERT(false);
+        break;
+
+        case SHAPE_DEFAULT:
+        jz_ptr(cb, target0);
+        break;
+    }
+}
+
+// Generate a jump to a stub that recompiles the current YARV instruction on failure.
+// When depth_limitk is exceeded, generate a jump to a side exit.
+static void
+jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, const ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
+{
+    branchgen_fn target0_gen_fn;
+
+    switch (jcc) {
+        case JCC_JNE:
+        case JCC_JNZ:
+            target0_gen_fn = gen_jnz_to_target0;
+            break;
+        case JCC_JZ:
+        case JCC_JE:
+            target0_gen_fn = gen_jz_to_target0;
+            break;
+        default:
+            RUBY_ASSERT(false && "unimplemented jump kind");
+            break;
+    };
+
+    if (ctx->chain_depth < depth_limit) {
+        ctx_t deeper = *ctx;
+        deeper.chain_depth++;
+
+        gen_branch(
+            ctx,
+            (blockid_t) { jit->iseq, jit->insn_idx },
+            &deeper,
+            BLOCKID_NULL,
+            NULL,
+            target0_gen_fn
+        );
+    }
+    else {
+        target0_gen_fn(cb, side_exit, NULL, SHAPE_DEFAULT);
+    }
+}
+
+// Check that `self` is a pointer to an object on the GC heap
+static void
+guard_self_is_heap(codeblock_t *cb, x86opnd_t self_opnd, uint8_t *side_exit, ctx_t *ctx)
+{
+    // `self` is constant throughout the entire region, so we only need to do this check once.
+    if (!ctx->self_type.is_heap) {
+        ADD_COMMENT(cb, "guard self is heap object");
+        test(cb, self_opnd, imm_opnd(RUBY_IMMEDIATE_MASK));
+        jnz_ptr(cb, side_exit);
+        cmp(cb, self_opnd, imm_opnd(Qfalse));
+        je_ptr(cb, side_exit);
+        cmp(cb, self_opnd, imm_opnd(Qnil));
+        je_ptr(cb, side_exit);
+
+        // maybe we can do
+        // RUBY_ASSERT(Qfalse < Qnil);
+        // cmp(cb, self_opnd, imm_opnd(Qnil));
+        // jbe(cb, side_exit);
+
+        ctx->self_type.is_heap = 1;
+    }
+}
+
+/*
+Guard that a stack operand has the same class as known_klass.
+Recompile as contingency if possible, or take side exit a last resort.
+*/
+static bool
+jit_guard_known_klass(jitstate_t *jit, ctx_t* ctx, VALUE known_klass, uint32_t stack_idx, const int max_chain_depth, uint8_t *side_exit)
+{
+    // Can't guard for for these classes because some of they are sometimes immediate (special const).
+    // Can remove this by adding appropriate dynamic checks.
+    if (known_klass == rb_cInteger ||
+        known_klass == rb_cSymbol ||
+        known_klass == rb_cFloat ||
+        known_klass == rb_cNilClass ||
+        known_klass == rb_cTrueClass ||
+        known_klass == rb_cFalseClass) {
+        return false;
+    }
+
+    val_type_t temp_type = ctx_get_temp_type(ctx, stack_idx);
+
+    // Check that the receiver is a heap object
+    if (!temp_type.is_heap)
+    {
+        ADD_COMMENT(cb, "guard recv is heap object");
+        test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+        jnz_ptr(cb, side_exit);
+        cmp(cb, REG0, imm_opnd(Qfalse));
+        je_ptr(cb, side_exit);
+        cmp(cb, REG0, imm_opnd(Qnil));
+        je_ptr(cb, side_exit);
+
+        ctx_set_temp_type(ctx, stack_idx, TYPE_HEAP);
+    }
+
+    // Pointer to the klass field of the receiver &(recv->klass)
+    x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+
+    // Bail if receiver class is different from compile-time call cache class
+    ADD_COMMENT(cb, "guard recv has known class");
+    jit_mov_gc_ptr(jit, cb, REG1, known_klass);
+    cmp(cb, klass_opnd, REG1);
+    jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+    return true;
+}
+
+// Generate ancestry guard for protected callee.
+// Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
+static void
+jit_guard_is_instance(jitstate_t *jit, codeblock_t *cb, const rb_callable_method_entry_t *cme, uint8_t *side_exit)
+{
+    // See vm_call_method().
+    ADD_COMMENT(cb, "guard recv is instance");
+    yjit_save_regs(cb);
+    mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, self));
+    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], cme->defined_class);
+    // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
+    // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
+    call_ptr(cb, REG0, (void *)&rb_obj_is_kind_of);
+    yjit_load_regs(cb);
+    test(cb, RAX, RAX);
+    jz_ptr(cb, COUNTED_EXIT(side_exit, oswb_se_protected_check_failed));
 }
 
 static codegen_status_t
@@ -580,125 +764,6 @@ gen_setlocal_wc0(jitstate_t* jit, ctx_t* ctx)
     mov(cb, mem_opnd(64, REG0, offs), REG1);
 
     return YJIT_KEEP_COMPILING;
-}
-
-// Check that `self` is a pointer to an object on the GC heap
-static void
-guard_self_is_heap(codeblock_t *cb, x86opnd_t self_opnd, uint8_t *side_exit, ctx_t *ctx)
-{
-    // `self` is constant throughout the entire region, so we only need to do this check once.
-    if (!ctx->self_type.is_heap) {
-        test(cb, self_opnd, imm_opnd(RUBY_IMMEDIATE_MASK));
-        jnz_ptr(cb, side_exit);
-        cmp(cb, self_opnd, imm_opnd(Qfalse));
-        je_ptr(cb, side_exit);
-        cmp(cb, self_opnd, imm_opnd(Qnil));
-        je_ptr(cb, side_exit);
-
-        // maybe we can do
-        // RUBY_ASSERT(Qfalse < Qnil);
-        // cmp(cb, self_opnd, imm_opnd(Qnil));
-        // jbe(cb, side_exit);
-
-        ctx->self_type.is_heap = 1;
-    }
-}
-
-// Generate a stubbed unconditional jump to the next bytecode instruction.
-// Blocks that are part of a guard chain can use this to share the same successor.
-static void
-jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
-{
-    // Reset the depth since in current usages we only ever jump to to
-    // chain_depth > 0 from the same instruction.
-    ctx_t reset_depth = *current_context;
-    reset_depth.chain_depth = 0;
-
-    blockid_t jump_block = { jit->iseq, jit_next_insn_idx(jit) };
-
-    // Generate the jump instruction
-    gen_direct_jump(
-        &reset_depth,
-        jump_block
-    );
-}
-
-static void
-gen_jnz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
-{
-    switch (shape)
-    {
-        case SHAPE_NEXT0:
-        case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-        case SHAPE_DEFAULT:
-        jnz_ptr(cb, target0);
-        break;
-    }
-}
-
-static void
-gen_jz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
-{
-    switch (shape)
-    {
-        case SHAPE_NEXT0:
-        case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-        case SHAPE_DEFAULT:
-        jz_ptr(cb, target0);
-        break;
-    }
-}
-
-enum jcc_kinds {
-    JCC_JNE,
-    JCC_JNZ,
-    JCC_JZ,
-    JCC_JE,
-};
-
-// Generate a jump to a stub that recompiles the current YARV instruction on failure.
-// When depth_limitk is exceeded, generate a jump to a side exit.
-static void
-jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, const ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
-{
-    branchgen_fn target0_gen_fn;
-
-    switch (jcc) {
-        case JCC_JNE:
-        case JCC_JNZ:
-            target0_gen_fn = gen_jnz_to_target0;
-            break;
-        case JCC_JZ:
-        case JCC_JE:
-            target0_gen_fn = gen_jz_to_target0;
-            break;
-        default:
-            RUBY_ASSERT(false && "unimplemented jump kind");
-            break;
-    };
-
-    if (ctx->chain_depth < depth_limit) {
-        ctx_t deeper = *ctx;
-        deeper.chain_depth++;
-
-        gen_branch(
-            ctx,
-            (blockid_t) { jit->iseq, jit->insn_idx },
-            &deeper,
-            BLOCKID_NULL,
-            NULL,
-            target0_gen_fn
-        );
-    }
-    else {
-        target0_gen_fn(cb, side_exit, NULL, SHAPE_DEFAULT);
-    }
 }
 
 bool rb_iv_index_tbl_lookup(struct st_table *iv_index_tbl, ID id, struct rb_iv_index_tbl_entry **ent); // vm_insnhelper.c
@@ -1346,66 +1411,6 @@ gen_jump(jitstate_t* jit, ctx_t* ctx)
     return YJIT_END_BLOCK;
 }
 
-/*
-Guard that a stack operand has the same class as known_klass.
-Recompile as contingency if possible, or take side exit a last resort.
-*/
-static bool
-jit_guard_known_klass(jitstate_t *jit, ctx_t* ctx, VALUE known_klass, uint32_t stack_idx, const int max_chain_depth, uint8_t *side_exit)
-{
-    // Can't guard for for these classes because some of they are sometimes immediate (special const).
-    // Can remove this by adding appropriate dynamic checks.
-    if (known_klass == rb_cInteger ||
-        known_klass == rb_cSymbol ||
-        known_klass == rb_cFloat ||
-        known_klass == rb_cNilClass ||
-        known_klass == rb_cTrueClass ||
-        known_klass == rb_cFalseClass) {
-        return false;
-    }
-
-    val_type_t temp_type = ctx_get_temp_type(ctx, stack_idx);
-
-    // Check that the receiver is a heap object
-    if (!temp_type.is_heap)
-    {
-        test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
-        jnz_ptr(cb, side_exit);
-        cmp(cb, REG0, imm_opnd(Qfalse));
-        je_ptr(cb, side_exit);
-        cmp(cb, REG0, imm_opnd(Qnil));
-        je_ptr(cb, side_exit);
-
-        ctx_set_temp_type(ctx, stack_idx, TYPE_HEAP);
-    }
-
-    // Pointer to the klass field of the receiver &(recv->klass)
-    x86opnd_t klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
-
-    // Bail if receiver class is different from compile-time call cache class
-    jit_mov_gc_ptr(jit, cb, REG1, known_klass);
-    cmp(cb, klass_opnd, REG1);
-    jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
-    return true;
-}
-
-// Generate ancestry guard for protected callee.
-// Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
-static void
-jit_protected_callee_ancestry_guard(jitstate_t *jit, codeblock_t *cb, const rb_callable_method_entry_t *cme, uint8_t *side_exit)
-{
-    // See vm_call_method().
-    yjit_save_regs(cb);
-    mov(cb, C_ARG_REGS[0], member_opnd(REG_CFP, rb_control_frame_t, self));
-    jit_mov_gc_ptr(jit, cb, C_ARG_REGS[1], cme->defined_class);
-    // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
-    // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
-    call_ptr(cb, REG0, (void *)&rb_obj_is_kind_of);
-    yjit_load_regs(cb);
-    test(cb, RAX, RAX);
-    jz_ptr(cb, COUNTED_EXIT(side_exit, oswb_se_protected_check_failed));
-}
-
 static codegen_status_t
 gen_oswb_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, int32_t argc)
 {
@@ -1810,7 +1815,7 @@ gen_opt_send_without_block(jitstate_t* jit, ctx_t* ctx)
         }
         break;
     case METHOD_VISI_PROTECTED:
-        jit_protected_callee_ancestry_guard(jit, cb, cme, side_exit);
+        jit_guard_is_instance(jit, cb, cme, side_exit);
         break;
     case METHOD_VISI_UNDEF:
         RUBY_ASSERT(false && "cmes should always have a visibility");
@@ -1875,6 +1880,7 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, ep));
 
     // if (flags & VM_FRAME_FLAG_FINISH) != 0
+    ADD_COMMENT(cb, "check not finish frame");
     x86opnd_t flags_opnd = mem_opnd(64, REG0, sizeof(VALUE) * VM_ENV_DATA_INDEX_FLAGS);
     test(cb, flags_opnd, imm_opnd(VM_FRAME_FLAG_FINISH));
     jnz_ptr(cb, COUNTED_EXIT(side_exit, leave_se_finish_frame));
@@ -1900,6 +1906,7 @@ gen_leave(jitstate_t* jit, ctx_t* ctx)
     mov(cb, mem_opnd(64, REG_SP, -SIZEOF_VALUE), REG0);
 
     // If the return address is NULL, fall back to the interpreter
+    ADD_COMMENT(cb, "check for JIT return");
     int FALLBACK_LABEL = cb_new_label(cb, "FALLBACK");
     test(cb, REG1, REG1);
     jz_label(cb, FALLBACK_LABEL);

@@ -13,6 +13,7 @@ module YJIT
       # Sort the blocks by increasing addresses
       sorted_blocks = blocks.sort_by(&:address)
 
+      # Highlight a string for console printout
       highlight = ->(str) {
         if tty
           "\x1b[1m#{str}\x1b[0m"
@@ -29,11 +30,13 @@ module YJIT
         comments = comments_for(block.address, block.address + block.code.length)
         comment_idx = 0
         cs.disasm(block.code, block.address).each do |i|
+          # Print disassembly comments
           while (comment = comments[comment_idx]) && comment.address <= i.address
-            str << "  ;#{highlight.call(comment.comment)}\n"
+            str << "  ; #{highlight.call(comment.comment)}\n"
             comment_idx += 1
           end
 
+          # Print instructions
           str << sprintf(
             "  %<address>08x:  %<instruction>s\t%<details>s\n",
             address: i.address,
