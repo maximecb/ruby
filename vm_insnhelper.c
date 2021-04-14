@@ -12,6 +12,8 @@
 
 #include <math.h>
 
+#include <execinfo.h>
+
 #include "constant.h"
 #include "debug_counter.h"
 #include "internal.h"
@@ -52,6 +54,31 @@ ruby_vm_special_exception_copy(VALUE exc)
     return e;
 }
 
+static void
+fill_c_stack(VALUE exception)
+{
+#if !HAVE_BACKTRACE
+# error "backtrace(3) required"
+#endif
+
+#define MAX_NATIVE_TRACE 100
+    static void *trace[MAX_NATIVE_TRACE];
+    int n = backtrace(trace, MAX_NATIVE_TRACE);
+    char **syms = backtrace_symbols(trace, n);
+    if (syms) {
+        VALUE traces = rb_ary_new();
+	for (int i=0; i<n; i++) {
+            VALUE trace = rb_str_new_cstr(syms[i]);
+            rb_ary_push(traces, trace);
+	}
+        rb_ivar_set(exception, idNative_backtrace, traces);
+
+	free(syms);
+    }
+
+#undef MAX_NATIVE_TRACE
+}
+
 NORETURN(static void ec_stack_overflow(rb_execution_context_t *ec, int));
 static void
 ec_stack_overflow(rb_execution_context_t *ec, int setup)
@@ -63,6 +90,8 @@ ec_stack_overflow(rb_execution_context_t *ec, int setup)
 	mesg = ruby_vm_special_exception_copy(mesg);
 	rb_ivar_set(mesg, idBt, at);
 	rb_ivar_set(mesg, idBt_locations, at);
+
+        fill_c_stack(mesg);
     }
     ec->errinfo = mesg;
     EC_JUMP_TAG(ec, TAG_RAISE);
