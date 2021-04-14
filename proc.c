@@ -3735,6 +3735,15 @@ proc_ruby2_keywords(VALUE procval)
     return procval;
 }
 
+static VALUE
+bugsnag_meta_data(VALUE self)
+{
+    VALUE result = rb_hash_new();
+    VALUE backtrace = rb_attr_get(self, idNative_backtrace);
+    rb_hash_aset(result, ID2SYM(idNative_backtrace), backtrace);
+    return result;
+}
+
 /*
  *  Document-class: LocalJumpError
  *
@@ -4122,6 +4131,7 @@ Init_Proc(void)
 
     rb_eSysStackError = rb_define_class("SystemStackError", rb_eException);
     rb_vm_register_special_exception(ruby_error_sysstack, rb_eSysStackError, "stack level too deep");
+    rb_define_method(rb_eSysStackError, "bugsnag_meta_data", bugsnag_meta_data, 0);
 
     /* utility functions */
     rb_define_global_function("proc", f_proc, 0);
