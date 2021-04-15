@@ -639,13 +639,13 @@ struct gc_list {
 typedef struct stack_chunk {
     VALUE data[STACK_CHUNK_SIZE];
     struct stack_chunk *next;
+    int index;
 } stack_chunk_t;
 
 typedef struct mark_stack {
     stack_chunk_t *chunk;
     stack_chunk_t *cache;
-    int index;
-    int limit;
+    size_t chunk_size;
     size_t cache_size;
     size_t unused_cache_size;
 } mark_stack_t;
@@ -692,6 +692,7 @@ typedef struct rb_objspace {
 #if GC_ENABLE_INCREMENTAL_MARK
 	unsigned int during_incremental_marking : 1;
 #endif
+        unsigned int during_parallel_marking : 1;
     } flags;
 
     rb_event_flag_t hook_events;
@@ -705,8 +706,9 @@ typedef struct rb_objspace {
 	rb_atomic_t finalizing;
     } atomic_flags;
 
-    mark_stack_t mark_stack;
-    size_t marked_slots;
+    // TODO: set count to be MAX_THREADS + 1
+    mark_stack_t mark_stack[5];
+    size_t marked_slots[5];
 
     struct {
 	struct heap_page **sorted;
@@ -774,7 +776,7 @@ typedef struct rb_objspace {
     VALUE gc_stress_mode;
 
     struct {
-	VALUE parent_object;
+	VALUE parent_object[5];
 	int need_major_gc;
 	size_t last_major_gc;
 	size_t uncollectible_wb_unprotected_objects;
@@ -805,6 +807,18 @@ typedef struct rb_objspace {
 	size_t step_slots;
     } rincgc;
 #endif
+
+    struct {
+        int worker_count;
+
+        int main_mark_stack_wait_count;
+        pthread_mutex_t main_mark_stack_mutex;
+        pthread_cond_t main_mark_stack_cond;
+
+        bool finish;
+        pthread_mutex_t finish_mutex;
+        pthread_cond_t finish_cond;
+    } rpargc;
 
     st_table *id_to_obj_tbl;
     st_table *obj_to_id_tbl;
@@ -875,6 +889,8 @@ struct heap_page {
 #define MARKED_IN_BITMAP(bits, p)    ((bits)[BITMAP_INDEX(p)] & BITMAP_BIT(p))
 #define MARK_IN_BITMAP(bits, p)      ((bits)[BITMAP_INDEX(p)] = (bits)[BITMAP_INDEX(p)] | BITMAP_BIT(p))
 #define CLEAR_IN_BITMAP(bits, p)     ((bits)[BITMAP_INDEX(p)] = (bits)[BITMAP_INDEX(p)] & ~BITMAP_BIT(p))
+
+#define MARK_IN_BITMAP_ATOMIC(bits, p) (RUBY_ATOMIC_OR((bits)[BITMAP_INDEX(p)], BITMAP_BIT(p)))
 
 /* getting bitmap */
 #define GET_HEAP_MARK_BITS(x)           (&GET_HEAP_PAGE(x)->mark_bits[0])
@@ -994,6 +1010,7 @@ int ruby_gc_debug_indent = 0;
 VALUE rb_mGC;
 int ruby_disable_gc = 0;
 int ruby_enable_autocompact = 0;
+RB_THREAD_LOCAL_SPECIFIER int ruby_parallel_mark_thread_id = 0;
 
 void rb_iseq_mark(const rb_iseq_t *iseq);
 void rb_iseq_update_references(rb_iseq_t *iseq);
@@ -1454,8 +1471,8 @@ RVALUE_AGE(VALUE obj)
 static inline void
 RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
 {
-    MARK_IN_BITMAP(&page->uncollectible_bits[0], obj);
-    objspace->rgengc.old_objects++;
+    MARK_IN_BITMAP_ATOMIC(&page->uncollectible_bits[0], obj);
+    RUBY_ATOMIC_INC(objspace->rgengc.old_objects);
     rb_transient_heap_promote(obj);
 
 #if RGENGC_PROFILE >= 2
@@ -1645,7 +1662,9 @@ rb_objspace_free(rb_objspace_t *objspace)
     }
     st_free_table(objspace->id_to_obj_tbl);
     st_free_table(objspace->obj_to_id_tbl);
-    free_stack_chunks(&objspace->mark_stack);
+    for (int i = 0; i < 5; i++) {
+        free_stack_chunks(&objspace->mark_stack[i]);
+    }
     free(objspace);
 }
 
@@ -3200,10 +3219,17 @@ Init_heap(void)
 #endif
 
     heap_add_pages(objspace, heap_eden, gc_params.heap_init_slots / HEAP_PAGE_OBJ_LIMIT);
-    init_mark_stack(&objspace->mark_stack);
+    for (int i = 0; i < 5; i++) {
+        init_mark_stack(&objspace->mark_stack[i]);
+    }
 
     objspace->profile.invoke_time = getrusage_time();
     finalizer_table = st_init_numtable();
+
+    objspace->rpargc.main_mark_stack_mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+    objspace->rpargc.main_mark_stack_cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
+    objspace->rpargc.finish_mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
+    objspace->rpargc.finish_cond = (pthread_cond_t)PTHREAD_COND_INITIALIZER;
 }
 
 void
@@ -5417,11 +5443,11 @@ is_mark_stack_empty(mark_stack_t *stack)
 static size_t
 mark_stack_size(mark_stack_t *stack)
 {
-    size_t size = stack->index;
-    stack_chunk_t *chunk = stack->chunk ? stack->chunk->next : NULL;
+    size_t size = 0;
+    stack_chunk_t *chunk = stack->chunk;
 
     while (chunk) {
-	size += stack->limit;
+	size += chunk->index;
 	chunk = chunk->next;
     }
     return size;
@@ -5454,7 +5480,7 @@ push_mark_stack_chunk(mark_stack_t *stack)
 {
     stack_chunk_t *next;
 
-    GC_ASSERT(stack->index == stack->limit);
+    GC_ASSERT(stack->chunk == NULL || stack->chunk->index == STACK_CHUNK_SIZE);
 
     if (stack->cache_size > 0) {
         next = stack->cache;
@@ -5467,8 +5493,9 @@ push_mark_stack_chunk(mark_stack_t *stack)
         next = stack_chunk_alloc();
     }
     next->next = stack->chunk;
+    next->index = 0;
     stack->chunk = next;
-    stack->index = 0;
+    stack->chunk_size++;
 }
 
 static void
@@ -5477,10 +5504,12 @@ pop_mark_stack_chunk(mark_stack_t *stack)
     stack_chunk_t *prev;
 
     prev = stack->chunk->next;
-    GC_ASSERT(stack->index == 0);
+    GC_ASSERT(stack->chunk->index == 0);
     add_stack_chunk_cache(stack, stack->chunk);
     stack->chunk = prev;
-    stack->index = stack->limit;
+    GC_ASSERT(stack->chunk_size > 0);
+    GC_ASSERT(stack->chunk == NULL || stack->chunk->index > 0);
+    stack->chunk_size--;
 }
 
 static void
@@ -5515,10 +5544,12 @@ push_mark_stack(mark_stack_t *stack, VALUE data)
         break;
     }
 
-    if (stack->index == stack->limit) {
+    stack_chunk_t *chunk = stack->chunk;
+    if (chunk == NULL || chunk->index == STACK_CHUNK_SIZE) {
         push_mark_stack_chunk(stack);
+        chunk = stack->chunk;
     }
-    stack->chunk->data[stack->index++] = data;
+    chunk->data[chunk->index++] = data;
 }
 
 static int
@@ -5527,12 +5558,11 @@ pop_mark_stack(mark_stack_t *stack, VALUE *data)
     if (is_mark_stack_empty(stack)) {
         return FALSE;
     }
-    if (stack->index == 1) {
-        *data = stack->chunk->data[--stack->index];
+    stack_chunk_t *chunk = stack->chunk;
+    GC_ASSERT(chunk->index > 0);
+    *data = chunk->data[--chunk->index];
+    if (chunk->index == 0) {
         pop_mark_stack_chunk(stack);
-    }
-    else {
-	*data = stack->chunk->data[--stack->index];
     }
     return TRUE;
 }
@@ -5543,7 +5573,6 @@ init_mark_stack(mark_stack_t *stack)
     int i;
 
     MEMZERO(stack, mark_stack_t, 1);
-    stack->index = stack->limit = STACK_CHUNK_SIZE;
     stack->cache_size = 0;
 
     for (i=0; i < 4; i++) {
@@ -6033,7 +6062,7 @@ gc_mark_set(rb_objspace_t *objspace, VALUE obj)
 {
     ASSERT_vm_locking();
     if (RVALUE_MARKED(obj)) return 0;
-    MARK_IN_BITMAP(GET_HEAP_MARK_BITS(obj), obj);
+    MARK_IN_BITMAP_ATOMIC(GET_HEAP_MARK_BITS(obj), obj);
     return 1;
 }
 
@@ -6045,7 +6074,7 @@ gc_remember_unprotected(rb_objspace_t *objspace, VALUE obj)
 
     if (!MARKED_IN_BITMAP(uncollectible_bits, obj)) {
 	page->flags.has_uncollectible_shady_objects = TRUE;
-	MARK_IN_BITMAP(uncollectible_bits, obj);
+	MARK_IN_BITMAP_ATOMIC(uncollectible_bits, obj);
 	objspace->rgengc.uncollectible_wb_unprotected_objects++;
 
 #if RGENGC_PROFILE > 0
@@ -6064,7 +6093,7 @@ gc_remember_unprotected(rb_objspace_t *objspace, VALUE obj)
 static void
 rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 {
-    const VALUE old_parent = objspace->rgengc.parent_object;
+    const VALUE old_parent = objspace->rgengc.parent_object[ruby_parallel_mark_thread_id];
 
     if (old_parent) { /* parent object is old */
 	if (RVALUE_WB_UNPROTECTED(obj)) {
@@ -6095,7 +6124,7 @@ rgengc_check_relation(rb_objspace_t *objspace, VALUE obj)
 	}
     }
 
-    GC_ASSERT(old_parent == objspace->rgengc.parent_object);
+    GC_ASSERT(old_parent == objspace->rgengc.parent_object[ruby_parallel_mark_thread_id]);
 }
 
 static void
@@ -6108,11 +6137,14 @@ gc_grey(rb_objspace_t *objspace, VALUE obj)
 
 #if GC_ENABLE_INCREMENTAL_MARK
     if (is_incremental_marking(objspace)) {
-	MARK_IN_BITMAP(GET_HEAP_MARKING_BITS(obj), obj);
+	MARK_IN_BITMAP_ATOMIC(GET_HEAP_MARKING_BITS(obj), obj);
+        /*printf("set marking bits (%p): %d\n", (void *)obj, MARKED_IN_BITMAP(GET_HEAP_MARKING_BITS(obj), obj) != 0);*/
     }
 #endif
+    // TODO: assert zero if not in rpargc, assert not zero otherwise
+    /*GC_ASSERT(ruby_parallel_mark_thread_id == 0);*/
 
-    push_mark_stack(&objspace->mark_stack, obj);
+    push_mark_stack(&objspace->mark_stack[ruby_parallel_mark_thread_id], obj);
 }
 
 static void
@@ -6135,7 +6167,8 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
     }
     check_rvalue_consistency(obj);
 
-    objspace->marked_slots++;
+    /*objspace->marked_slots++;*/
+    objspace->marked_slots[ruby_parallel_mark_thread_id]++;
 }
 
 NOINLINE(static void gc_mark_ptr(rb_objspace_t *objspace, VALUE obj));
@@ -6149,10 +6182,10 @@ gc_mark_ptr(rb_objspace_t *objspace, VALUE obj)
 	if (!gc_mark_set(objspace, obj)) return; /* already marked */
 
         if (0) { // for debug GC marking miss
-            if (objspace->rgengc.parent_object) {
+            if (objspace->rgengc.parent_object[ruby_parallel_mark_thread_id]) {
                 RUBY_DEBUG_LOG("%p (%s) parent:%p (%s)",
                                (void *)obj, obj_type_name(obj),
-                               (void *)objspace->rgengc.parent_object, obj_type_name(objspace->rgengc.parent_object));
+                               (void *)objspace->rgengc.parent_object[ruby_parallel_mark_thread_id], obj_type_name(objspace->rgengc.parent_object[ruby_parallel_mark_thread_id]));
             }
             else {
                 RUBY_DEBUG_LOG("%p (%s)", (void *)obj, obj_type_name(obj));
@@ -6177,7 +6210,7 @@ gc_pin(rb_objspace_t *objspace, VALUE obj)
     GC_ASSERT(is_markable_object(objspace, obj));
     if (UNLIKELY(objspace->flags.during_compacting)) {
         if (LIKELY(during_gc)) {
-            MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(obj), obj);
+            MARK_IN_BITMAP_ATOMIC(GET_HEAP_PINNED_BITS(obj), obj);
         }
     }
 }
@@ -6223,10 +6256,10 @@ static inline void
 gc_mark_set_parent(rb_objspace_t *objspace, VALUE obj)
 {
     if (RVALUE_OLD_P(obj)) {
-	objspace->rgengc.parent_object = obj;
+	objspace->rgengc.parent_object[ruby_parallel_mark_thread_id] = obj;
     }
     else {
-	objspace->rgengc.parent_object = Qfalse;
+	objspace->rgengc.parent_object[ruby_parallel_mark_thread_id] = Qfalse;
     }
 }
 
@@ -6505,39 +6538,188 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 static inline int
 gc_mark_stacked_objects(rb_objspace_t *objspace, int incremental, size_t count)
 {
-    mark_stack_t *mstack = &objspace->mark_stack;
+    mark_stack_t *mstack = &objspace->mark_stack[ruby_parallel_mark_thread_id];
     VALUE obj;
 #if GC_ENABLE_INCREMENTAL_MARK
-    size_t marked_slots_at_the_beginning = objspace->marked_slots;
     size_t popped_count = 0;
 #endif
 
-    while (pop_mark_stack(mstack, &obj)) {
-	if (obj == Qundef) continue; /* skip */
+    while (TRUE) {
+        while (pop_mark_stack(mstack, &obj)) {
+            if (obj == Qundef) continue; /* skip */
 
-	if (RGENGC_CHECK_MODE && !RVALUE_MARKED(obj)) {
-	    rb_bug("gc_mark_stacked_objects: %s is not marked.", obj_info(obj));
-	}
-        gc_mark_children(objspace, obj);
+            if (RGENGC_CHECK_MODE && !RVALUE_MARKED(obj)) {
+                rb_bug("gc_mark_stacked_objects: %s is not marked.", obj_info(obj));
+            }
+            gc_mark_children(objspace, obj);
+
+            /* Must have at least 3 chunks so that the last two are guaranteed to be full. */
+            if (objspace->flags.during_parallel_marking && mstack->chunk_size >= 3) {
+                if (objspace->mark_stack[0].chunk_size == 0 || mstack->chunk_size > 5) {
+                    // TODO: tune this parameter
+                    int move_count = mstack->chunk_size / 2;
+
+                    stack_chunk_t *chunk_tail = mstack->chunk;
+                    for (size_t i = 0; i < mstack->chunk_size - move_count - 1; i++) {
+                        chunk_tail = chunk_tail->next;
+                    }
+                    GC_ASSERT(chunk_tail != mstack->chunk);
+
+#if RGENGC_CHECK_MODE
+                    {
+                        stack_chunk_t *check_head_chunk = chunk_tail->next;
+                        for (int i = 0; i < move_count; i++) {
+                            if (check_head_chunk == NULL) {
+                                rb_bug("chunk too short (expected %d, but %d)", move_count, i);
+                            }
+                            check_head_chunk = check_head_chunk->next;
+                        }
+                        if (check_head_chunk != NULL) {
+                            rb_bug("chunk too long");
+                        }
+                    }
+#endif
+
+                    stack_chunk_t *chunk = chunk_tail->next;
+                    chunk_tail->next = NULL;
+                    mstack->chunk_size -= move_count;
+
+                    pthread_mutex_lock(&objspace->rpargc.main_mark_stack_mutex);
+                    {
+                        mark_stack_t *main_mstack = &objspace->mark_stack[0];
+
+                        if (main_mstack->chunk == NULL) {
+                            GC_ASSERT(main_mstack->chunk_size == 0);
+                            main_mstack->chunk = chunk;
+                        }
+                        else {
+                            GC_ASSERT(main_mstack->chunk_size > 0);
+                            chunk_tail = main_mstack->chunk;
+                            while (chunk_tail->next != NULL) {
+                                chunk_tail = chunk_tail->next;
+                            }
+                            chunk_tail->next = chunk;
+                        }
+
+                        main_mstack->chunk_size += move_count;
+
+                        if (objspace->rpargc.main_mark_stack_wait_count > 0) {
+                            for (int i = 0; i < objspace->rpargc.main_mark_stack_wait_count && i < move_count; i++) {
+                                pthread_cond_signal(&objspace->rpargc.main_mark_stack_cond);
+                            }
+                        }
+                    }
+                    pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                }
+/*
+                stack_chunk_t *chunk = mstack->chunk;
+                mstack->chunk = chunk->next;
+                mstack->chunk_size--;
+
+                //fprintf(stderr, "thread %d: send chunk, new len: %ld\n", ruby_parallel_mark_thread_id, mstack->chunk_size);
+
+                //fprintf(stderr, "move chunk (worker -> main): %p (index: %d)\n", chunk, chunk->index);
+                pthread_mutex_lock(&objspace->rpargc.main_mark_stack_mutex);
+                {
+                    mark_stack_t *main_mstack = &objspace->mark_stack[0];
+
+                    chunk->next = main_mstack->chunk;
+                    main_mstack->chunk = chunk;
+                    main_mstack->chunk_size++;
+
+                    if (objspace->rpargc.main_mark_stack_wait_count > 0) {
+                        pthread_cond_signal(&objspace->rpargc.main_mark_stack_cond);
+                    }
+                }
+                pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                */
+            }
 
 #if GC_ENABLE_INCREMENTAL_MARK
-	if (incremental) {
-	    if (RGENGC_CHECK_MODE && !RVALUE_MARKING(obj)) {
-		rb_bug("gc_mark_stacked_objects: incremental, but marking bit is 0");
-	    }
-	    CLEAR_IN_BITMAP(GET_HEAP_MARKING_BITS(obj), obj);
-	    popped_count++;
+            if (incremental) {
+                if (RGENGC_CHECK_MODE && !RVALUE_MARKING(obj)) {
+                    /*printf("obj is %p\n", (void *)obj);*/
+                    rb_bug("gc_mark_stacked_objects: incremental, but marking bit is 0");
+                }
+                CLEAR_IN_BITMAP(GET_HEAP_MARKING_BITS(obj), obj);
+                popped_count++;
 
-	    if (popped_count + (objspace->marked_slots - marked_slots_at_the_beginning) > count) {
-		break;
-	    }
-	}
-	else {
-	    /* just ignore marking bits */
-	}
+                if (popped_count + objspace->marked_slots[ruby_parallel_mark_thread_id] > count) {
+                    if (objspace->flags.during_parallel_marking) {
+                        pthread_mutex_lock(&objspace->rpargc.main_mark_stack_mutex);
+                        {
+                            objspace->rpargc.finish = TRUE;
+                            /*fprintf(stderr, "ALERT FINISH\n");*/
+                            pthread_cond_broadcast(&objspace->rpargc.main_mark_stack_cond);
+                        }
+                        pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                    }
+                    goto DONE_MARK;
+                }
+            }
+            else {
+                popped_count++; /* TODO: remove me */
+                /* just ignore marking bits */
+            }
 #endif
+        }
+
+        if (objspace->flags.during_parallel_marking) {
+            pthread_mutex_lock(&objspace->rpargc.main_mark_stack_mutex);
+            {
+                if (objspace->rpargc.finish) {
+                    pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                    goto DONE_MARK;
+                }
+
+                if (objspace->rpargc.main_mark_stack_wait_count == objspace->rpargc.worker_count - 1 && objspace->mark_stack[0].chunk == NULL) {
+                    objspace->rpargc.finish = TRUE;
+                    /*fprintf(stderr, "finish, main chunk: %p\n", objspace->mark_stack[0].chunk);*/
+                    pthread_cond_broadcast(&objspace->rpargc.main_mark_stack_cond);
+                    pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                    goto DONE_MARK;
+                }
+
+                while (objspace->mark_stack[0].chunk == NULL) {
+                    objspace->rpargc.main_mark_stack_wait_count++;
+
+                    /*fprintf(stderr, "thread %d wait\n", ruby_parallel_mark_thread_id);*/
+
+                    pthread_cond_wait(&objspace->rpargc.main_mark_stack_cond, &objspace->rpargc.main_mark_stack_mutex);
+
+                    /* Marking is done. */
+                    if (objspace->rpargc.finish) {
+                        GC_ASSERT(objspace->rpargc.main_mark_stack_wait_count > 0);
+                        objspace->rpargc.main_mark_stack_wait_count--;
+                        pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+                        /*fprintf(stderr, "thread %d done mark\n", ruby_parallel_mark_thread_id);*/
+                        goto DONE_MARK;
+                    }
+
+                    /*fprintf(stderr, "thread %d done wait. mark stack chunk: %p\n", ruby_parallel_mark_thread_id, objspace->mark_stack[0].chunk);*/
+
+                    objspace->rpargc.main_mark_stack_wait_count--;
+                }
+
+                stack_chunk_t *chunk = objspace->mark_stack[0].chunk;
+                GC_ASSERT(chunk->index > 0);
+                /*fprintf(stderr, "thread %d: move chunk (main -> worker): %p (index: %d)\n", ruby_parallel_mark_thread_id, chunk, chunk->index);*/
+                stack_chunk_t *next = mstack->chunk;
+                mstack->chunk = chunk;
+                mstack->chunk_size++;
+                objspace->mark_stack[0].chunk = chunk->next;
+                objspace->mark_stack[0].chunk_size--;
+                chunk->next = next;
+            }
+            pthread_mutex_unlock(&objspace->rpargc.main_mark_stack_mutex);
+        } else {
+            break;
+        }
     }
 
+// TODO: this is gross
+DONE_MARK:
+    /*fprintf(stderr, "thread %d: popped count: %ld\n", ruby_parallel_mark_thread_id, popped_count);*/
     if (RGENGC_CHECK_MODE >= 3) gc_verify_internal_consistency(objspace);
 
     if (is_mark_stack_empty(mstack)) {
@@ -6603,7 +6785,7 @@ gc_mark_roots(rb_objspace_t *objspace, const char **categoryp)
 
     if (categoryp) *categoryp = "xxx";
 
-    objspace->rgengc.parent_object = Qfalse;
+    objspace->rgengc.parent_object[ruby_parallel_mark_thread_id] = Qfalse;
 
 #if PRINT_ROOT_TICKS
 #define MARK_CHECKPOINT_PRINT_TICK(category) do { \
@@ -7248,6 +7430,105 @@ gc_verify_transient_heap_internal_consistency(VALUE dmy)
 
 /* marks */
 
+struct gc_marks_worker_params {
+    rb_objspace_t *objspace;
+    int id;
+    bool mark_rest;
+};
+
+static void *
+gc_marks_worker(void *data)
+{
+    struct gc_marks_worker_params *params = data;
+    rb_objspace_t *objspace = params->objspace;
+
+    /* Setup thread ID */
+    int thread_id = params->id;
+    ruby_parallel_mark_thread_id = params->id;
+
+    if (is_incremental_marking(objspace)) {
+        if (params->mark_rest) {
+            while (gc_mark_stacked_objects_incremental(objspace, INT_MAX) == FALSE);
+        }
+        else {
+            gc_mark_stacked_objects_incremental(objspace, objspace->rincgc.step_slots);
+        }
+    }
+    else {
+        gc_mark_stacked_objects_all(objspace);
+    }
+
+    pthread_mutex_lock(&objspace->rpargc.finish_mutex);
+    {
+        objspace->marked_slots[0] += objspace->marked_slots[thread_id];
+        objspace->marked_slots[thread_id] = 0;
+
+        GC_ASSERT(objspace->rpargc.worker_count > 0);
+        objspace->rpargc.worker_count--;
+        pthread_cond_signal(&objspace->rpargc.finish_cond);
+    }
+    pthread_mutex_unlock(&objspace->rpargc.finish_mutex);
+
+    return NULL;
+}
+
+static void
+gc_marks_parallel(rb_objspace_t *objspace, bool mark_rest)
+{
+    GC_ASSERT(objspace->rpargc.worker_count == 0);
+    GC_ASSERT(objspace->rpargc.main_mark_stack_wait_count == 0);
+    GC_ASSERT(objspace->rpargc.finish == FALSE);
+
+    pthread_mutex_t *finish_mutex = &objspace->rpargc.finish_mutex;
+    pthread_cond_t *finish_cond = &objspace->rpargc.finish_cond;
+
+    objspace->rpargc.worker_count = 4;
+
+    objspace->flags.during_parallel_marking = TRUE;
+
+    // TODO: NUM_WORKERS rather than 4
+    pthread_mutex_lock(finish_mutex);
+    {
+        struct gc_marks_worker_params params[4];
+        for (int i = 0; i < 4; i++) {
+            params[i] = (struct gc_marks_worker_params){
+                .id = i + 1,
+                .objspace = objspace,
+                .mark_rest = mark_rest,
+            };
+
+            pthread_t thread;
+            if (pthread_create(&thread, NULL, gc_marks_worker, &params[i])) {
+                rb_bug("gc_marks_parallel: pthread_create");
+            }
+        }
+
+        while (objspace->rpargc.worker_count > 0) {
+            pthread_cond_wait(finish_cond, finish_mutex);
+        }
+    }
+    pthread_mutex_unlock(finish_mutex);
+
+    objspace->rpargc.finish = FALSE;
+
+    objspace->flags.during_parallel_marking = FALSE;
+#if RGENGC_CHECK_MODE
+    if (!is_incremental_marking(objspace)) {
+        for (int i = 0; i < 5; i++) {
+            if (objspace->mark_stack[i].chunk != NULL) {
+                rb_bug("mark stack for thread %d is not empty", i);
+            }
+
+            if (objspace->mark_stack[i].chunk_size != 0) {
+                rb_bug("expected mark stack for thread %d to have size zero, but was %ld", i, objspace->mark_stack[i].chunk_size);
+            }
+        }
+    }
+#endif
+}
+
+
+
 static void
 gc_marks_start(rb_objspace_t *objspace, int full_mark)
 {
@@ -7257,12 +7538,12 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
 
     if (full_mark) {
 #if GC_ENABLE_INCREMENTAL_MARK
-	objspace->rincgc.step_slots = (objspace->marked_slots * 2) / ((objspace->rincgc.pooled_slots / HEAP_PAGE_OBJ_LIMIT) + 1);
+	objspace->rincgc.step_slots = (objspace->marked_slots[0] * 2) / ((objspace->rincgc.pooled_slots / HEAP_PAGE_OBJ_LIMIT) + 1);
 
 	if (0) fprintf(stderr, "objspace->marked_slots: %"PRIdSIZE", "
                        "objspace->rincgc.pooled_page_num: %"PRIdSIZE", "
                        "objspace->rincgc.step_slots: %"PRIdSIZE", \n",
-                       objspace->marked_slots, objspace->rincgc.pooled_slots, objspace->rincgc.step_slots);
+                       objspace->marked_slots[0], objspace->rincgc.pooled_slots, objspace->rincgc.step_slots);
 #endif
 	objspace->flags.during_minor_gc = FALSE;
         if (ruby_enable_autocompact) {
@@ -7272,12 +7553,12 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
 	objspace->rgengc.uncollectible_wb_unprotected_objects = 0;
 	objspace->rgengc.old_objects = 0;
 	objspace->rgengc.last_major_gc = objspace->profile.count;
-	objspace->marked_slots = 0;
+	objspace->marked_slots[0] = 0;
 	rgengc_mark_and_rememberset_clear(objspace, heap_eden);
     }
     else {
 	objspace->flags.during_minor_gc = TRUE;
-	objspace->marked_slots =
+	objspace->marked_slots[0] =
 	  objspace->rgengc.old_objects + objspace->rgengc.uncollectible_wb_unprotected_objects; /* uncollectible objects are marked already */
 	objspace->profile.minor_gc_count++;
 	rgengc_rememberset_mark(objspace, heap_eden);
@@ -7286,7 +7567,7 @@ gc_marks_start(rb_objspace_t *objspace, int full_mark)
     gc_mark_roots(objspace, NULL);
 
     gc_report(1, objspace, "gc_marks_start: (%s) end, stack in %"PRIdSIZE"\n",
-              full_mark ? "full" : "minor", mark_stack_size(&objspace->mark_stack));
+              full_mark ? "full" : "minor", mark_stack_size(&objspace->mark_stack[0]));
 }
 
 #if GC_ENABLE_INCREMENTAL_MARK
@@ -7351,16 +7632,20 @@ gc_marks_finish(rb_objspace_t *objspace)
 	    return FALSE; /* continue marking phase */
 	}
 
-	if (RGENGC_CHECK_MODE && is_mark_stack_empty(&objspace->mark_stack) == 0) {
-	    rb_bug("gc_marks_finish: mark stack is not empty (%"PRIdSIZE").",
-                   mark_stack_size(&objspace->mark_stack));
-	}
+#if RGENGC_CHECK_MODE
+        for (int i = 0; i < 5; i++) {
+            if (RGENGC_CHECK_MODE && is_mark_stack_empty(&objspace->mark_stack[i]) == 0) {
+                rb_bug("gc_marks_finish: mark stack is not empty (%"PRIdSIZE").",
+                       mark_stack_size(&objspace->mark_stack[i]));
+            }
+        }
+#endif
 
 	gc_mark_roots(objspace, 0);
 
-	if (is_mark_stack_empty(&objspace->mark_stack) == FALSE) {
+	if (is_mark_stack_empty(&objspace->mark_stack[0]) == FALSE) {
 	    gc_report(1, objspace, "gc_marks_finish: not empty (%"PRIdSIZE"). retry.\n",
-                      mark_stack_size(&objspace->mark_stack));
+                      mark_stack_size(&objspace->mark_stack[0]));
 	    return FALSE;
 	}
 
@@ -7395,14 +7680,14 @@ gc_marks_finish(rb_objspace_t *objspace)
 	/* decide full GC is needed or not */
 	rb_heap_t *heap = heap_eden;
 	size_t total_slots = heap_allocatable_pages * HEAP_PAGE_OBJ_LIMIT + heap->total_slots;
-	size_t sweep_slots = total_slots - objspace->marked_slots; /* will be swept slots */
+	size_t sweep_slots = total_slots - objspace->marked_slots[0]; /* will be swept slots */
 	size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
 	size_t min_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_min_ratio);
 	int full_marking = is_full_marking(objspace);
         const int r_cnt = GET_VM()->ractor.cnt;
         const int r_mul = r_cnt > 8 ? 8 : r_cnt; // upto 8
 
-	GC_ASSERT(heap->total_slots >= objspace->marked_slots);
+	GC_ASSERT(heap->total_slots >= objspace->marked_slots[0]);
 
 	/* setup free-able page counts */
         if (max_free_slots < gc_params.heap_init_slots * r_mul) {
@@ -7461,7 +7746,7 @@ gc_marks_finish(rb_objspace_t *objspace)
 	gc_report(1, objspace, "gc_marks_finish (marks %"PRIdSIZE" objects, "
                   "old %"PRIdSIZE" objects, total %"PRIdSIZE" slots, "
                   "sweep %"PRIdSIZE" slots, increment: %"PRIdSIZE", next GC: %s)\n",
-                  objspace->marked_slots, objspace->rgengc.old_objects, heap->total_slots, sweep_slots, heap_allocatable_pages,
+                  objspace->marked_slots[0], objspace->rgengc.old_objects, heap->total_slots, sweep_slots, heap_allocatable_pages,
 		  objspace->rgengc.need_major_gc ? "major" : "minor");
     }
 
@@ -7485,7 +7770,7 @@ gc_marks_step(rb_objspace_t *objspace, size_t slots)
 	    gc_sweep(objspace);
 	}
     }
-    if (0) fprintf(stderr, "objspace->marked_slots: %"PRIdSIZE"\n", objspace->marked_slots);
+    if (0) fprintf(stderr, "objspace->marked_slots: %"PRIdSIZE"\n", objspace->marked_slots[0]);
 #endif
 }
 
@@ -7539,12 +7824,50 @@ gc_marks_continue(rb_objspace_t *objspace, rb_heap_t *heap)
     if (slots > 0) {
         gc_report(2, objspace, "gc_marks_continue: provide %d slots from %s.\n",
                   slots, from);
-        gc_marks_step(objspace, objspace->rincgc.step_slots);
+        size_t marked_slots_beginning = objspace->marked_slots[0];
+        /*gc_marks_step(objspace, objspace->rincgc.step_slots);*/
+        gc_marks_parallel(objspace, FALSE);
+        bool all_empty = TRUE;
+        for (int i = 0; i < 5; i++) {
+            if (objspace->mark_stack[i].chunk != NULL) {
+                GC_ASSERT(objspace->mark_stack[i].chunk_size > 0);
+                all_empty = FALSE;
+                break;
+            }
+
+            GC_ASSERT(objspace->mark_stack[i].chunk_size == 0);
+        }
+
+        if (all_empty) {
+            if (gc_marks_finish(objspace)) {
+                gc_sweep(objspace);
+            }
+        }
+        else {
+            size_t marked_slots_diff = objspace->marked_slots[0] - marked_slots_beginning;
+
+            size_t inc_steps = marked_slots_diff / objspace->rincgc.step_slots;
+
+            for (size_t i = 1; i < inc_steps && heap->pooled_pages; i++) {
+                slots = 0;
+                while (heap->pooled_pages && slots < HEAP_PAGE_OBJ_LIMIT) {
+                    struct heap_page *page = heap_move_pooled_pages_to_free_pages(heap);
+                    slots += page->free_slots;
+                }
+            }
+        }
     }
     else {
-        gc_report(2, objspace, "gc_marks_continue: no more pooled pages (stack depth: %"PRIdSIZE").\n",
-                  mark_stack_size(&objspace->mark_stack));
-        gc_marks_rest(objspace);
+        /*gc_report(2, objspace, "gc_marks_continue: no more pooled pages (stack depth: %"PRIdSIZE").\n",*/
+                  /*mark_stack_size(&objspace->mark_stack));*/
+        heap_eden->pooled_pages = NULL;
+        gc_marks_parallel(objspace, TRUE);
+
+        while (gc_marks_finish(objspace) == FALSE) {
+            while (gc_mark_stacked_objects_incremental(objspace, INT_MAX) == FALSE);
+        }
+
+        gc_sweep(objspace);
     }
 
     gc_exit(objspace, gc_enter_event_mark_continue, &lock_lev);
@@ -7560,7 +7883,11 @@ gc_marks(rb_objspace_t *objspace, int full_mark)
 
     gc_marks_start(objspace, full_mark);
     if (!is_incremental_marking(objspace)) {
-        gc_marks_rest(objspace);
+        heap_eden->pooled_pages = NULL;
+        /*gc_marks_rest(objspace);*/
+        gc_marks_parallel(objspace, FALSE);
+        gc_marks_finish(objspace);
+        gc_sweep(objspace);
     }
 
 #if RGENGC_PROFILE > 0
@@ -7625,7 +7952,7 @@ rgengc_remembersetbits_set(rb_objspace_t *objspace, VALUE obj)
     }
     else {
 	page->flags.has_remembered_objects = TRUE;
-	MARK_IN_BITMAP(bits, obj);
+	MARK_IN_BITMAP_ATOMIC(bits, obj);
 	return TRUE;
     }
 }
@@ -9807,7 +10134,7 @@ gc_stat_internal(VALUE hash_or_sym)
     SET(heap_live_slots, objspace_live_slots(objspace));
     SET(heap_free_slots, objspace_free_slots(objspace));
     SET(heap_final_slots, heap_pages_final_slots);
-    SET(heap_marked_slots, objspace->marked_slots);
+    SET(heap_marked_slots, objspace->marked_slots[0]);
     SET(heap_eden_pages, heap_eden->total_pages);
     SET(heap_tomb_pages, heap_tomb->total_pages);
     SET(total_allocated_pages, objspace->profile.total_allocated_pages);
