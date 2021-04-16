@@ -1057,7 +1057,7 @@ static const rb_callable_method_entry_t *
 complemented_callable_method_entry(VALUE klass, ID id)
 {
     VALUE defined_class;
-    rb_method_entry_t *me = search_method(klass, id, &defined_class);
+    rb_method_entry_t *me = search_method0(klass, id, &defined_class, true);
     return prepare_callable_method_entry(defined_class, id, me, FALSE);
 }
 
