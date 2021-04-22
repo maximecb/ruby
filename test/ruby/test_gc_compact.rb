@@ -154,4 +154,16 @@ class TestGCCompact < Test::Unit::TestCase
     GC.compact
     assert_equal count + 1, GC.stat(:compact_count)
   end
+
+  def test_promoted_heap
+    assert_separately([], "#{<<~"begin;"}\n#{<<~"end;"}", timeout: 10, signal: :SEGV)
+    begin;
+      assert_equal 0, GC.stat(:heap_promoted_pages)
+      GC.compact
+      promoted_pages = GC.stat(:heap_promoted_pages)
+      @arr = 10_000.times.map { Class.new }
+      GC.compact
+      assert_operator GC.stat(:heap_promoted_pages), :>, promoted_pages
+    end;
+  end
 end
