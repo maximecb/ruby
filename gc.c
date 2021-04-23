@@ -2358,7 +2358,7 @@ rvargc_find_region(size_t size, rb_ractor_t *cr, RVALUE *freelist)
 }
 
 int
-rb_slot_size()
+rb_slot_size(void)
 {
     return sizeof(RVALUE);
 }
@@ -2374,6 +2374,40 @@ rb_rvargc_payload_init(VALUE obj, size_t size)
     objspace->total_allocated_objects += rvargc_slot_count(size);
 
     return (VALUE)ph;
+}
+
+void
+rvargc_resize_down(struct RPayload * phead, unsigned long slots)
+{
+    VALUE vp                = (VALUE)phead;
+    struct heap_page * page = GET_HEAP_PAGE(vp);
+    int sdiff               = (int)(RPAYLOAD_LEN(vp) - slots);
+
+    RPAYLOAD_FLAGS_SET(vp, slots);
+
+    for (int i = 0; i < sdiff; i++) {
+        VALUE p = vp + ((i + RPAYLOAD_LEN(vp)) * rb_slot_size());
+        heap_page_add_freeobj(&rb_objspace, page, p);
+    }
+}
+
+VALUE
+rb_rvargc_payload_resize(VALUE self, VALUE obj, VALUE newlen) 
+{
+    struct RPayload * phead = (struct RPayload *)(obj + rb_slot_size());
+
+    unsigned long slots     = rvargc_slot_count(FIX2INT(newlen));
+    unsigned long old_slots = RPAYLOAD_LEN((VALUE)phead);
+
+    if (slots == old_slots) {
+        return obj;
+    } else if (slots > old_slots) {
+        // resize up - we need more slots than we have
+    } else if (slots < old_slots) {
+        rvargc_resize_down(phead, slots);
+    }
+
+    return obj;
 }
 
 void *
@@ -13179,6 +13213,8 @@ Init_GC(void)
     OBJ_FREEZE(gc_constants);
     /* internal constants */
     rb_define_const(rb_mGC, "INTERNAL_CONSTANTS", gc_constants);
+
+    rb_define_singleton_method(rb_mGC, "resize_payload", rb_rvargc_payload_resize, 2);
 
     rb_mProfiler = rb_define_module_under(rb_mGC, "Profiler");
     rb_define_singleton_method(rb_mProfiler, "enabled?", gc_profile_enable_get, 0);
