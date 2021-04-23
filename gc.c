@@ -6659,7 +6659,7 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
 #if USE_RVARGC
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
     // Mark payload head here
-    gc_mark_and_pin(objspace, obj);
+    gc_mark(objspace, obj);
 
     for (int i = 1 ; i < RPAYLOAD_LEN(obj); i++) {
         VALUE p = obj + i * sizeof(RVALUE);
