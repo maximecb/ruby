@@ -9048,6 +9048,7 @@ gc_is_moveable_obj(rb_objspace_t *objspace, VALUE obj)
       case T_RATIONAL:
       case T_NODE:
       case T_CLASS:
+      case T_PAYLOAD:
         if (FL_TEST(obj, FL_FINALIZE)) {
             /* The finalizer table is a numtable. It looks up objects by address.
              * We can't mark the keys in the finalizer table because that would
