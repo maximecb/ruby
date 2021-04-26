@@ -625,7 +625,6 @@ def __lldb_init_module(debugger, internal_dict):
     debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
     debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
     debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
-    debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
 
     lldb_init(debugger)
     print("lldb scripts for ruby has been installed.")

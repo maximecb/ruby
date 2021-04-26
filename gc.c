@@ -4843,6 +4843,27 @@ unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
     }
 }
 
+int
+HAS_PAYLOAD(VALUE obj) {
+    return (BUILTIN_TYPE(obj + rb_slot_size()) == T_PAYLOAD);
+}
+
+int
+dest_can_contain(VALUE dest, VALUE source) {
+    int required_len = RPAYLOAD_LEN(source + rb_slot_size()) + 1;
+
+    for (int i = 0; i < required_len; i++) {
+        VALUE slot = dest + (i * rb_slot_size());
+
+        if (GET_HEAP_PAGE(slot) != GET_HEAP_PAGE(dest) || 
+                !RB_TYPE_P(slot, T_NONE)) {
+            return FALSE;
+        }
+    }
+}
+
+void gc_move_with_payload(rb_objspace_t *objspace, VALUE scan, VALUE free);
+
 static short
 try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, VALUE dest)
 {
@@ -4881,6 +4902,11 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
                         objspace->rcompactor.considered_count_table[BUILTIN_TYPE((VALUE)p)]++;
 
                         if (gc_is_moveable_obj(objspace, (VALUE)p)) {
+                            if (HAS_PAYLOAD((VALUE)p)) {
+                                if (dest_can_contain(dest, (VALUE)p)) {
+                                    gc_move_with_payload(objspace, (VALUE)p, dest);
+                                }
+                            }
                             /* We were able to move "p" */
                             objspace->rcompactor.moved_count_table[BUILTIN_TYPE((VALUE)p)]++;
                             objspace->rcompactor.total_moved++;
@@ -9079,19 +9105,27 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free)
     int wb_unprotected;
     int uncollectible;
     int marking;
+    int moving_payload = payload_or_self(scan) == scan ? 1 : 0;
     RVALUE *dest = (RVALUE *)free;
     RVALUE *src = (RVALUE *)scan;
 
     gc_report(4, objspace, "Moving object: %p -> %p\n", (void*)scan, (void *)free);
 
-    GC_ASSERT(BUILTIN_TYPE(scan) != T_NONE);
     GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(free), free));
 
     /* Save off bits for current object. */
-    marked = rb_objspace_marked_object_p((VALUE)src);
-    wb_unprotected = RVALUE_WB_UNPROTECTED((VALUE)src);
-    uncollectible = RVALUE_UNCOLLECTIBLE((VALUE)src);
-    marking = RVALUE_MARKING((VALUE)src);
+    // TODO: THIS IS WRONG
+    if (BUILTIN_TYPE(scan) != T_PAYLOAD && scan == payload_or_self(scan)) {
+        marked = rb_objspace_marked_object_p((VALUE)src);
+        wb_unprotected = RVALUE_WB_UNPROTECTED((VALUE)src);
+        uncollectible = RVALUE_UNCOLLECTIBLE((VALUE)src);
+        marking = RVALUE_MARKING((VALUE)src);
+    } else {
+        marked = 0;
+        wb_unprotected = 0;
+        uncollectible = 0;
+        marking = 0;
+    }
 
     /* Clear bits for eventual T_MOVED */
     CLEAR_IN_BITMAP(GET_HEAP_MARK_BITS((VALUE)src), (VALUE)src);
@@ -9162,6 +9196,20 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free)
     GC_ASSERT(BUILTIN_TYPE((VALUE)dest) != T_NONE);
 
     return (VALUE)src;
+}
+
+void
+gc_move_with_payload(rb_objspace_t *objspace, VALUE source, VALUE dest)
+{
+    int required_len = RPAYLOAD_LEN(source + rb_slot_size()) + 1;
+
+    for (int i = 0; i < required_len; i++) {
+        VALUE real_source = source + (i * rb_slot_size()); 
+        VALUE real_dest   = dest + (i * rb_slot_size());
+
+        gc_move(&rb_objspace, real_source, real_dest);
+        gc_pin(&rb_objspace, real_dest);
+    }
 }
 
 static int
