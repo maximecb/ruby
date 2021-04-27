@@ -65,6 +65,7 @@
 #define RARRAY_EMBED_LEN   RARRAY_EMBED_LEN
 #define RARRAY_LENINT      RARRAY_LENINT
 #define RARRAY_TRANSIENT_P RARRAY_TRANSIENT_P
+#define RARRAY_GC_EMBED_P  rarray_gc_embed_p
 #define RARRAY_ASET        RARRAY_ASET
 #define RARRAY_PTR         RARRAY_PTR
 /** @endcond */
@@ -75,7 +76,8 @@ enum ruby_rarray_flags {
     RARRAY_EMBED_LEN_MASK  = RUBY_FL_USER4 | RUBY_FL_USER3
 #if USE_TRANSIENT_HEAP
     ,
-    RARRAY_TRANSIENT_FLAG  = RUBY_FL_USER13
+    RARRAY_TRANSIENT_FLAG  = RUBY_FL_USER13,
+    RARRAY_PAYLOAD_FLAG = RUBY_FL_USER9
 #endif
 };
 
@@ -105,6 +107,7 @@ struct RArray {
 };
 
 RBIMPL_SYMBOL_EXPORT_BEGIN()
+int rarray_gc_embed_p(VALUE ary);
 VALUE *rb_ary_ptr_use_start(VALUE ary);
 void rb_ary_ptr_use_end(VALUE a);
 #if USE_TRANSIENT_HEAP

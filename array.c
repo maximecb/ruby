@@ -70,6 +70,11 @@ should_not_be_shared_and_embedded(VALUE ary)
    assert(should_not_be_shared_and_embedded((VALUE)ary)), \
    FL_TEST_RAW((ary), RARRAY_EMBED_FLAG) != 0)
 
+#define ARY_GC_EMBED_P(ary) \
+  (assert(should_be_T_ARRAY((VALUE)(ary))), \
+   assert(should_not_be_shared_and_embedded((VALUE)ary)), \
+   FL_TEST_RAW((ary), RARRAY_PAYLOAD_FLAG) != 0)
+
 #define ARY_HEAP_PTR(a) (assert(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.ptr)
 #define ARY_HEAP_LEN(a) (assert(!ARY_EMBED_P(a)), RARRAY(a)->as.heap.len)
 #define ARY_HEAP_CAPA(a) (assert(!ARY_EMBED_P(a)), assert(!ARY_SHARED_ROOT_P(a)), \
@@ -91,8 +96,15 @@ should_not_be_shared_and_embedded(VALUE ary)
     RARY_TRANSIENT_UNSET(a); \
     ary_verify(a); \
 } while (0)
-
 #define FL_UNSET_EMBED(ary) FL_UNSET((ary), RARRAY_EMBED_FLAG|RARRAY_EMBED_LEN_MASK)
+
+#define FL_SET_GC_EMBED(a) do { \
+    assert(!ARY_SHARED_P(a)); \
+    FL_SET((a), RARRAY_PAYLOAD_FLAG); \
+    ary_verify(a); \
+} while (0)
+#define FL_UNSET_GC_EMBED(ary) FL_UNSET((ary), RARRAY_PAYLOAD_FLAG)
+
 #define FL_SET_SHARED(ary) do { \
     assert(!ARY_EMBED_P(ary)); \
     FL_SET((ary), ELTS_SHARED); \
@@ -172,6 +184,12 @@ should_not_be_shared_and_embedded(VALUE ary)
     assert(!RARRAY_TRANSIENT_P(ary)); \
     FL_SET((ary), RARRAY_SHARED_ROOT_FLAG); \
 } while (0)
+
+int
+rarray_gc_embed_p(VALUE ary)
+{
+    return ARY_GC_EMBED_P(ary);
+}
 
 static inline void
 ARY_SET(VALUE a, long i, VALUE v)
@@ -378,6 +396,7 @@ ary_heap_realloc(VALUE ary, size_t new_capa)
         }
     }
     else {
+        fprintf(stderr, "oh boy\n");
         SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, old_capa);
     }
     ary_verify(ary);
@@ -442,6 +461,9 @@ rb_ary_detransient(VALUE ary)
 static void
 ary_resize_capa(VALUE ary, long capacity)
 {
+    if (ARY_GC_EMBED_P(ary)){
+        fprintf(stderr, "resizing\n");
+    }
     assert(RARRAY_LEN(ary) <= capacity);
     assert(!OBJ_FROZEN(ary));
     assert(!ARY_SHARED_P(ary));
@@ -617,6 +639,9 @@ rb_ary_modify(VALUE ary)
 static VALUE
 ary_ensure_room_for_push(VALUE ary, long add_len)
 {
+    if (ARY_GC_EMBED_P(ary)) {
+        fprintf(stderr, "whooops\n");
+    }
     long old_len = RARRAY_LEN(ary);
     long new_len = old_len + add_len;
     long capa;
@@ -712,6 +737,13 @@ ary_alloc(VALUE klass)
 }
 
 static VALUE
+rvargc_ary_alloc(VALUE klass, long capa)
+{
+    RVARGC_NEWOBJ_OF(ary, struct RArray, klass, T_ARRAY | RARRAY_EMBED_FLAG | (RGENGC_WB_PROTECTED_ARRAY ? FL_WB_PROTECTED : 0), capa * sizeof(VALUE));
+    return (VALUE)ary;
+}
+
+static VALUE
 empty_ary_alloc(VALUE klass)
 {
     RUBY_DTRACE_CREATE_HOOK(ARRAY, 0);
@@ -732,8 +764,20 @@ ary_new(VALUE klass, long capa)
 
     RUBY_DTRACE_CREATE_HOOK(ARRAY, capa);
 
-    ary = ary_alloc(klass);
-    if (capa > RARRAY_EMBED_LEN_MAX) {
+    if (capa > RARRAY_EMBED_LEN_MAX && capa < 200 ) {
+        ary = rvargc_ary_alloc(klass, capa);
+    } else {
+        ary = ary_alloc(klass);
+    }
+
+    if (capa > RARRAY_EMBED_LEN_MAX && capa < 200) {
+        ptr = rb_rvargc_payload_data_ptr(ary + rb_slot_size());
+        FL_SET_GC_EMBED(ary);
+        FL_UNSET_EMBED(ary);
+        ARY_SET_PTR(ary, ptr);
+        ARY_SET_CAPA(ary, capa);
+        ARY_SET_HEAP_LEN(ary, 0);
+    } else if (capa > RARRAY_EMBED_LEN_MAX) {
         ptr = ary_heap_alloc(ary, capa);
         FL_UNSET_EMBED(ary);
         ARY_SET_PTR(ary, ptr);
@@ -879,8 +923,10 @@ rb_ary_free(VALUE ary)
             RB_DEBUG_COUNTER_INC(obj_ary_transient);
         }
         else {
-            RB_DEBUG_COUNTER_INC(obj_ary_ptr);
-            ary_heap_free(ary);
+            if (!ARY_GC_EMBED_P(ary)) {
+                RB_DEBUG_COUNTER_INC(obj_ary_ptr);
+                ary_heap_free(ary);
+            }
         }
     }
     else {
@@ -1181,6 +1227,9 @@ rb_ary_store(VALUE ary, long idx, VALUE val)
 static VALUE
 ary_make_partial(VALUE ary, VALUE klass, long offset, long len)
 {
+    if (ARY_GC_EMBED_P(ary)) {
+        fprintf(stderr, "make partial\n");
+    }
     assert(offset >= 0);
     assert(len >= 0);
     assert(offset+len <= RARRAY_LEN(ary));
@@ -2245,6 +2294,7 @@ rb_ary_set_len(VALUE ary, long len)
 VALUE
 rb_ary_resize(VALUE ary, long len)
 {
+    fprintf(stderr, "oh boy 2\n");
     long olen;
 
     rb_ary_modify(ary);

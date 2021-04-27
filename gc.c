@@ -6805,6 +6805,14 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
                     rb_transient_heap_mark(obj, ptr);
                 }
             }
+
+            if (RARRAY_GC_EMBED_P(obj)) {
+                for (i = 1 ; (unsigned long)i <= rvargc_slot_count(len * sizeof(VALUE *)); i++) {
+                    VALUE p = obj + (i * rb_slot_size());
+                    MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
+                    MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
+                }
+            }
         }
 	break;
 
