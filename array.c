@@ -378,13 +378,14 @@ ary_heap_realloc(VALUE ary, size_t new_capa)
     size_t alloc_capa = new_capa;
     size_t old_capa = ARY_HEAP_CAPA(ary);
 
-    if (RARRAY_TRANSIENT_P(ary)) {
+    if (RARRAY_TRANSIENT_P(ary) || ARY_GC_EMBED_P(ary)) {
         if (new_capa <= old_capa) {
             /* do nothing */
             alloc_capa = old_capa;
         }
         else {
             VALUE *new_ptr = rb_transient_heap_alloc(ary, sizeof(VALUE) * new_capa);
+            RARY_TRANSIENT_SET(ary);
 
             if (new_ptr == NULL) {
                 new_ptr = ALLOC_N(VALUE, new_capa);
@@ -393,10 +394,14 @@ ary_heap_realloc(VALUE ary, size_t new_capa)
 
             MEMCPY(new_ptr, ARY_HEAP_PTR(ary), VALUE, old_capa);
             ARY_SET_PTR(ary, new_ptr);
+
+            if (ARY_GC_EMBED_P(ary)) {
+                FL_UNSET_GC_EMBED(ary);
+                rb_rvargc_payload_free(ary + rb_slot_size(), old_capa * sizeof(VALUE));
+            }
         }
     }
     else {
-        fprintf(stderr, "oh boy\n");
         SIZED_REALLOC_N(RARRAY(ary)->as.heap.ptr, VALUE, new_capa, old_capa);
     }
     ary_verify(ary);
@@ -462,7 +467,7 @@ static void
 ary_resize_capa(VALUE ary, long capacity)
 {
     if (ARY_GC_EMBED_P(ary)){
-        fprintf(stderr, "resizing\n");
+        fprintf(stderr, "resizing: %p\n", (void *)ary);
     }
     assert(RARRAY_LEN(ary) <= capacity);
     assert(!OBJ_FROZEN(ary));
@@ -771,7 +776,7 @@ ary_new(VALUE klass, long capa)
     }
 
     if (capa > RARRAY_EMBED_LEN_MAX && capa < 200) {
-        ptr = rb_rvargc_payload_data_ptr(ary + rb_slot_size());
+        ptr = (VALUE *)(ary + rb_slot_size());
         FL_SET_GC_EMBED(ary);
         FL_UNSET_EMBED(ary);
         ARY_SET_PTR(ary, ptr);
@@ -922,11 +927,12 @@ rb_ary_free(VALUE ary)
         if (RARRAY_TRANSIENT_P(ary)) {
             RB_DEBUG_COUNTER_INC(obj_ary_transient);
         }
+        else if (ARY_GC_EMBED_P(ary)) {
+            rb_rvargc_payload_free(ary + rb_slot_size(), ARY_CAPA(ary) * sizeof(VALUE));
+        }
         else {
-            if (!ARY_GC_EMBED_P(ary)) {
-                RB_DEBUG_COUNTER_INC(obj_ary_ptr);
-                ary_heap_free(ary);
-            }
+            RB_DEBUG_COUNTER_INC(obj_ary_ptr);
+            ary_heap_free(ary);
         }
     }
     else {

@@ -2387,6 +2387,12 @@ rb_slot_size(void)
     return sizeof(RVALUE);
 }
 
+void
+rb_rvargc_payload_free(VALUE phead, size_t len)
+{
+    RPAYLOAD_FLAGS_SET((VALUE)phead, rvargc_slot_count(len));
+}
+
 VALUE
 rb_rvargc_payload_init(VALUE obj, size_t size)
 {
