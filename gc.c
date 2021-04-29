@@ -1286,6 +1286,8 @@ RVALUE_FLAGS_AGE(VALUE flags)
     return (int)((flags & (FL_PROMOTED0 | FL_PROMOTED1)) >> RVALUE_AGE_SHIFT);
 }
 
+static unsigned long rvargc_slot_count(size_t size);
+
 #if USE_RVARGC
 static VALUE
 payload_or_self(VALUE obj)
@@ -1298,14 +1300,24 @@ payload_or_self(VALUE obj)
         void *poisoned = asan_poisoned_object_p((VALUE)p);
         asan_unpoison_object((VALUE)p, false);
 
-        if (BUILTIN_TYPE(cur) == T_PAYLOAD) {
-            if (cur < obj && obj < cur + RPAYLOAD_LEN(cur) * sizeof(RVALUE)) {
-                return cur;
-            }
-            cur += RPAYLOAD_LEN(cur) * sizeof(RVALUE);
-        }
-        else {
-            cur += sizeof(RVALUE);
+        switch(BUILTIN_TYPE(cur)) {
+            case T_PAYLOAD:
+                if (obj < cur + RPAYLOAD_LEN(cur) * sizeof(RVALUE)) {
+                    return cur;
+                }
+                cur += RPAYLOAD_LEN(cur) * sizeof(RVALUE);
+                break;
+            case T_ARRAY:
+                if (RARRAY_GC_EMBED_P(cur)) {
+                    size_t capa = RARRAY(cur)->as.heap.aux.capa * sizeof(VALUE);
+                    if( obj < cur + capa) {
+                        return cur;
+                    }
+                    cur += (rvargc_slot_count(capa) + 1) * sizeof(RVALUE);
+                    break;
+                }
+            default:
+                cur += sizeof(RVALUE);
         }
         if (poisoned) {
             asan_poison_object((VALUE)p);
