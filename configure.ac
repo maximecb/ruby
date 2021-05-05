@@ -2046,6 +2046,43 @@ AC_CHECK_FUNCS(waitpid)
 AC_CHECK_FUNCS(__cospi)
 AC_CHECK_FUNCS(__sinpi)
 
+# Check system memory page size for mmap
+AS_IF(
+    [test $ac_cv_func_mmap = yes],
+    [
+        AC_CACHE_CHECK(
+            [size of system page],
+            [rb_cv_system_page_size],
+            [
+                AC_RUN_IFELSE(
+                    [AC_LANG_PROGRAM([
+                        @%:@include <stdio.h>
+                        @%:@include <sys/user.h>
+                    ],[
+                        fprintf(stderr, "%ld\n", PAGE_SIZE);
+                    ])],
+                    [
+                        AS_IF(
+                            [test $cross_compiling = yes],
+                            # We cannot run the binary when cross compiling
+                            # So we use the PAGE_SIZE macro instead
+                            [rb_cv_system_page_size=PAGE_SIZE],
+                            # Otherwise we can run the binary and determine the page size
+                            [rb_cv_system_page_size=$(./conftest$EXEEXT 2>&1)]
+                        )
+                    ],
+                    # Feature does not exist so we cannot determine the system page size
+                    [rb_cv_system_page_size=no]
+                )
+            ]
+        )
+        AS_IF(
+            [test $rb_cv_system_page_size != no],
+            [AC_DEFINE_UNQUOTED([SYSTEM_PAGE_SIZE], $rb_cv_system_page_size)]
+        )
+    ]
+)
+
 AS_IF([test "x$ac_cv_member_struct_statx_stx_btime" = xyes],
     [AC_CHECK_FUNCS(statx)])
 
