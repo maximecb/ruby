@@ -3203,6 +3203,26 @@ static const struct st_hash_type object_id_hash_type = {
     object_id_hash,
 };
 
+static inline bool
+autocompact_supported_p()
+{
+    /* If not MinGW, Windows, and we're not using mmap, we cannot use mprotect for
+     * the read barrier, so automatic compaction cannot be used. */
+#if !defined(__MINGW32__) && !defined(_WIN32)
+    if (!USE_MMAP_ALIGNED_ALLOC) {
+        return FALSE;
+    }
+
+# ifdef PAGE_SIZE
+    /* If we're using mmap then the GC page size should be smaller and a
+     * multiple of the system heap size. */
+    GC_ASSERT(HEAP_PAGE_SIZE % PAGE_SIZE == 0);
+# endif
+#endif
+
+    return TRUE;
+}
+
 void
 Init_heap(void)
 {
@@ -3212,16 +3232,10 @@ Init_heap(void)
     use_mmap_aligned_alloc = PAGE_SIZE <= HEAP_PAGE_SIZE;
 #endif
 
-#if defined(HAVE_SYSCONF) && defined(_SC_PAGE_SIZE)
-    /* If Ruby's heap pages are not a multiple of the system page size, we
-     * cannot use mprotect for the read barrier, so we must disable automatic
-     * compaction. */
-    int pagesize;
-    pagesize = (int)sysconf(_SC_PAGE_SIZE);
-    if ((HEAP_PAGE_SIZE % pagesize) != 0) {
-        ruby_enable_autocompact = 0;
+    /* Disable autocompact if not supported on this platform. */
+    if (!autocompact_supported_p()) {
+        ruby_enable_autocompact = FALSE;
     }
-#endif
 
     objspace->next_object_id = INT2FIX(OBJ_ID_INITIAL);
     objspace->id_to_obj_tbl = st_init_table(&object_id_hash_type);
@@ -10088,24 +10102,9 @@ gc_disable(rb_execution_context_t *ec, VALUE _)
 static VALUE
 gc_set_auto_compact(rb_execution_context_t *ec, VALUE _, VALUE v)
 {
-#if defined(HAVE_SYSCONF) && defined(_SC_PAGE_SIZE)
-    /* If Ruby's heap pages are not a multiple of the system page size, we
-     * cannot use mprotect for the read barrier, so we must disable automatic
-     * compaction. */
-    int pagesize;
-    pagesize = (int)sysconf(_SC_PAGE_SIZE);
-    if ((HEAP_PAGE_SIZE % pagesize) != 0) {
+    if (!autocompact_supported_p()) {
         rb_raise(rb_eNotImpError, "Automatic compaction isn't available on this platform");
     }
-#endif
-
-    /* If not MinGW, Windows, or does not have mmap, we cannot use mprotect for
-     * the read barrier, so we must disable automatic compaction. */
-#if !defined(__MINGW32__) && !defined(_WIN32)
-    if (!USE_MMAP_ALIGNED_ALLOC) {
-        rb_raise(rb_eNotImpError, "Automatic compaction isn't available on this platform");
-    }
-#endif
 
     ruby_enable_autocompact = RTEST(v);
     return v;
