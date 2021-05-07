@@ -356,6 +356,10 @@ ary_heap_free_ptr(VALUE ary, const VALUE *ptr, long size)
     if (RARRAY_TRANSIENT_P(ary)) {
         /* ignore it */
     }
+    else if (ARY_GC_EMBED_P(ary)) {
+        FL_UNSET_GC_EMBED(ary);
+        rb_rvargc_payload_free(ary + rb_slot_size(), ARY_HEAP_CAPA(ary) * sizeof(VALUE));
+    }
     else {
         ruby_sized_xfree((void *)ptr, size);
     }
@@ -466,9 +470,6 @@ rb_ary_detransient(VALUE ary)
 static void
 ary_resize_capa(VALUE ary, long capacity)
 {
-    if (ARY_GC_EMBED_P(ary)){
-        fprintf(stderr, "resizing: %p\n", (void *)ary);
-    }
     assert(RARRAY_LEN(ary) <= capacity);
     assert(!OBJ_FROZEN(ary));
     assert(!ARY_SHARED_P(ary));
@@ -645,7 +646,7 @@ static VALUE
 ary_ensure_room_for_push(VALUE ary, long add_len)
 {
     if (ARY_GC_EMBED_P(ary)) {
-        fprintf(stderr, "whooops\n");
+        /*fprintf(stderr, "whooops\n");*/
     }
     long old_len = RARRAY_LEN(ary);
     long new_len = old_len + add_len;
@@ -782,6 +783,8 @@ ary_new(VALUE klass, long capa)
         ARY_SET_PTR(ary, ptr);
         ARY_SET_CAPA(ary, capa);
         ARY_SET_HEAP_LEN(ary, 0);
+
+        /*fprintf(stderr, "new gc array %p capa: %ld, real capa %ld\n", (void*)ary, capa, ARY_CAPA(ary));*/
     } else if (capa > RARRAY_EMBED_LEN_MAX) {
         ptr = ary_heap_alloc(ary, capa);
         FL_UNSET_EMBED(ary);
@@ -927,9 +930,6 @@ rb_ary_free(VALUE ary)
         if (RARRAY_TRANSIENT_P(ary)) {
             RB_DEBUG_COUNTER_INC(obj_ary_transient);
         }
-        else if (ARY_GC_EMBED_P(ary)) {
-            rb_rvargc_payload_free(ary + rb_slot_size(), ARY_CAPA(ary) * sizeof(VALUE));
-        }
         else {
             RB_DEBUG_COUNTER_INC(obj_ary_ptr);
             ary_heap_free(ary);
@@ -966,6 +966,29 @@ ary_discard(VALUE ary)
     RBASIC(ary)->flags &= ~(RARRAY_EMBED_LEN_MASK | RARRAY_TRANSIENT_FLAG);
 }
 
+static void
+ary_gc_embed_evacuate(VALUE ary)
+{
+#if USE_RVARGC
+    if (ARY_GC_EMBED_P(ary)) {
+        const VALUE *old_ptr = ARY_HEAP_PTR(ary);
+        long capa = ARY_HEAP_CAPA(ary);
+
+        assert(ARY_OWNS_HEAP_P(ary));
+
+        /* Assumed promoted */
+        VALUE *new_ptr = ALLOC_N(VALUE, capa);
+
+        MEMCPY(new_ptr, old_ptr, VALUE, capa);
+
+        FL_UNSET_GC_EMBED(ary);
+        RARRAY(ary)->as.heap.ptr = new_ptr;
+
+        rb_rvargc_payload_free(ary + rb_slot_size(), ARY_HEAP_CAPA(ary) * sizeof(VALUE));
+    }
+#endif
+}
+
 static VALUE
 ary_make_shared(VALUE ary)
 {
@@ -980,6 +1003,7 @@ ary_make_shared(VALUE ary)
     }
     else if (OBJ_FROZEN(ary)) {
         rb_ary_transient_heap_evacuate(ary, TRUE);
+        ary_gc_embed_evacuate(ary);
 	ary_shrink_capa(ary);
 	FL_SET_SHARED_ROOT(ary);
         ARY_SET_SHARED_ROOT_REFCNT(ary, 1);
@@ -992,6 +1016,7 @@ ary_make_shared(VALUE ary)
         VALUE vshared = (VALUE)shared;
 
         rb_ary_transient_heap_evacuate(ary, TRUE);
+        ary_gc_embed_evacuate(ary);
         ptr = ARY_HEAP_PTR(ary);
 
         FL_UNSET_EMBED(vshared);
@@ -1233,9 +1258,6 @@ rb_ary_store(VALUE ary, long idx, VALUE val)
 static VALUE
 ary_make_partial(VALUE ary, VALUE klass, long offset, long len)
 {
-    if (ARY_GC_EMBED_P(ary)) {
-        fprintf(stderr, "make partial\n");
-    }
     assert(offset >= 0);
     assert(len >= 0);
     assert(offset+len <= RARRAY_LEN(ary));
@@ -2300,7 +2322,6 @@ rb_ary_set_len(VALUE ary, long len)
 VALUE
 rb_ary_resize(VALUE ary, long len)
 {
-    fprintf(stderr, "oh boy 2\n");
     long olen;
 
     rb_ary_modify(ary);

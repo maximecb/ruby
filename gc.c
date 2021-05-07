@@ -1293,34 +1293,37 @@ static VALUE
 payload_or_self(VALUE obj)
 {
     struct heap_page *p = GET_HEAP_PAGE(obj);
+    VALUE end = (VALUE)(p->start + p->total_slots);
     VALUE cur = (VALUE)p->start;
 
-    while (cur != obj && GET_HEAP_PAGE(cur) == p) {
+    while (cur < obj && cur < end) {
         VALUE p = cur;
-        void *poisoned = asan_poisoned_object_p((VALUE)p);
-        asan_unpoison_object((VALUE)p, false);
+        void *poisoned = asan_poisoned_object_p(p);
+        asan_unpoison_object(p, false);
 
-        switch(BUILTIN_TYPE(cur)) {
-            case T_PAYLOAD:
-                if (obj < cur + RPAYLOAD_LEN(cur) * sizeof(RVALUE)) {
+        switch (BUILTIN_TYPE(cur)) {
+          case T_PAYLOAD:
+            if (obj < cur + RPAYLOAD_LEN(cur) * sizeof(RVALUE)) {
+                return cur;
+            }
+            cur += RPAYLOAD_LEN(cur) * sizeof(RVALUE);
+            break;
+
+          case T_ARRAY:
+            if (RARRAY_GC_EMBED_P(cur)) {
+                size_t payload_len = rvargc_slot_count(RARRAY(cur)->as.heap.aux.capa * sizeof(VALUE *));
+                if (obj < cur + ((payload_len + 1) * sizeof(RVALUE))) {
                     return cur;
                 }
-                cur += RPAYLOAD_LEN(cur) * sizeof(RVALUE);
+                cur += (payload_len + 1) * sizeof(RVALUE);
                 break;
-            case T_ARRAY:
-                if (RARRAY_GC_EMBED_P(cur)) {
-                    size_t capa = RARRAY(cur)->as.heap.aux.capa * sizeof(VALUE);
-                    if( obj < cur + capa) {
-                        return cur;
-                    }
-                    cur += (rvargc_slot_count(capa) + 1) * sizeof(RVALUE);
-                    break;
-                }
-            default:
-                cur += sizeof(RVALUE);
+            }
+
+          default:
+            cur += sizeof(RVALUE);
         }
         if (poisoned) {
-            asan_poison_object((VALUE)p);
+            asan_poison_object(p);
         }
     }
 
@@ -1537,15 +1540,40 @@ RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(rb_objspace_t *objspace, struct heap_page *pag
     objspace->rgengc.old_objects++;
 
 #if USE_RVARGC
-    if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-        int plen = RPAYLOAD_LEN(obj);
+    size_t payload_len = 0;
 
-        for (int i = 1; i < plen; i++) {
-            VALUE pbody = obj + i * sizeof(RVALUE);
-            MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
+    switch (BUILTIN_TYPE(obj)) {
+      case T_ARRAY:
+        if (RARRAY_GC_EMBED_P(obj)) {
+            long capa = RARRAY(obj)->as.heap.aux.capa;
+            payload_len = rvargc_slot_count(capa * sizeof(VALUE *));
+            for (size_t i = 1; i <= payload_len; i++) {
+                VALUE payload = obj + (i * sizeof(RVALUE));
+                GC_ASSERT(GET_HEAP_PAGE(payload) == page);
+                GC_ASSERT(RVALUE_PAGE_UNCOLLECTIBLE(page, payload) == FALSE);
+                MARK_IN_BITMAP(page->uncollectible_bits, payload);
+                /*RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(objspace, page, payload);*/
+            }
         }
-        objspace->rgengc.old_objects += plen - 1;
+        break;
+
+      case T_PAYLOAD:
+        {
+            payload_len = RPAYLOAD_LEN(obj) - 1;
+
+            for (size_t i = 1; i <= payload_len; i++) {
+                VALUE payload = obj + i * sizeof(RVALUE);
+                MARK_IN_BITMAP(page->uncollectible_bits, payload);
+            }
+        }
+        break;
+
+      default:
+        /* no-op */
+        break;
     }
+
+    objspace->rgengc.old_objects += payload_len;
 #endif
     rb_transient_heap_promote(obj);
 
@@ -3564,27 +3592,37 @@ objspace_each_objects_try(VALUE arg)
         while (cursor_end < pend) {
             int payload_len = 0;
 
-            while(cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) != T_PAYLOAD) {
-                cursor_end++;
+            while (cursor_end < pend) {
+                switch (BUILTIN_TYPE((VALUE)cursor_end)) {
+                  case T_PAYLOAD:
+                    payload_len = RPAYLOAD_LEN((VALUE)cursor_end) - 1;
+                    cursor_end++;
+                    goto yield_region;
+
+                  case T_ARRAY:
+                    if (RARRAY_GC_EMBED_P((VALUE)cursor_end)) {
+                        payload_len = rvargc_slot_count(cursor_end->as.array.as.heap.aux.capa * sizeof(VALUE *));
+                        cursor_end++;
+                        goto yield_region;
+                    }
+                    /* else fall through */
+
+                  default:
+                    cursor_end++;
+                    break;
+                }
             }
 
-#if USE_RVARGC
-            //Make sure the Payload header slot is yielded
-            if (cursor_end < pend && BUILTIN_TYPE((VALUE)cursor_end) == T_PAYLOAD) {
-                payload_len = RPAYLOAD_LEN((VALUE)cursor_end);
-                cursor_end++;
-            }
-#endif
-
+yield_region:
             if ((*data->callback)(pstart, cursor_end, sizeof(RVALUE), data->data)) {
                 break;
             }
 
             // Move the cursor over the rest of the payload body
             if (payload_len) {
-                cursor_end += (payload_len - 1);
-                pstart = cursor_end;
+                cursor_end += payload_len;
             }
+            pstart = cursor_end;
         }
 
         page = list_next(&heap_eden->pages, page, page_node);
@@ -4194,7 +4232,19 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
             switch (BUILTIN_TYPE(vp)) {
-	      case T_DATA:
+              case T_ARRAY:
+                if (RARRAY_GC_EMBED_P(vp)) {
+                    long capa = RARRAY(vp)->as.heap.aux.capa;
+                    p += rvargc_slot_count(capa * sizeof(VALUE *));
+                }
+                break;
+
+              case T_PAYLOAD:
+                GC_ASSERT(RPAYLOAD_LEN(vp) > 0);
+                p += RPAYLOAD_LEN(vp) - 1;
+                break;
+
+              case T_DATA:
 		if (!DATA_PTR(p) || !RANY(p)->as.data.dfree) break;
                 if (rb_obj_is_thread(vp)) break;
                 if (rb_obj_is_mutex(vp)) break;
@@ -6527,17 +6577,6 @@ gc_aging(rb_objspace_t *objspace, VALUE obj)
 	    GC_ASSERT(RVALUE_PAGE_UNCOLLECTIBLE(page, obj) == FALSE);
 	    RVALUE_PAGE_OLD_UNCOLLECTIBLE_SET(objspace, page, obj);
 	}
-
-#if USE_RVARGC
-        if (RVALUE_UNCOLLECTIBLE(obj) && BUILTIN_TYPE(obj) == T_PAYLOAD) {
-            int plen = RPAYLOAD_LEN(obj);
-
-            for (int i = 1; i < plen; i++) {
-                VALUE pbody = obj + i * sizeof(RVALUE);
-                MARK_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS(pbody), pbody);
-            }
-        }
-#endif
     }
     check_rvalue_consistency(obj);
 
@@ -6726,12 +6765,6 @@ gc_mark_payload(rb_objspace_t *objspace, VALUE obj)
     GC_ASSERT(BUILTIN_TYPE(obj) == T_PAYLOAD);
     // Mark payload head here
     gc_mark_and_pin(objspace, obj);
-
-    for (int i = 1 ; i < RPAYLOAD_LEN(obj); i++) {
-        VALUE p = obj + i * sizeof(RVALUE);
-        MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
-        MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
-    }
 #endif
 }
 
@@ -6776,8 +6809,17 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_PAYLOAD:
-          gc_mark_payload(objspace, obj);
-          break;
+#if USE_RVARGC
+        for (size_t i = 1; i < RPAYLOAD_LEN(obj); i++) {
+            VALUE p = obj + i * sizeof(RVALUE);
+            MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
+            MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
+        }
+#else
+        rb_bug("gc_mark_children: should not see T_PAYLOAD without RVARGC");
+#endif
+        break;
+
       case T_CLASS:
       case T_MODULE:
         if (RCLASS_SUPER(obj)) {
@@ -6822,13 +6864,14 @@ gc_mark_children(rb_objspace_t *objspace, VALUE obj)
                     RARRAY_TRANSIENT_P(obj)) {
                     rb_transient_heap_mark(obj, ptr);
                 }
-            }
 
-            if (RARRAY_GC_EMBED_P(obj)) {
-                for (i = 1 ; (unsigned long)i <= rvargc_slot_count(len * sizeof(VALUE *)); i++) {
-                    VALUE p = obj + (i * rb_slot_size());
-                    MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
-                    MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
+                if (RARRAY_GC_EMBED_P(obj)) {
+                    long capa = RARRAY(obj)->as.heap.aux.capa;
+                    for (i = 1 ; (unsigned long)i <= rvargc_slot_count(capa * sizeof(VALUE *)); i++) {
+                        VALUE p = obj + (i * rb_slot_size());
+                        MARK_IN_BITMAP(GET_HEAP_MARK_BITS(p), p);
+                        MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(p), p);
+                    }
                 }
             }
         }
@@ -7446,11 +7489,27 @@ verify_internal_consistency_i(void *page_start, void *page_end, size_t stride, v
 	    }
 
             /* make sure we have counted the payload body slots */
-            if (BUILTIN_TYPE(obj) == T_PAYLOAD) {
-                if (RVALUE_OLD_P(obj)) {
-                   data->old_object_count += RPAYLOAD_LEN(obj) - 1;
+            size_t payload_len = 0;
+            switch (BUILTIN_TYPE(obj)) {
+              case T_ARRAY:
+                if (RARRAY_GC_EMBED_P(obj)) {
+                    long capa = RARRAY(obj)->as.heap.aux.capa;
+                    payload_len = rvargc_slot_count(capa * sizeof(VALUE *));
                 }
-                data->live_object_count += RPAYLOAD_LEN(obj) - 1;
+                break;
+              case T_PAYLOAD:
+                payload_len = RPAYLOAD_LEN(obj) - 1;
+                break;
+              default:
+                /* no-op */
+                break;
+            }
+
+            if (payload_len) {
+                if (RVALUE_OLD_P(obj)) {
+                    data->old_object_count += payload_len;
+                }
+                data->live_object_count += payload_len;
             }
 	}
 	else {
@@ -9860,9 +9919,7 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace,
           case T_NONE:
           case T_MOVED:
           case T_ZOMBIE:
-            break;
           case T_PAYLOAD:
-              v += (stride * (RPAYLOAD_LEN(v) - 1));
             break;
           default:
             if (RVALUE_WB_UNPROTECTED(v)) {
@@ -9879,6 +9936,20 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace,
             else {
                 gc_update_object_references(objspace, v);
             }
+        }
+
+        switch (BUILTIN_TYPE(v)) {
+          case T_PAYLOAD:
+            v += (stride * (RPAYLOAD_LEN(v) - 1));
+            break;
+          case T_ARRAY:
+            if (RARRAY_GC_EMBED_P(v)) {
+                v += (stride * rvargc_slot_count(RARRAY(v)->as.heap.aux.capa * sizeof(VALUE)));
+            }
+            break;
+          default:
+            /* no-op */
+            break;
         }
 
         if (poisoned) {

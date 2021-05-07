@@ -318,7 +318,11 @@ def lldb_inspect(debugger, target, result, val):
                 result.write(" (shared) shared=%016x" % shared)
             else:
                 capa = val.GetValueForExpressionPath("->as.heap.aux.capa").GetValueAsSigned()
-                result.write(" (ownership) capa=%d" % capa)
+                if flags & RUBY_FL_USER9:
+                    result.write(" (GC embed) ");
+                else:
+                    result.write(" (ownership) ")
+                result.write("capa=%d" % capa)
             if len == 0:
                 result.write(" {(empty)}\n")
             else:
@@ -331,7 +335,8 @@ def lldb_inspect(debugger, target, result, val):
             result.write("T_HASH: %s" % flaginfo)
             append_command_output(debugger, "p *(struct RHash *) %0#x" % val.GetValueAsUnsigned(), result)
         elif flType == RUBY_T_PAYLOAD:
-            result.write("T_PAYLOAD: %s" % flaginfo)
+            len = flags >> RUBY_FL_USHIFT
+            result.write("T_PAYLOAD: %slen=%d " % (flaginfo, len))
             append_command_output(debugger, "p *(struct RPayload *) %0#x" % val.GetValueAsUnsigned(), result)
         elif flType == RUBY_T_BIGNUM:
             tRBignum = target.FindFirstType("struct RBignum").GetPointerType()
