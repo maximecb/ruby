@@ -1536,6 +1536,7 @@ hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone)
 
     RHASH_SET_IFNONE((VALUE)hash, ifnone);
 
+    rvargc_log_memsize_of((VALUE)hash, 1);
     return (VALUE)hash;
 }
 
@@ -1572,6 +1573,7 @@ rb_hash_new_with_size(st_index_t size)
     else {
         RHASH_ST_TABLE_SET(ret, st_init_table_with_size(&objhash, size));
     }
+    rvargc_log_memsize_of(ret, 1);
     return ret;
 }
 

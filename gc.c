@@ -20,6 +20,8 @@
 #endif
 
 #include <signal.h>
+#include <time.h>
+#include <stdint.h>
 
 #define sighandler_t ruby_sighandler_t
 
@@ -4563,6 +4565,17 @@ rvargc_memsize_of(VALUE obj)
 	size += rb_ary_memsize(obj);
 	break;
       case T_HASH:
+        /* if we assume that we're going to rvargc the entire st table */
+        if (RHASH_AR_TABLE_P(obj)) {
+            if (RHASH_AR_TABLE(obj) != NULL) {
+                size_t rb_hash_ar_table_size(void);
+                size += rb_hash_ar_table_size();
+            }
+	}
+        else {
+            VM_ASSERT(RHASH_ST_TABLE(obj) != NULL);
+            size += st_memsize(RHASH_ST_TABLE(obj));
+        }
 	break;
       case T_REGEXP:
 	break;
@@ -4607,19 +4620,18 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
     static FILE *fp;
     static char fname[256];
     static int pid = 0;
-    static size_t size = 0;
-
-    size = rvargc_memsize_of(obj);
+    size_t size = rvargc_memsize_of(obj);
+    time_t t = time(NULL);
 
     snprintf(fname, sizeof(fname), "/tmp/ruby-objects.%d.log", pid = getpid());
     if ((fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
 
     if (at_alloc) {
-        fprintf(fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE));
+        fprintf(fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
     } else {
-        fprintf(fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE));
+        fprintf(fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
     }
 
     fclose(fp);
