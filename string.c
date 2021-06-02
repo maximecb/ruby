@@ -805,6 +805,7 @@ str_new0(VALUE klass, const char *ptr, long len, int termlen)
     }
     STR_SET_LEN(str, len);
     TERM_FILL(RSTRING_PTR(str) + len, termlen);
+    rvargc_log_memsize_of((VALUE)str);
     return str;
 }
 

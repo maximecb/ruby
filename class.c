@@ -203,6 +203,7 @@ class_alloc(VALUE flags, VALUE klass)
     RB_OBJ_WRITE(obj, &RCLASS_REFINED_CLASS(obj), Qnil);
     RCLASS_ALLOCATOR(obj) = 0;
 
+    rvargc_log_memsize_of((VALUE)obj);
     return (VALUE)obj;
 }
 
