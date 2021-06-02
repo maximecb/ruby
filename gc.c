@@ -3062,7 +3062,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 
     gc_event_hook(objspace, RUBY_INTERNAL_EVENT_FREEOBJ, obj);
 
-    rvargc_log_memsize_of(obj);
+    rvargc_log_memsize_of(obj, 1);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_NIL:
@@ -4536,9 +4536,10 @@ cc_table_memsize(struct rb_id_table *cc_table)
     return total;
 }
 
-void
-rvargc_log_memsize_of(VALUE obj)
+static size_t
+rvargc_memsize_of(VALUE obj) 
 {
+
     size_t size = 0;
 
     /* if (FL_TEST(obj, FL_EXIVAR)) { */
@@ -4547,9 +4548,6 @@ rvargc_log_memsize_of(VALUE obj)
 
     switch (BUILTIN_TYPE(obj)) {
       case T_OBJECT:
-	if (!(RBASIC(obj)->flags & ROBJECT_EMBED)) {
-	    size += ROBJECT_NUMIV(obj) * sizeof(VALUE);
-	}
 	break;
       case T_MODULE:
       case T_CLASS:
@@ -4565,64 +4563,29 @@ rvargc_log_memsize_of(VALUE obj)
 	size += rb_ary_memsize(obj);
 	break;
       case T_HASH:
-        if (RHASH_AR_TABLE_P(obj)) {
-            if (RHASH_AR_TABLE(obj) != NULL) {
-                size_t rb_hash_ar_table_size(void);
-                size += rb_hash_ar_table_size();
-            }
-	}
-        else {
-            VM_ASSERT(RHASH_ST_TABLE(obj) != NULL);
-            size += st_memsize(RHASH_ST_TABLE(obj));
-        }
 	break;
       case T_REGEXP:
-	if (RREGEXP_PTR(obj)) {
-	    size += onig_memsize(RREGEXP_PTR(obj));
-	}
 	break;
       case T_DATA:
-	if (1) size += rb_objspace_data_type_memsize(obj);
 	break;
       case T_MATCH:
-	if (RMATCH(obj)->rmatch) {
-            struct rmatch *rm = RMATCH(obj)->rmatch;
-	    size += onig_region_memsize(&rm->regs);
-	    size += sizeof(struct rmatch_offset) * rm->char_offset_num_allocated;
-	    size += sizeof(struct rmatch);
-	}
 	break;
       case T_FILE:
-	if (RFILE(obj)->fptr) {
-	    size += rb_io_memsize(RFILE(obj)->fptr);
-	}
 	break;
       case T_RATIONAL:
       case T_COMPLEX:
         break;
       case T_IMEMO:
-        size += imemo_memsize(obj);
 	break;
-
       case T_FLOAT:
       case T_SYMBOL:
 	break;
-
       case T_BIGNUM:
-	if (!(RBASIC(obj)->flags & BIGNUM_EMBED_FLAG) && BIGNUM_DIGITS(obj)) {
-	    size += BIGNUM_LEN(obj) * sizeof(BDIGIT);
-	}
 	break;
-
       case T_NODE:
 	UNEXPECTED_NODE(obj_memsize_of);
 	break;
-
       case T_STRUCT:
-	if ((RBASIC(obj)->flags & RSTRUCT_EMBED_LEN_MASK) == 0 &&
-	    RSTRUCT(obj)->as.heap.ptr) {
-	    size += sizeof(VALUE) * RSTRUCT_LEN(obj);
-	}
 	break;
 
       case T_ZOMBIE:
@@ -4635,15 +4598,29 @@ rvargc_log_memsize_of(VALUE obj)
 	       BUILTIN_TYPE(obj), (void*)obj);
     }
 
+    return size;
+}
 
+void
+rvargc_log_memsize_of(VALUE obj, int at_alloc)
+{
     static FILE *fp;
     static char fname[256];
     static int pid = 0;
+    static size_t size = 0;
+
+    size = rvargc_memsize_of(obj);
 
     snprintf(fname, sizeof(fname), "/tmp/ruby-objects.%d.log", pid = getpid());
-    if ((fp = fopen(fname, "w")) == NULL) rb_bug("fopen");
+    if ((fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
 
-    fprintf(fp, "obj: %p, size: %zu\n", (void *)obj, size + sizeof(RVALUE));
+    if (at_alloc) {
+        fprintf(fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE));
+    } else {
+        fprintf(fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE));
+    }
 
     fclose(fp);
 }

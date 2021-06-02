@@ -741,7 +741,7 @@ ary_new(VALUE klass, long capa)
         ARY_SET_HEAP_LEN(ary, 0);
     }
 
-    rvargc_log_memsize_of((VALUE)ary);
+    rvargc_log_memsize_of((VALUE)ary, 1);
     return ary;
 }
 

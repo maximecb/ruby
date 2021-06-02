@@ -100,7 +100,7 @@ VALUE rb_class_allocate_instance(VALUE klass);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* gc.c (export) */
-void rvargc_log_memsize_of(VALUE obj);
+void rvargc_log_memsize_of(VALUE obj, int at_alloc);
 const char *rb_objspace_data_type_name(VALUE obj);
 VALUE rb_wb_protected_newobj_of(VALUE, VALUE, size_t);
 VALUE rb_wb_unprotected_newobj_of(VALUE, VALUE, size_t);
