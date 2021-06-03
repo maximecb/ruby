@@ -4594,6 +4594,9 @@ rvargc_memsize_of(VALUE obj)
       case T_SYMBOL:
 	break;
       case T_BIGNUM:
+        if (!(RBASIC(obj)->flags & BIGNUM_EMBED_FLAG) && BIGNUM_DIGITS(obj)) {
+            size += BIGNUM_LEN(obj) * sizeof(BDIGIT);
+        }
 	break;
       case T_NODE:
 	UNEXPECTED_NODE(obj_memsize_of);

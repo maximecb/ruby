@@ -3009,6 +3009,8 @@ bignew_1(VALUE klass, size_t len, int sign)
         big->as.heap.len = len;
     }
     OBJ_FREEZE(bigv);
+
+    rvargc_log_memsize_of(bigv, 1);
     return bigv;
 }
 
