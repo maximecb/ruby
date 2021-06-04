@@ -561,7 +561,7 @@ rb_singleton_class_has_metaclass_p(VALUE sklass)
 int
 rb_singleton_class_internal_p(VALUE sklass)
 {
-        return (RB_TYPE_P(rb_attr_get(sklass, id_attached), T_CLASS) &&
+    return (RB_TYPE_P(rb_attr_get(sklass, id_attached), T_CLASS) &&
 	    !rb_singleton_class_has_metaclass_p(sklass));
 }
 
