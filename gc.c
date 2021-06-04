@@ -5352,6 +5352,11 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, bits_t bits
                         if (rgengc_remembered_sweep(objspace, vp)) rb_bug("page_sweep: %p - remembered.", (void *)p);
                     }
 #endif
+                    if (BUILTIN_TYPE(vp) == 0x10) {
+                        fprintf(stderr, "page: %p (start: %p, total_slots: %d, size_pool->slot_size: %d), vp: %p (NUM_IN_PAGE: %d)\n", sweep_page, sweep_page->start, sweep_page->total_slots, sweep_page->size_pool->slot_size, (void*)vp, NUM_IN_PAGE(vp));
+                        rb_bug("debug");
+                    }
+
                     if (obj_free(objspace, vp)) {
                         ctx->final_slots++;
                     }
