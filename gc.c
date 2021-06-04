@@ -4219,8 +4219,10 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
 
     /* run data/file object's finalizers */
     for (i = 0; i < heap_allocated_pages; i++) {
-	p = heap_pages_sorted[i]->start; pend = p + heap_pages_sorted[i]->total_slots;
-	while (p < pend) {
+        struct heap_page *page = heap_pages_sorted[i];
+	short slot_bits = page->size_pool->slot_size / sizeof(RVALUE);
+        p = page->start; pend = p + page->total_slots * slot_bits;
+        while (p < pend) {
             VALUE vp = (VALUE)p;
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
@@ -4254,7 +4256,7 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
                 GC_ASSERT(BUILTIN_TYPE(vp) == T_NONE);
                 asan_poison_object(vp);
             }
-	    p++;
+	    p += slot_bits;
 	}
     }
 
