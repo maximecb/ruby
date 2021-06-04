@@ -1240,9 +1240,7 @@ rb_ivar_get(VALUE obj, ID id)
 VALUE
 rb_attr_get(VALUE obj, ID id)
 {
-    VALUE v = rb_ivar_lookup(obj, id, Qnil);
-    assert(!RB_TYPE_P(v, T_NONE));
-    return v;
+    return rb_ivar_lookup(obj, id, Qnil);
 }
 
 static VALUE
