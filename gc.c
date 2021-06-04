@@ -5488,7 +5488,13 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     int out_of_range_bits = (NUM_IN_PAGE(p) + sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) % BITS_BITLENGTH;
     if (out_of_range_bits != 0) { // sizeof(RVALUE) == 64
+        if ((BITMAP_INDEX(p) + (sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) / BITS_BITLENGTH) != (HEAP_PAGE_BITMAP_LIMIT - 1)) {
+            fprintf(stderr, "is %d, expected %d\n", (BITMAP_INDEX(p) + (sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) / BITS_BITLENGTH), (HEAP_PAGE_BITMAP_LIMIT - 1));
+            rb_bug("not right");
+        }
         bits[BITMAP_INDEX(p) + (sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
+    } else {
+        rb_bug("out of range bits is zero");
     }
 
     // Skip out of range slots at the head of the page
