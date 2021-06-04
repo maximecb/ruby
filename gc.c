@@ -5344,6 +5344,8 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, bits_t bits
 
     do {
         VALUE vp = (VALUE)p;
+        GC_ASSERT(vp % slot_size == 0);
+
         asan_unpoison_object(vp, false);
         if (bitset & 1) {
             switch (BUILTIN_TYPE(vp)) {
@@ -5516,7 +5518,10 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     for (i=1; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
         bitset = ~bits[i];
         short slot_size = sweep_page->size_pool->slot_size;
-        short alignment_offset = (slot_size - ((intptr_t)p % slot_size)) / sizeof(RVALUE);
+        short alignment_offset = 0;
+        if ((intptr_t)p % slot_size != 0) {
+            alignment_offset = (slot_size - ((intptr_t)p % slot_size)) / sizeof(RVALUE);
+        }
         bitset >>= alignment_offset;
 
         if (bitset) {
