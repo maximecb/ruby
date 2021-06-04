@@ -5338,6 +5338,9 @@ static inline void
 gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, bits_t bitset, struct gc_sweep_context *ctx)
 {
     struct heap_page * sweep_page = ctx->page;
+    short slot_size = sweep_page->size_pool->slot_size;
+    short slot_bits = slot_size / sizeof(RVALUE);
+    GC_ASSERT(slot_bits > 0);
 
     do {
         VALUE vp = (VALUE)p;
@@ -5443,8 +5446,8 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, bits_t bits
                     break;
             }
         }
-        p += sizeof(RVALUE);
-        bitset >>= 1;
+        p += slot_size;
+        bitset >>= slot_bits;
     } while (bitset);
 }
 
@@ -5512,8 +5515,12 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     for (i=1; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
         bitset = ~bits[i];
+        short slot_size = sweep_page->size_pool->slot_size;
+        short alignment_offset = (slot_size - ((intptr_t)p % slot_size)) / sizeof(RVALUE);
+        bitset >>= alignment_offset;
+
         if (bitset) {
-            gc_plane_sweep(objspace, heap, (intptr_t)p, bitset, &ctx);
+            gc_plane_sweep(objspace, heap, (intptr_t)(p + alignment_offset), bitset, &ctx);
         }
         p += BITS_BITLENGTH;
     }
