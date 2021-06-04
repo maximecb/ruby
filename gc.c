@@ -1350,11 +1350,11 @@ payload_or_self(VALUE obj)
 {
     struct heap_page *p = GET_HEAP_PAGE(obj);
 
-    if (p->slot_size == sizeof(RVALUE)) {
+    if (p->size_pool->slot_size == sizeof(RVALUE)) {
         return obj;
     }
 
-    int offset = ((intptr_t)obj - (intptr_t)p->start) % p->slot_size;
+    int offset = ((intptr_t)obj - (intptr_t)p->start) % p->size_pool->slot_size;
 
     return (VALUE)((intptr_t)obj - offset);
 }
