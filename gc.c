@@ -4539,7 +4539,7 @@ cc_table_memsize(struct rb_id_table *cc_table)
 }
 
 static size_t
-rvargc_memsize_of(VALUE obj) 
+rvargc_memsize_of(VALUE obj)
 {
 
     size_t size = 0;
@@ -4620,24 +4620,16 @@ rvargc_memsize_of(VALUE obj)
 void
 rvargc_log_memsize_of(VALUE obj, int at_alloc)
 {
-    static FILE *fp;
-    static char fname[256];
-    static int pid = 0;
     size_t size = rvargc_memsize_of(obj);
     time_t t = time(NULL);
 
-    snprintf(fname, sizeof(fname), "/tmp/ruby-objects.%d.log", pid = getpid());
-    if ((fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
-
     if (at_alloc) {
-        fprintf(fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
+        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
                 obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
     } else {
-        fprintf(fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
+        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
                 obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
     }
-
-    fclose(fp);
 }
 
 static size_t

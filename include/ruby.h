@@ -38,4 +38,6 @@
 
 #include "ruby/ruby.h"
 
+FILE *object_log_fp;
+
 #endif /* RUBY_H */

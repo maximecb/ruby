@@ -30,6 +30,7 @@
 # undef RUBY_DEBUG_ENV
 #endif
 
+
 int
 main(int argc, char **argv)
 {
@@ -39,6 +40,11 @@ main(int argc, char **argv)
 #ifdef HAVE_LOCALE_H
     setlocale(LC_CTYPE, "");
 #endif
+    static char fname[256];
+    static int pid = 0;
+
+    snprintf(fname, sizeof(fname), "/tmp/ruby-objects.%d.log", pid = getpid());
+    if ((object_log_fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
 
     ruby_sysinit(&argc, &argv);
     {
