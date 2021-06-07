@@ -594,20 +594,20 @@ typedef struct RVALUE {
 	    VALUE flags;		/* always 0 for freed obj */
 	    struct RVALUE *next;
 	} free;
-        struct RPayload payload;
-        struct RMoved  moved;
-	struct RBasic  basic;
-	struct RObject object;
-	struct RClass  klass;
+        struct RPayload payload; // NA
+        struct RMoved  moved; //NA
+	struct RBasic  basic; //NA
+	struct RObject object; 
+	struct RClass  klass; //done
 	struct RFloat  flonum;
-	struct RString string;
-	struct RArray  array;
+	struct RString string; //done
+	struct RArray  array; //done
 	struct RRegexp regexp;
-	struct RHash   hash;
+	struct RHash   hash; 
 	struct RData   data;
 	struct RTypedData   typeddata;
 	struct RStruct rstruct;
-	struct RBignum bignum;
+	struct RBignum bignum; //done
 	struct RFile   file;
 	struct RMatch  match;
 	struct RRational rational;
@@ -4602,6 +4602,10 @@ rvargc_memsize_of(VALUE obj)
 	UNEXPECTED_NODE(obj_memsize_of);
 	break;
       case T_STRUCT:
+	if ((RBASIC(obj)->flags & RSTRUCT_EMBED_LEN_MASK) == 0 &&
+	    RSTRUCT(obj)->as.heap.ptr) {
+	    size += sizeof(VALUE) * RSTRUCT_LEN(obj);
+	}
 	break;
 
       case T_ZOMBIE:

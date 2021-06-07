@@ -739,6 +739,8 @@ rb_struct_transient_heap_evacuate(VALUE obj, int promote)
         MEMCPY(new_ptr, old_ptr, VALUE, len);
         RSTRUCT(obj)->as.heap.ptr = new_ptr;
     }
+
+    rvargc_log_memsize_of((VALUE)obj, 1);
 }
 #endif
 
@@ -760,6 +762,8 @@ struct_alloc(VALUE klass)
         rb_mem_clear((VALUE *)st->as.heap.ptr, n);
         st->as.heap.len = n;
     }
+
+    rvargc_log_memsize_of((VALUE)st, 1);
 
     return (VALUE)st;
 }
