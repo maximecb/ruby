@@ -1575,6 +1575,9 @@ rb_ractor_main_bare_setup(rb_vm_t *vm, rb_ractor_t *r, rb_thread_t *th)
     ractor_init(r, Qnil, Qnil);
     r->threads.main = th;
     rb_ractor_living_threads_insert(r, th);
+#if RACTOR_CHECK_MODE
+    r->sync.locked_by = Qfalse;
+#endif
 }
 
 void
