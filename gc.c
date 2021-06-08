@@ -10915,6 +10915,8 @@ gc_set_initial_pages(void)
     size_t min_pages;
     rb_objspace_t *objspace = &rb_objspace;
 
+    gc_rest(objspace);
+
     min_pages = gc_params.heap_init_slots / HEAP_PAGE_OBJ_LIMIT;
 
     size_t pages_per_class = (min_pages - heap_eden_total_pages(objspace)) / SIZE_POOL_COUNT;
