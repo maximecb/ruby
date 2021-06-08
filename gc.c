@@ -2559,7 +2559,7 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
             size_t rounded_size = alloc_size + (sizeof(RVALUE) - (alloc_size % sizeof(RVALUE)));
             short size_pool_idx = (rounded_size / sizeof(RVALUE)) - 1;
 
-            GC_ASSERT(size_pool_idx >= 1); // Normal RVALUE is allocated out of 0
+            GC_ASSERT(size_pool_idx > 1); // Normal RVALUE is allocated out of 0
             GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
 
             rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
@@ -7692,29 +7692,14 @@ gc_verify_heap_page(rb_objspace_t *objspace, struct heap_page *page, VALUE obj)
     int remembered_old_objects = 0;
     int free_objects = 0;
     int zombie_objects = 0;
-    int stride = 1;
-#if USE_RVARGC
-    int default_stride = 1;
-#endif
+    int stride = page->size_pool->slot_size / sizeof(RVALUE);
 
     for (i=0; i<page->total_slots; i+=stride) {
 	VALUE val = (VALUE)&page->start[i];
         void *poisoned = asan_poisoned_object_p(val);
         asan_unpoison_object(val, false);
 
-#if USE_RVARGC
-        if (BUILTIN_TYPE(val) == T_PAYLOAD) {
-            stride = RPAYLOAD_LEN(val);
-        }
-        else {
-            stride = default_stride;
-        }
-#endif
-
 	if (RBASIC(val) == 0) free_objects++;
-#if USE_RVARGC
-        if (BUILTIN_TYPE(val) == T_PAYLOAD) stride = RPAYLOAD_LEN(val);
-#endif
 	if (BUILTIN_TYPE(val) == T_ZOMBIE) zombie_objects++;
 	if (RVALUE_PAGE_UNCOLLECTIBLE(page, val) && RVALUE_PAGE_WB_UNPROTECTED(page, val)) {
 	    has_remembered_shady = TRUE;
