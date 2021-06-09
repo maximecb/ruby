@@ -4829,7 +4829,7 @@ count_objects(int argc, VALUE *argv, VALUE os)
 	RVALUE *p, *pend;
         int stride = page->size_pool->slot_size / sizeof(RVALUE);
 
-	p = page->start; pend = p + page->total_slots;
+	p = page->start; pend = p + page->total_slots * stride;
         for (;p < pend; p += stride) {
             VALUE vp = (VALUE)p;
             GC_ASSERT(vp % page->size_pool->slot_size == 0);
