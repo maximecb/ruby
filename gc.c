@@ -2902,6 +2902,8 @@ is_pointer_to_heap(rb_objspace_t *objspace, void *ptr)
                     return FALSE;
                 }
                 else {
+                    if ((VALUE)p % page->size_pool->slot_size != 0) return FALSE;
+
                     return TRUE;
                 }
 	    }
