@@ -30,6 +30,7 @@
 # undef RUBY_DEBUG_ENV
 #endif
 
+FILE *object_log_fp = NULL;
 
 int
 main(int argc, char **argv)
