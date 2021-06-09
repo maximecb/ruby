@@ -1,0 +1,13 @@
+GEM
+  remote: https://www.rubygems.org/
+  specs:
+    yajl (0.3.4)
+
+PLATFORMS
+  x86_64-linux
+
+DEPENDENCIES
+  yajl
+
+BUNDLED WITH
+   2.2.3

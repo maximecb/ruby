@@ -44,7 +44,7 @@ main(int argc, char **argv)
     static char fname[256];
     static int pid = 0;
 
-    snprintf(fname, sizeof(fname), "/tmp/ruby-objects.%d.log", pid = getpid());
+    snprintf(fname, sizeof(fname), "ruby-objects.%d.log", pid = getpid());
     if ((object_log_fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
 
     ruby_sysinit(&argc, &argv);
