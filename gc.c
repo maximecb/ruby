@@ -4827,22 +4827,15 @@ count_objects(int argc, VALUE *argv, VALUE os)
     for (i = 0; i < heap_allocated_pages; i++) {
 	struct heap_page *page = heap_pages_sorted[i];
 	RVALUE *p, *pend;
-        int stride = 1;
+        int stride = page->size_pool->slot_size / sizeof(RVALUE);
 
 	p = page->start; pend = p + page->total_slots;
         for (;p < pend; p += stride) {
-            stride = 1;
             VALUE vp = (VALUE)p;
+            GC_ASSERT(vp % page->size_pool->slot_size == 0);
 
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
-#if USE_RVARGC
-            if (RB_TYPE_P(vp, T_PAYLOAD)) {
-                stride = RPAYLOAD_LEN(vp);
-                counts[BUILTIN_TYPE(vp)] += RPAYLOAD_LEN(vp);
-            }
-            else
-#endif
             if (p->as.basic.flags) {
                 counts[BUILTIN_TYPE(vp)]++;
 	    }
