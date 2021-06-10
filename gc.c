@@ -2774,6 +2774,8 @@ rb_class_allocate_instance(VALUE klass)
         rb_init_iv_list(obj);
     }
 
+    rvargc_log_memsize_of(obj, 1);
+
     return obj;
 }
 
