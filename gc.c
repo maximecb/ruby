@@ -4633,14 +4633,15 @@ void
 rvargc_log_memsize_of(VALUE obj, int at_alloc)
 {
     size_t size = rvargc_memsize_of(obj);
-    time_t t = time(NULL);
+    struct timeval t;
+    gettimeofday(&t, NULL);
 
     if (at_alloc) {
-        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
+        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
     } else {
-        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%jd\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), (intmax_t)t);
+        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
+                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
     }
 }
 
