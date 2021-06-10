@@ -2782,7 +2782,9 @@ rb_data_object_wrap(VALUE klass, void *datap, RUBY_DATA_FUNC dmark, RUBY_DATA_FU
 {
     RUBY_ASSERT_ALWAYS(dfree != (RUBY_DATA_FUNC)1);
     if (klass) Check_Type(klass, T_CLASS);
-    return newobj_of(klass, T_DATA, (VALUE)dmark, (VALUE)dfree, (VALUE)datap, FALSE, sizeof(RVALUE));
+    VALUE wrapped_data = newobj_of(klass, T_DATA, (VALUE)dmark, (VALUE)dfree, (VALUE)datap, FALSE, sizeof(RVALUE));
+    rvargc_log_memsize_of(wrapped_data, 1);
+    return wrapped_data;
 }
 
 VALUE
