@@ -2688,7 +2688,10 @@ rb_imemo_new(enum imemo_type type, VALUE v1, VALUE v2, VALUE v3, VALUE v0)
 {
     size_t size = sizeof(RVALUE);
     VALUE flags = T_IMEMO | (type << FL_USHIFT);
-    return newobj_of(v0, flags, v1, v2, v3, TRUE, size);
+    VALUE imemo = newobj_of(v0, flags, v1, v2, v3, TRUE, size);
+    rvargc_log_memsize_of(imemo, 1);
+
+    return imemo;
 }
 
 static VALUE
@@ -2696,7 +2699,10 @@ rb_imemo_tmpbuf_new(VALUE v1, VALUE v2, VALUE v3, VALUE v0)
 {
     size_t size = sizeof(RVALUE);
     VALUE flags = T_IMEMO | (imemo_tmpbuf << FL_USHIFT);
-    return newobj_of(v0, flags, v1, v2, v3, FALSE, size);
+    VALUE imemo = newobj_of(v0, flags, v1, v2, v3, FALSE, size);
+    rvargc_log_memsize_of(imemo, 1);
+
+    return imemo;
 }
 
 static VALUE
@@ -2792,7 +2798,9 @@ rb_data_typed_object_wrap(VALUE klass, void *datap, const rb_data_type_t *type)
 {
     RUBY_ASSERT_ALWAYS(type);
     if (klass) Check_Type(klass, T_CLASS);
-    return newobj_of(klass, T_DATA, (VALUE)type, (VALUE)1, (VALUE)datap, type->flags & RUBY_FL_WB_PROTECTED, sizeof(RVALUE));
+    VALUE typed_obj = newobj_of(klass, T_DATA, (VALUE)type, (VALUE)1, (VALUE)datap, type->flags & RUBY_FL_WB_PROTECTED, sizeof(RVALUE));
+    rvargc_log_memsize_of(typed_obj, 1);
+    return typed_obj;
 }
 
 VALUE
@@ -3064,7 +3072,7 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 
     gc_event_hook(objspace, RUBY_INTERNAL_EVENT_FREEOBJ, obj);
 
-    rvargc_log_memsize_of(obj, 1);
+    rvargc_log_memsize_of(obj, 0);
 
     switch (BUILTIN_TYPE(obj)) {
       case T_NIL:

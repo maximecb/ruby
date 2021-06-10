@@ -777,7 +777,9 @@ static inline VALUE
 empty_str_alloc(VALUE klass)
 {
     RUBY_DTRACE_CREATE_HOOK(STRING, 0);
-    return str_alloc(klass);
+    VALUE str = str_alloc(klass);
+    rvargc_log_memsize_of(str, 1);
+    return str;
 }
 
 static VALUE
@@ -909,6 +911,7 @@ str_new_static(VALUE klass, const char *ptr, long len, int encindex)
 	RSTRING(str)->as.heap.aux.capa = len;
 	STR_SET_NOEMBED(str);
 	RBASIC(str)->flags |= STR_NOFREE;
+        rvargc_log_memsize_of((VALUE)str, 1);
     }
     rb_enc_associate_index(str, encindex);
     return str;
@@ -1332,6 +1335,7 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 	    STR_SET_EMBED(str);
 	    memcpy(RSTRING_PTR(str), RSTRING_PTR(orig), RSTRING_LEN(orig));
 	    STR_SET_EMBED_LEN(str, RSTRING_LEN(orig));
+            rvargc_log_memsize_of((VALUE)str, 1);
 	    TERM_FILL(RSTRING_END(str), TERM_LEN(orig));
 	}
 	else {
@@ -1343,6 +1347,7 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 	    RBASIC(str)->flags |= RBASIC(orig)->flags & STR_NOFREE;
 	    RBASIC(orig)->flags &= ~STR_NOFREE;
 	    STR_SET_SHARED(orig, str);
+            rvargc_log_memsize_of((VALUE)str, 1);
 	    if (klass == 0)
 		FL_UNSET_RAW(str, STR_BORROWED);
 	}
@@ -1383,6 +1388,7 @@ rb_str_buf_new(long capa)
     RSTRING(str)->as.heap.aux.capa = capa;
     RSTRING(str)->as.heap.ptr = ALLOC_N(char, (size_t)capa + 1);
     RSTRING(str)->as.heap.ptr[0] = '\0';
+    rvargc_log_memsize_of((VALUE)str, 1);
 
     return str;
 }
@@ -1586,6 +1592,7 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
     }
     FL_SET_RAW(dup, flags & ~FL_FREEZE);
     if (encidx) rb_enc_associate_index(dup, encidx);
+    rvargc_log_memsize_of((VALUE)dup, 1);
     return dup;
 }
 
@@ -2100,6 +2107,7 @@ rb_str_times(VALUE str, VALUE times)
     if (times == INT2FIX(0)) {
         str2 = str_alloc(rb_cString);
 	rb_enc_copy(str2, str);
+        rvargc_log_memsize_of((VALUE)str2, 1);
 	return str2;
     }
     len = NUM2LONG(times);
@@ -2115,6 +2123,7 @@ rb_str_times(VALUE str, VALUE times)
        }
        STR_SET_LEN(str2, len);
        rb_enc_copy(str2, str);
+       rvargc_log_memsize_of((VALUE)str2, 1);
        return str2;
     }
     if (len && LONG_MAX/len <  RSTRING_LEN(str)) {
@@ -10436,6 +10445,7 @@ rb_str_b(VALUE str)
     VALUE str2 = str_alloc(rb_cString);
     str_replace_shared_without_enc(str2, str);
     ENC_CODERANGE_CLEAR(str2);
+    rvargc_log_memsize_of((VALUE)str2, 1);
     return str2;
 }
 

@@ -8,10 +8,13 @@ parser = Yajl::Parser.new
 @obj_list = []
 
 parser.on_parse_complete = -> (obj) {
-  obj_loc = obj.fetch("addr").to_i(16)
+  obj_loc = obj.fetch("addr")
+  obj_type = obj.fetch("type")
 
-  @obj_list << obj_loc
-  @results[obj_loc] << obj
+  alloc_key = [obj_loc, obj_type].join('_')
+
+  @obj_list << alloc_key
+  @results[alloc_key] << obj
 }
 
 json = parser.parse(
@@ -28,6 +31,6 @@ alloc_pairs = @results.transform_values { |value| value.count }
   when 2
     states = @results[id].map { |obj| obj["state"] }
   else
-    fail @results[id]
+    fail @results[id].inspect
   end
 end
