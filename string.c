@@ -1592,7 +1592,11 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
     }
     FL_SET_RAW(dup, flags & ~FL_FREEZE);
     if (encidx) rb_enc_associate_index(dup, encidx);
-    rvargc_log_memsize_of((VALUE)dup, 1);
+    if (UNLIKELY(!(flags & FL_FREEZE))) {
+        // noop
+    } else {
+        rvargc_log_memsize_of((VALUE)dup, 1);
+    }
     return dup;
 }
 
@@ -1600,6 +1604,7 @@ static inline VALUE
 ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
 {
     VALUE dup = ec_str_alloc(ec, klass);
+    rvargc_log_memsize_of(dup, 1);
     return str_duplicate_setup(klass, str, dup);
 }
 
@@ -1607,6 +1612,7 @@ static inline VALUE
 str_duplicate(VALUE klass, VALUE str)
 {
     VALUE dup = str_alloc(klass);
+    rvargc_log_memsize_of(dup, 1);
     return str_duplicate_setup(klass, str, dup);
 }
 
