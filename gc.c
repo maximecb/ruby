@@ -5037,7 +5037,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
         for (size_t i = index + 1; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
             bits_t bits = mark_bits[i] & ~pin_bits[i];
 
-            if (try_move_in_plane(objspace, heap, sweep_page, p, bits, dest)) return 1;
+            if (try_move_in_plane(objspace, heap, sweep_page, (intptr_t)p, bits, dest)) return 1;
             p += BITS_BITLENGTH;
         }
 
