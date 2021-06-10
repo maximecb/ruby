@@ -4846,7 +4846,7 @@ count_objects(int argc, VALUE *argv, VALUE os)
 	p = page->start; pend = p + page->total_slots * stride;
         for (;p < pend; p += stride) {
             VALUE vp = (VALUE)p;
-            GC_ASSERT(vp % page->size_pool->slot_size == 0);
+            GC_ASSERT((NUM_IN_PAGE(vp) * sizeof(RVALUE)) % page->size_pool->slot_size == 0);
 
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
