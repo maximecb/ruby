@@ -4633,20 +4633,36 @@ rvargc_memsize_of(VALUE obj)
     return size;
 }
 
+struct timeval previous_timeval;
+const char * previous_typename;
+int previous_alloc_state;
+
 void
 rvargc_log_memsize_of(VALUE obj, int at_alloc)
 {
     size_t size = rvargc_memsize_of(obj);
+    const char *type_name = obj_type_name(obj);
     struct timeval t;
     gettimeofday(&t, NULL);
 
+    if (((previous_alloc_state & at_alloc) == 1) &&
+            (t.tv_sec == previous_timeval.tv_sec) && 
+            (type_name == previous_typename) &&
+            (t.tv_usec - previous_timeval.tv_usec < 5)){
+//        rb_bug("alloc same object twice close together");
+    }
+
     if (at_alloc) {
         fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
+                type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
     } else {
         fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                obj_type_name(obj), (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
+                type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
     }
+
+    previous_timeval = t;
+    previous_typename = type_name;
+    previous_alloc_state = at_alloc;
 }
 
 static size_t
