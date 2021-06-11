@@ -678,7 +678,7 @@ typedef struct mark_stack {
     size_t unused_cache_size;
 } mark_stack_t;
 
-#define SIZE_POOL_COUNT 5
+#define SIZE_POOL_COUNT 4
 #define SIZE_POOL_EDEN_HEAP(size_pool) (&(size_pool)->eden_heap)
 #define SIZE_POOL_TOMB_HEAP(size_pool) (&(size_pool)->tomb_heap)
 
@@ -1746,7 +1746,7 @@ rb_objspace_alloc(void)
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
 
-        size_pool->slot_size = sizeof(RVALUE) * (i + 1);
+        size_pool->slot_size = sizeof(RVALUE) * (1 << i);
 
         list_head_init(&SIZE_POOL_EDEN_HEAP(size_pool)->pages);
         list_head_init(&SIZE_POOL_TOMB_HEAP(size_pool)->pages);
@@ -2110,11 +2110,6 @@ heap_page_create(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     const char *method = "recycle";
 
     heap_allocatable_pages--;
-
-    size_t offset = (size_pool->slot_size / sizeof(RVALUE)) - 1;
-
-    GC_ASSERT(offset >= 0);
-    GC_ASSERT(offset < SIZE_POOL_COUNT);
 
     page = heap_page_resurrect(objspace, size_pool);
 
@@ -2570,18 +2565,20 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
             }
         }
         else {
-            size_t rounded_size = alloc_size + (sizeof(RVALUE) - (alloc_size % sizeof(RVALUE)));
-            short size_pool_idx = (rounded_size / sizeof(RVALUE)) - 1;
+            short size_pool_idx = (alloc_size / sizeof(RVALUE)) - 1;
 
             GC_ASSERT(size_pool_idx > 1); // Normal RVALUE is allocated out of 0
             GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
 
             rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
+
+            GC_ASSERT(size_pool->slot_size >= (short)alloc_size);
+            GC_ASSERT(size_pools[size_pool_idx - 1].slot_size < (short)alloc_size);
             obj = heap_get_freeobj_head(objspace, size_pool);
             if (obj == Qfalse) {
                 obj = heap_get_freeobj(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
             }
-            memset((void *)obj, 0, rounded_size);
+            memset((void *)obj, 0, size_pool->slot_size);
         }
         GC_ASSERT(obj != 0);
         newobj_init(klass, flags, wb_protected, objspace, obj);
