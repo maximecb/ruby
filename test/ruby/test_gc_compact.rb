@@ -2,7 +2,6 @@
 require 'test/unit'
 require 'fiddle'
 require 'etc'
-=begin
 
 class TestGCCompact < Test::Unit::TestCase
   module SupportsCompact
@@ -167,5 +166,3 @@ class TestGCCompact < Test::Unit::TestCase
     assert_equal count + 1, GC.stat(:compact_count)
   end
 end
-=end
-
