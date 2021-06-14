@@ -1592,11 +1592,6 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
     }
     FL_SET_RAW(dup, flags & ~FL_FREEZE);
     if (encidx) rb_enc_associate_index(dup, encidx);
-    if (UNLIKELY(!(flags & FL_FREEZE))) {
-        // noop
-    } else {
-        rvargc_log_memsize_of((VALUE)dup, 1);
-    }
     return dup;
 }
 

@@ -1536,7 +1536,6 @@ hash_alloc_flags(VALUE klass, VALUE flags, VALUE ifnone)
 
     RHASH_SET_IFNONE((VALUE)hash, ifnone);
 
-    rvargc_log_memsize_of((VALUE)hash, 1);
     return (VALUE)hash;
 }
 
@@ -1557,7 +1556,9 @@ empty_hash_alloc(VALUE klass)
 VALUE
 rb_hash_new(void)
 {
-    return hash_alloc(rb_cHash);
+    VALUE hash = hash_alloc(rb_cHash);
+    rvargc_log_memsize_of(hash, 1);
+    return hash;
 }
 
 MJIT_FUNC_EXPORTED VALUE

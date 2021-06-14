@@ -133,6 +133,8 @@
 #define rb_jmp_buf rb_jmpbuf_t
 #undef rb_data_object_wrap
 
+FILE *object_log_fp = NULL;
+
 static inline struct rbimpl_size_mul_overflow_tag
 size_add_overflow(size_t x, size_t y)
 {
@@ -4636,10 +4638,19 @@ rvargc_memsize_of(VALUE obj)
 struct timeval previous_timeval;
 const char * previous_typename;
 int previous_alloc_state;
+VALUE previous_obj;
 
 void
 rvargc_log_memsize_of(VALUE obj, int at_alloc)
 {
+    if (!object_log_fp) {
+        static char fname[256];
+        static int pid = 0;
+
+        snprintf(fname, sizeof(fname), "ruby-objects.%d.log", pid = getpid());
+        if ((object_log_fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
+    }
+
     size_t size = rvargc_memsize_of(obj);
     const char *type_name = obj_type_name(obj);
     struct timeval t;
@@ -4648,8 +4659,9 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
     if (((previous_alloc_state & at_alloc) == 1) &&
             (t.tv_sec == previous_timeval.tv_sec) && 
             (type_name == previous_typename) &&
+            (obj == previous_obj) &&
             (t.tv_usec - previous_timeval.tv_usec < 5)){
-//        rb_bug("alloc same object twice close together");
+        rb_bug("alloc same object twice close together");
     }
 
     if (at_alloc) {
@@ -4663,6 +4675,7 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
     previous_timeval = t;
     previous_typename = type_name;
     previous_alloc_state = at_alloc;
+    previous_obj = obj;
 }
 
 static size_t

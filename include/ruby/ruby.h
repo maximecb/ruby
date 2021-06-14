@@ -59,7 +59,6 @@ RBIMPL_SYMBOL_EXPORT_BEGIN()
 
 VALUE rb_get_path(VALUE);
 
-extern FILE *object_log_fp;
 
 #define FilePathValue(v) (RB_GC_GUARD(v) = rb_get_path(v))
 
