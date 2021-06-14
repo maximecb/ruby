@@ -5075,7 +5075,7 @@ gc_unprotect_pages(rb_objspace_t *objspace, rb_heap_t *heap)
     }
 }
 
-static void gc_update_references(rb_objspace_t * objspace, rb_heap_t *heap);
+static void gc_update_references(rb_objspace_t * objspace);
 static void invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page);
 
 static void
@@ -5224,9 +5224,14 @@ check_stack_for_moved(rb_objspace_t *objspace)
 }
 
 static void
-gc_compact_finish(rb_objspace_t *objspace, rb_heap_t *heap)
+gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
 {
-    gc_unprotect_pages(objspace, heap);
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t * pool = &size_pools[i];
+        rb_heap_t * heap = &pool->eden_heap;
+        gc_unprotect_pages(objspace, heap);
+    }
+
     uninstall_handlers();
 
     /* The mutator is allowed to run during incremental sweeping. T_MOVED
@@ -5236,8 +5241,16 @@ gc_compact_finish(rb_objspace_t *objspace, rb_heap_t *heap)
      * then revert any moved objects that made it to the stack. */
     check_stack_for_moved(objspace);
 
-    gc_update_references(objspace, heap);
+    gc_update_references(objspace);
     objspace->profile.compact_count++;
+
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t * pool = &size_pools[i];
+        rb_heap_t * heap = &pool->eden_heap;
+        heap->compact_cursor = NULL;
+        heap->compact_cursor_index = 0;
+    }
+
     if (gc_prof_enabled(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
         record->moved_objects = objspace->rcompactor.total_moved - record->moved_objects;
@@ -5484,9 +5497,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
             /* The compaction cursor and sweep page met, so we need to quit compacting */
             gc_report(5, objspace, "Quit compacting, mark and compact cursor met\n");
             GC_ASSERT(heap->sweeping_page == heap->compact_cursor);
-            heap->compact_cursor = NULL;
-            heap->compact_cursor_index = 0;
-            gc_compact_finish(objspace, heap);
+            gc_compact_finish(objspace, size_pool, heap);
         }
         else {
             /* We anticipate filling the page, so NULL out the freelist. */
@@ -5527,7 +5538,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     if (heap->compact_cursor) {
         if (gc_fill_swept_page(objspace, heap, sweep_page, &ctx)) {
-            gc_compact_finish(objspace, heap);
+            gc_compact_finish(objspace, size_pool, heap);
         }
     }
 
@@ -5863,12 +5874,19 @@ invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
 }
 
 static void
-gc_compact_start(rb_objspace_t *objspace, rb_heap_t *heap)
+gc_compact_start(rb_objspace_t *objspace)
 {
-    rb_bug("not supported");
+    struct heap_page *page = NULL;
 
-    heap->compact_cursor = list_tail(&heap->pages, struct heap_page, page_node);
-    heap->compact_cursor_index = 0;
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_heap_t * heap = &size_pools[i].eden_heap;
+        list_for_each(&heap->pages, page, page_node) {
+            page->flags.before_sweep = TRUE;
+        }
+
+        heap->compact_cursor = list_tail(&heap->pages, struct heap_page, page_node);
+        heap->compact_cursor_index = 0;
+    }
 
     if (gc_prof_enabled(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
@@ -5895,16 +5913,7 @@ gc_sweep(rb_objspace_t *objspace)
 #endif
 	gc_sweep_start(objspace);
         if (objspace->flags.during_compacting) {
-            struct heap_page *page = NULL;
-
-            for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-                list_for_each(&size_pools[i].eden_heap.pages, page, page_node) {
-                    page->flags.before_sweep = TRUE;
-                }
-            }
-
-            // TODO
-            /*gc_compact_start(objspace, heap_eden);*/
+            gc_compact_start(objspace);
         }
 
 	gc_sweep_rest(objspace);
@@ -5917,8 +5926,7 @@ gc_sweep(rb_objspace_t *objspace)
 	gc_sweep_start(objspace);
 
         if (ruby_enable_autocompact && is_full_marking(objspace)) {
-            // TODO
-            /*gc_compact_start(objspace, heap_eden);*/
+            gc_compact_start(objspace);
         }
 
         for (int i = 0; i < SIZE_POOL_COUNT; i++) {
@@ -8989,7 +8997,7 @@ gc_start(rb_objspace_t *objspace, int reason)
     objspace->flags.immediate_sweep = !!((unsigned)reason & GPR_FLAG_IMMEDIATE_SWEEP);
 
     /* Explicitly enable compaction (GC.compact) */
-    objspace->flags.during_compacting = (!!((unsigned)reason & GPR_FLAG_COMPACT) << 1);
+    objspace->flags.during_compacting = !!((unsigned)reason & GPR_FLAG_COMPACT);
 
     if (!heap_allocated_pages) return FALSE; /* heap is not ready */
     if (!(reason & GPR_FLAG_METHOD) && !ready_to_gc(objspace)) return TRUE; /* GC is not allowed */
@@ -10132,7 +10140,7 @@ extern rb_symbols_t ruby_global_symbols;
 #define global_symbols ruby_global_symbols
 
 static void
-gc_update_references(rb_objspace_t * objspace, rb_heap_t *heap)
+gc_update_references(rb_objspace_t * objspace)
 {
     rb_execution_context_t *ec = GET_EC();
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
@@ -10142,9 +10150,13 @@ gc_update_references(rb_objspace_t * objspace, rb_heap_t *heap)
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         short should_set_mark_bits = 1;
         rb_size_pool_t *size_pool = &size_pools[i];
+        rb_heap_t * heap = &size_pool->eden_heap;
 
         list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
-            gc_ref_update(page->start, page->start + page->total_slots, sizeof(RVALUE), objspace, page);
+            intptr_t start = (intptr_t)page->start;
+            intptr_t end = start + (page->total_slots * size_pool->slot_size);
+
+            gc_ref_update((void *)start, (void *)end, size_pool->slot_size, objspace, page);
             if (page == heap->sweeping_page) {
                 should_set_mark_bits = 0;
             }
