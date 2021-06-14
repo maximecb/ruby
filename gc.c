@@ -9494,7 +9494,6 @@ compare_free_slots(const void *left, const void *right, void *dummy)
 static void
 gc_sort_heap_by_empty_slots(rb_objspace_t *objspace)
 {
-    rb_bug("idk");
     for (int j = 0; j < SIZE_POOL_COUNT; j++) {
         rb_size_pool_t *size_pool = &size_pools[j];
 
@@ -9505,11 +9504,11 @@ gc_sort_heap_by_empty_slots(rb_objspace_t *objspace)
 
         list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
             page_list[i++] = page;
-            assert(page != NULL);
+            GC_ASSERT(page);
         }
 
-        assert(total_pages > 0);
-        assert((size_t)i == total_pages);
+        GC_ASSERT(total_pages > 0);
+        GC_ASSERT((size_t)i == total_pages);
 
         /* Sort the heap so "filled pages" are first. `heap_add_page` adds to the
          * head of the list, so empty pages will end up at the start of the heap */
