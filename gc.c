@@ -2540,7 +2540,7 @@ size_pool_for_size(rb_objspace_t *objspace, size_t size)
     size_t slot_count = CEILDIV(size, sizeof(RVALUE));
 
     /* size_pool_idx is ceil(log2(slot_count)) */
-    size_t size_pool_idx = 64 - __builtin_clzl(slot_count - 1);
+    size_t size_pool_idx = 64 - nlz_int64(slot_count - 1);
     GC_ASSERT(size_pool_idx > 1);
     GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
 
