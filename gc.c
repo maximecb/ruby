@@ -4639,11 +4639,14 @@ struct timeval previous_timeval;
 const char * previous_typename;
 int previous_alloc_state;
 VALUE previous_obj;
+pthread_mutex_t mutex; 
 
 void
 rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
 {
     if (!object_log_fp) {
+        pthread_mutex_init(&mutex, NULL);
+
         static char fname[256];
         static int pid = 0;
 
@@ -4663,6 +4666,7 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
             (t.tv_usec - previous_timeval.tv_usec < 5)){
     }
 
+    pthread_mutex_lock(&mutex);
     if (at_alloc) {
         fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
                 type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
@@ -4670,6 +4674,8 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
         fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
                 type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
     }
+    fflush(object_log_fp);
+    pthread_mutex_unlock(&mutex);
 
     previous_timeval = t;
     previous_typename = type_name;
@@ -4687,6 +4693,8 @@ void
 rvargc_log_memsize_of_st(st_table *table, int at_alloc)
 {
     if (!object_log_fp) {
+        pthread_mutex_init(&mutex, NULL);
+
         static char fname[256];
         static int pid = 0;
 
@@ -4699,6 +4707,7 @@ rvargc_log_memsize_of_st(st_table *table, int at_alloc)
     struct timeval t;
     gettimeofday(&t, NULL);
 
+    pthread_mutex_lock(&mutex);
     if(at_alloc){
         fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
                 (void *)table, size, t.tv_sec, t.tv_usec);
@@ -4706,6 +4715,8 @@ rvargc_log_memsize_of_st(st_table *table, int at_alloc)
         fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
                 (void *)table, size, t.tv_sec, t.tv_usec);
     }
+    fflush(object_log_fp);
+    pthread_mutex_unlock(&mutex);
 
 }
 
