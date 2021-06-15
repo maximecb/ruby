@@ -1,4 +1,4 @@
-/**********************************************************************
+/*********************************************************************
 
   gc.c -
 
@@ -4641,7 +4641,7 @@ int previous_alloc_state;
 VALUE previous_obj;
 
 void
-rvargc_log_memsize_of(VALUE obj, int at_alloc)
+rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
 {
     if (!object_log_fp) {
         static char fname[256];
@@ -4661,7 +4661,6 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
             (type_name == previous_typename) &&
             (obj == previous_obj) &&
             (t.tv_usec - previous_timeval.tv_usec < 5)){
-        rb_bug("alloc same object twice close together");
     }
 
     if (at_alloc) {
@@ -4677,6 +4676,39 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
     previous_alloc_state = at_alloc;
     previous_obj = obj;
 }
+
+void
+rvargc_log_memsize_of(VALUE obj, int at_alloc)
+{
+    rvargc_log_memsize_of2(obj, at_alloc, NULL, 0);
+}
+
+void
+rvargc_log_memsize_of_st(st_table *table, int at_alloc)
+{
+    if (!object_log_fp) {
+        static char fname[256];
+        static int pid = 0;
+
+        snprintf(fname, sizeof(fname), "ruby-objects.%d.log", pid = getpid());
+        if ((object_log_fp = fopen(fname, "a+")) == NULL) rb_bug("fopen");
+    }
+
+    size_t size = st_memsize(table);
+
+    struct timeval t;
+    gettimeofday(&t, NULL);
+
+    if(at_alloc){
+        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
+                (void *)table, size, t.tv_sec, t.tv_usec);
+    } else {
+        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
+                (void *)table, size, t.tv_sec, t.tv_usec);
+    }
+
+}
+
 
 static size_t
 obj_memsize_of(VALUE obj, int use_all_types)

@@ -509,6 +509,7 @@ stat_col(void)
 }
 #endif
 
+#include <internal/gc.h>
 /* Create and return table with TYPE which can hold at least SIZE
    entries.  The real number of entries which the table can hold is
    the nearest power of two for SIZE.  */
@@ -566,6 +567,8 @@ st_init_table_with_size(const struct st_hash_type *type, st_index_t size)
 #endif
     make_tab_empty(tab);
     tab->rebuilds_num = 0;
+
+    rvargc_log_memsize_of_st(tab, 1);
     return tab;
 }
 
@@ -635,6 +638,7 @@ st_clear(st_table *tab)
 void
 st_free_table(st_table *tab)
 {
+    rvargc_log_memsize_of_st(tab, 0);
     if (tab->bins != NULL)
         free(tab->bins);
     free(tab->entries);
