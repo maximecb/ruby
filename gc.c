@@ -2787,7 +2787,6 @@ rb_data_object_wrap(VALUE klass, void *datap, RUBY_DATA_FUNC dmark, RUBY_DATA_FU
     RUBY_ASSERT_ALWAYS(dfree != (RUBY_DATA_FUNC)1);
     if (klass) Check_Type(klass, T_CLASS);
     VALUE wrapped_data = newobj_of(klass, T_DATA, (VALUE)dmark, (VALUE)dfree, (VALUE)datap, FALSE, sizeof(RVALUE));
-    rvargc_log_memsize_of(wrapped_data, 1);
     return wrapped_data;
 }
 
@@ -2796,6 +2795,7 @@ rb_data_object_zalloc(VALUE klass, size_t size, RUBY_DATA_FUNC dmark, RUBY_DATA_
 {
     VALUE obj = rb_data_object_wrap(klass, 0, dmark, dfree);
     DATA_PTR(obj) = xcalloc(1, size);
+    rvargc_log_memsize_of3(obj, 1, size);
     return obj;
 }
 
@@ -2805,7 +2805,6 @@ rb_data_typed_object_wrap(VALUE klass, void *datap, const rb_data_type_t *type)
     RUBY_ASSERT_ALWAYS(type);
     if (klass) Check_Type(klass, T_CLASS);
     VALUE typed_obj = newobj_of(klass, T_DATA, (VALUE)type, (VALUE)1, (VALUE)datap, type->flags & RUBY_FL_WB_PROTECTED, sizeof(RVALUE));
-    rvargc_log_memsize_of(typed_obj, 1);
     return typed_obj;
 }
 
@@ -2814,6 +2813,7 @@ rb_data_typed_object_zalloc(VALUE klass, size_t size, const rb_data_type_t *type
 {
     VALUE obj = rb_data_typed_object_wrap(klass, 0, type);
     DATA_PTR(obj) = xcalloc(1, size);
+    rvargc_log_memsize_of3(obj, 1, size);
     return obj;
 }
 
@@ -4642,8 +4642,13 @@ VALUE previous_obj;
 pthread_mutex_t mutex; 
 
 void
-rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
+rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line, size_t extra_size)
 {
+    size_t base_size = sizeof(RVALUE);
+    if (extra_size) {
+        base_size += extra_size;
+    }
+
     if (!object_log_fp) {
         pthread_mutex_init(&mutex, NULL);
 
@@ -4669,10 +4674,10 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
     pthread_mutex_lock(&mutex);
     if (at_alloc) {
         fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
+                type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
     } else {
         fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                type_name, (void *)obj, size + sizeof(RVALUE), t.tv_sec, t.tv_usec);
+                type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
     }
     fflush(object_log_fp);
     pthread_mutex_unlock(&mutex);
@@ -4684,9 +4689,16 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line)
 }
 
 void
+rvargc_log_memsize_of3(VALUE obj, int at_alloc, size_t extra_size)
+{
+    rvargc_log_memsize_of2(obj, at_alloc, NULL, 0, extra_size);
+}
+
+
+void
 rvargc_log_memsize_of(VALUE obj, int at_alloc)
 {
-    rvargc_log_memsize_of2(obj, at_alloc, NULL, 0);
+    rvargc_log_memsize_of2(obj, at_alloc, NULL, 0, 0);
 }
 
 void
@@ -13064,11 +13076,7 @@ type_name(int type, VALUE obj)
             TYPE_NAME(T_MOVED);
 	    TYPE_NAME(T_ZOMBIE);
             TYPE_NAME(T_PAYLOAD);
-      case T_DATA:
-	if (obj && rb_objspace_data_type_name(obj)) {
-	    return rb_objspace_data_type_name(obj);
-	}
-	return "T_DATA";
+            TYPE_NAME(T_DATA);
 #undef TYPE_NAME
     }
     return "unknown";

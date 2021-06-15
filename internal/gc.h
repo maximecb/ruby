@@ -101,6 +101,7 @@ VALUE rb_class_allocate_instance(VALUE klass);
 RUBY_SYMBOL_EXPORT_BEGIN
 /* gc.c (export) */
 void rvargc_log_memsize_of(VALUE obj, int at_alloc);
+void rvargc_log_memsize_of3(VALUE obj, int at_alloc, size_t extra_size);
 void rvargc_log_memsize_of_st(st_table *table, int at_alloc);
 const char *rb_objspace_data_type_name(VALUE obj);
 VALUE rb_wb_protected_newobj_of(VALUE, VALUE, size_t);
