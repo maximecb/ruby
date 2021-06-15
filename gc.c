@@ -2534,6 +2534,23 @@ heap_get_freeobj_head(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     return (VALUE)p;
 }
 
+static inline rb_size_pool_t *
+size_pool_for_size(rb_objspace_t *objspace, size_t size)
+{
+    size_t slot_count = CEILDIV(size, sizeof(RVALUE));
+
+    /* size_pool_idx is ceil(log2(slot_count)) */
+    size_t size_pool_idx = 64 - __builtin_clzl(slot_count - 1);
+    GC_ASSERT(size_pool_idx > 1);
+    GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
+
+    rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
+    GC_ASSERT(size_pool->slot_size >= (short)size);
+    GC_ASSERT(size_pools[size_pool_idx - 1].slot_size < (short)size);
+
+    return size_pool;
+}
+
 ALWAYS_INLINE(static VALUE newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *cr, int wb_protected, size_t alloc_size));
 
 static inline VALUE
@@ -2565,15 +2582,8 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
             }
         }
         else {
-            short size_pool_idx = (alloc_size / sizeof(RVALUE)) - 1;
+            rb_size_pool_t *size_pool = size_pool_for_size(objspace, alloc_size);
 
-            GC_ASSERT(size_pool_idx > 1); // Normal RVALUE is allocated out of 0
-            GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
-
-            rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
-
-            GC_ASSERT(size_pool->slot_size >= (short)alloc_size);
-            GC_ASSERT(size_pools[size_pool_idx - 1].slot_size < (short)alloc_size);
             obj = heap_get_freeobj_head(objspace, size_pool);
             if (obj == Qfalse) {
                 obj = heap_get_freeobj(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
