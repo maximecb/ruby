@@ -7,14 +7,16 @@ parser = Yajl::Parser.new
 @results = Hash.new { |h, k| h[k] = Array.new }
 @obj_list = []
 
-parser.on_parse_complete = -> (obj) {
+def alloc_key(obj)
   obj_loc = obj.fetch("addr")
   obj_type = obj.fetch("type")
 
-  alloc_key = [obj_loc, obj_type].join('_')
+  [obj_loc, obj_type].join('_')
+end
 
-  @obj_list << alloc_key
-  @results[alloc_key] << obj
+parser.on_parse_complete = -> (obj) {
+  @obj_list << alloc_key(obj)
+  @results[alloc_key(obj)] << obj
 }
 
 json = parser.parse(
@@ -22,6 +24,8 @@ json = parser.parse(
 )
 
 alloc_pairs = @results.transform_values { |value| value.count }
+
+byebug
 
 @obj_list.each do |id|
   case alloc_pairs[id]
