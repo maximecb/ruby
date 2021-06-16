@@ -701,6 +701,11 @@ typedef struct rb_size_pool_struct {
 
     short slot_size;
 
+    size_t allocatable_pages;
+
+    /* sweeping stats */
+    size_t swept_slots;
+
     rb_heap_t eden_heap;
     rb_heap_t tomb_heap;
 } rb_size_pool_t;
@@ -2161,10 +2166,9 @@ heap_add_pages(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *he
 }
 
 static size_t
-heap_extend_pages(rb_objspace_t *objspace, size_t free_slots, size_t total_slots)
+heap_extend_pages(rb_objspace_t *objspace, size_t free_slots, size_t total_slots, size_t used)
 {
     double goal_ratio = gc_params.heap_free_slots_goal_ratio;
-    size_t used = heap_allocated_pages + heap_allocatable_pages;
     size_t next_used;
 
     if (goal_ratio == 0.0) {
@@ -2216,7 +2220,17 @@ heap_set_increment(rb_objspace_t *objspace, size_t additional_pages)
 static int
 heap_increment(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
 {
-    if (heap_allocatable_pages > 0) {
+    bool allocatable = FALSE;
+    if (size_pool->allocatable_pages > 0) {
+        size_pool->allocatable_pages--;
+        heap_allocatable_pages_set(objspace, heap_allocatable_pages + 1);
+        allocatable = TRUE;
+    }
+    else if (heap_allocatable_pages > 0) {
+        allocatable = TRUE;
+    }
+
+    if (allocatable) {
 	gc_report(1, objspace, "heap_increment: heap_pages_sorted_length: %"PRIdSIZE", "
                   "heap_pages_inc: %"PRIdSIZE", heap->total_pages: %"PRIdSIZE"\n",
 		  heap_pages_sorted_length, heap_allocatable_pages, heap->total_pages);
@@ -3548,11 +3562,13 @@ Init_heap(void)
 
     heap_add_pages(objspace, &size_pools[0], &size_pools[0].eden_heap, gc_params.heap_init_slots / HEAP_PAGE_OBJ_LIMIT);
 
-    // Start with just one page per extra size class
+    /* Give other size pools allocatable pages. */
     for (int i = 1; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
-        heap_add_pages(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool), 1);
+        int multiple = size_pool->slot_size / sizeof(RVALUE);
+        size_pool->allocatable_pages = gc_params.heap_init_slots * multiple / HEAP_PAGE_OBJ_LIMIT;
     }
+
     init_mark_stack(&objspace->mark_stack);
 
     objspace->profile.invoke_time = getrusage_time();
@@ -5682,6 +5698,26 @@ gc_sweep_start(rb_objspace_t *objspace)
 }
 
 static void
+gc_sweep_finish_grow_size_pool(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
+{
+    rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
+    size_t total_slots = heap->total_slots + SIZE_POOL_TOMB_HEAP(size_pool)->total_slots;
+    size_t total_pages = heap->total_pages + SIZE_POOL_TOMB_HEAP(size_pool)->total_pages;
+    size_t swept_slots = size_pool->swept_slots;
+    size_t min_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_min_ratio);
+
+    if (swept_slots < min_free_slots) {
+        size_t extend_page_count = heap_extend_pages(objspace, swept_slots, total_slots, total_pages);
+
+        if (extend_page_count > size_pool->allocatable_pages) {
+            size_pool->allocatable_pages = extend_page_count;
+        }
+    }
+
+    size_pool->swept_slots = 0;
+}
+
+static void
 gc_sweep_finish(rb_objspace_t *objspace)
 {
     gc_report(1, objspace, "gc_sweep_finish\n");
@@ -5693,6 +5729,10 @@ gc_sweep_finish(rb_objspace_t *objspace)
     size_t tomb_total_pages = heap_tomb_total_pages(objspace);
     if (heap_allocatable_pages < tomb_total_pages) {
         heap_allocatable_pages_set(objspace, tomb_total_pages);
+    }
+
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        gc_sweep_finish_grow_size_pool(objspace, &size_pools[i]);
     }
 
     gc_event_hook(objspace, RUBY_INTERNAL_EVENT_GC_END_SWEEP, 0);
@@ -5741,6 +5781,8 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 	    heap_add_page(objspace, size_pool, SIZE_POOL_TOMB_HEAP(size_pool), sweep_page);
 	}
 	else if (free_slots > 0) {
+            size_pool->swept_slots += free_slots;
+
 #if GC_ENABLE_INCREMENTAL_MARK
 	    if (need_pool) {
 		if (heap_add_poolpage(objspace, heap, size_pool, sweep_page)) {
@@ -8130,7 +8172,7 @@ gc_marks_finish(rb_objspace_t *objspace)
             if (full_marking) {
               /* increment: */
 		gc_report(1, objspace, "gc_marks_finish: heap_set_increment!!\n");
-		heap_set_increment(objspace, heap_extend_pages(objspace, sweep_slots, total_slots));
+		heap_set_increment(objspace, heap_extend_pages(objspace, sweep_slots, total_slots, heap_allocated_pages + heap_allocatable_pages));
 
                 // FIXME: should we extend all pages??
                 for (int i = 0; i < SIZE_POOL_COUNT; i++) {
@@ -10603,6 +10645,11 @@ gc_stat_internal(VALUE hash_or_sym)
 	rb_hash_aset(hash, gc_stat_symbols[gc_stat_sym_##name], SIZET2NUM(attr));
 
     SET(count, objspace->profile.count);
+
+    // TODO: per-pool stats
+//    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+//        fprintf(stderr, "i: %d, pages: %ld\n", i, size_pools[i].eden_heap.total_pages);
+//    }
 
     /* implementation dependent counters */
     SET(heap_allocated_pages, heap_allocated_pages);
