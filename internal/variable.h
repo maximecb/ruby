@@ -40,7 +40,7 @@ static inline void ROBJ_TRANSIENT_UNSET(VALUE obj);
 RUBY_SYMBOL_EXPORT_BEGIN
 /* variable.c (export) */
 void rb_mark_generic_ivar(VALUE);
-void rb_mv_generic_ivar(VALUE src, VALUE dst);
+void rb_update_generic_ivar_references();
 VALUE rb_const_missing(VALUE klass, VALUE name);
 int rb_class_ivar_set(VALUE klass, ID vid, VALUE value);
 void rb_iv_tbl_copy(VALUE dst, VALUE src);
