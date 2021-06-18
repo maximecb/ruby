@@ -4695,7 +4695,6 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line, size_t ex
     }
 
     pthread_mutex_lock(&mutex);
-    fprintf(stderr, "%c", embed_state);
     fprint_obj_log(object_log_fp, at_alloc, embed_state, type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
     fflush(object_log_fp);
     pthread_mutex_unlock(&mutex);
