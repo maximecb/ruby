@@ -4646,7 +4646,7 @@ void
 fprint_obj_log(FILE *object_log_fp, int at_alloc, char embed_state, const char * type_name, void * obj, long size, long sec, long usec)
 {
 
-    fprintf(object_log_fp, "{\"state\":\"%s\", \"allocation_type\":\"%c\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":%zu, \"at\":\"%ld.%ld\"}\n",
+    fprintf(object_log_fp, "{\"state\":\"%s\", \"allocation_type\":\"%c\", \"rtype\":\"%s\", \"addr\":\"%p\", \"size\":%zu, \"at\":\"%ld.%ld\"}\n",
             at_alloc ? "alloc" : "free", embed_state, type_name, obj, size, sec, usec);
 }
 
