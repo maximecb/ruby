@@ -1145,14 +1145,33 @@ rb_mark_generic_ivar(VALUE obj)
     }
 }
 
-void
-rb_mv_generic_ivar(VALUE rsrc, VALUE dst)
+static int
+replace_with_new_location(st_data_t *key, st_data_t *value, st_data_t argp, int existing)
 {
-    st_data_t key = (st_data_t)rsrc;
-    struct gen_ivtbl *ivtbl;
+    if (rb_gc_location((VALUE)*value) != (VALUE)*value) {
+        *value = rb_gc_location((VALUE)*value);
+    }
 
-    if (st_delete(generic_ivtbl_no_ractor_check(rsrc), &key, (st_data_t *)&ivtbl))
-        st_insert(generic_ivtbl_no_ractor_check(dst), (st_data_t)dst, (st_data_t)ivtbl);
+    return ST_CONTINUE;
+}
+
+static int
+check_value_for_moved(st_data_t key, st_data_t value, st_data_t argp, int error)
+{
+    if (rb_gc_location((VALUE)value) != value) {
+        return ST_REPLACE;
+    }
+    return ST_CONTINUE;
+}
+
+/* Update references in the generic instance variable table */
+void
+rb_update_generic_ivar_references()
+{
+    st_table * tbl;
+
+    tbl = generic_ivtbl_no_ractor_check(Qnil);
+    st_foreach_with_replace(tbl, check_value_for_moved, replace_with_new_location, 0);
 }
 
 void

@@ -9307,14 +9307,6 @@ gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free)
     CLEAR_IN_BITMAP(GET_HEAP_UNCOLLECTIBLE_BITS((VALUE)src), (VALUE)src);
     CLEAR_IN_BITMAP(GET_HEAP_MARKING_BITS((VALUE)src), (VALUE)src);
 
-    if (FL_TEST((VALUE)src, FL_EXIVAR)) {
-        /* Same deal as below. Generic ivars are held in st tables.
-         * Resizing the table could cause a GC to happen and we can't allow it */
-        VALUE already_disabled = rb_gc_disable_no_rest();
-        rb_mv_generic_ivar((VALUE)src, (VALUE)dest);
-        if (already_disabled == Qfalse) rb_objspace_gc_enable(objspace);
-    }
-
     st_data_t srcid = (st_data_t)src, id;
 
     /* If the source object's object_id has been seen, we need to update
@@ -10069,6 +10061,7 @@ gc_update_references(rb_objspace_t * objspace, rb_heap_t *heap)
     rb_vm_update_references(vm);
     rb_transient_heap_update_references();
     rb_gc_update_global_tbl();
+    rb_update_generic_ivar_references();
     global_symbols.ids = rb_gc_location(global_symbols.ids);
     global_symbols.dsymbol_fstr_hash = rb_gc_location(global_symbols.dsymbol_fstr_hash);
     gc_update_tbl_refs(objspace, objspace->obj_to_id_tbl);
