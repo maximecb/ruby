@@ -4641,9 +4641,19 @@ int previous_alloc_state;
 VALUE previous_obj;
 pthread_mutex_t mutex; 
 
+
+void
+fprint_obj_log(FILE *object_log_fp, int at_alloc, char embed_state, const char * type_name, void * obj, long size, long sec, long usec)
+{
+
+    fprintf(object_log_fp, "{\"state\":\"%s\", \"allocation_type\":\"%c\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":%zu, \"at\":\"%ld.%ld\"}\n",
+            at_alloc ? "alloc" : "free", embed_state, type_name, obj, size, sec, usec);
+}
+
 void
 rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line, size_t extra_size)
 {
+    char embed_state = 'U';
     size_t base_size = sizeof(RVALUE);
     if (extra_size) {
         base_size += extra_size;
@@ -4670,15 +4680,23 @@ rvargc_log_memsize_of2(VALUE obj, int at_alloc, char * file, int line, size_t ex
             (obj == previous_obj) &&
             (t.tv_usec - previous_timeval.tv_usec < 5)){
     }
+ 
+    if (RB_TYPE_P(obj, T_STRING)) {
+        if (!(FL_TEST(obj, STR_NOEMBED|STR_SHARED|STR_NOFREE) == STR_NOEMBED)) {
+            embed_state = 'E';
+
+            size = RSTRING_EMBED_LEN(obj);
+            base_size = 0;
+        } else if (FL_TEST(obj, STR_SHARED) == STR_SHARED) {
+            embed_state = 'S';
+        } else {
+            embed_state = 'N';
+        }
+    }
 
     pthread_mutex_lock(&mutex);
-    if (at_alloc) {
-        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
-    } else {
-        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"%s\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
-    }
+    fprintf(stderr, "%c", embed_state);
+    fprint_obj_log(object_log_fp, at_alloc, embed_state, type_name, (void *)obj, size + base_size, t.tv_sec, t.tv_usec);
     fflush(object_log_fp);
     pthread_mutex_unlock(&mutex);
 
@@ -4704,6 +4722,7 @@ rvargc_log_memsize_of(VALUE obj, int at_alloc)
 void
 rvargc_log_memsize_of_st(st_table *table, int at_alloc)
 {
+    char embed_state = 'N';
     if (!object_log_fp) {
         pthread_mutex_init(&mutex, NULL);
 
@@ -4720,13 +4739,7 @@ rvargc_log_memsize_of_st(st_table *table, int at_alloc)
     gettimeofday(&t, NULL);
 
     pthread_mutex_lock(&mutex);
-    if(at_alloc){
-        fprintf(object_log_fp, "{\"state\":\"alloc\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                (void *)table, size, t.tv_sec, t.tv_usec);
-    } else {
-        fprintf(object_log_fp, "{\"state\":\"free\", \"type\":\"st_table\", \"addr\":\"%p\", \"size\":\"%zu\", \"at\":\"%ld.%ld\"}\n",
-                (void *)table, size, t.tv_sec, t.tv_usec);
-    }
+    fprint_obj_log(object_log_fp, at_alloc, embed_state, "st_table", (void *)table, size, t.tv_sec, t.tv_usec);
     fflush(object_log_fp);
     pthread_mutex_unlock(&mutex);
 
