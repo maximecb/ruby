@@ -20,3 +20,5 @@ Theoretically you should be able to pass the ruby-object file to the rscript fil
 
 * I've had to filter all strings to ones with size > 0. I don't know why there are so many strings of size 0.
 * I've also filtered out anything over 100000 bytes. There are only 3 but they're throwing the results off.
+
+The distribution is not at all what I was expecting. I was expecting more shorter strings than long ones, but not quite like this - there are a bunch of gaps, and the results are being hugely thrown off by 0 length strings. So I've missed something in the logging...
