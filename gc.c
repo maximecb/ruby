@@ -5682,8 +5682,15 @@ gc_sweep_start(rb_objspace_t *objspace)
     gc_mode_transition(objspace, gc_mode_sweeping);
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
-        size_pool->freelist = 0;
-        size_pool->using_page = NULL;
+
+        if (size_pool->freelist) {
+            struct heap_page *page = size_pool->using_page;
+            page->freelist = (RVALUE *)size_pool->freelist;
+            size_pool->freelist = 0;
+            size_pool->using_page = NULL;
+        }
+
+        GC_ASSERT(size_pool->using_page == NULL);
 
         gc_sweep_start_heap(objspace, SIZE_POOL_EDEN_HEAP(size_pool));
     }
