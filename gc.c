@@ -2608,6 +2608,10 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
             }
         }
         else {
+#if !USE_RVARGC
+            rb_bug("unreachable when not using rvargc");
+#endif
+
             rb_size_pool_t *size_pool = size_pool_for_size(objspace, alloc_size);
 
             obj = heap_get_freeobj_head(objspace, size_pool);
@@ -5546,9 +5550,6 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     p = sweep_page->start;
     bits = sweep_page->mark_bits;
 
-    /* create guard : fill 1 out-of-range */
-    bits[BITMAP_INDEX(p)] |= BITMAP_BIT(p)-1;
-
     int out_of_range_bits = (NUM_IN_PAGE(p) + sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) % BITS_BITLENGTH;
     if (out_of_range_bits != 0) { // sizeof(RVALUE) == 64
         bits[BITMAP_INDEX(p) + (sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
@@ -5841,7 +5842,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
                 }
 	    }
 #else
-            if (heap_add_freepage(size_pool, sweep_page)) {
+            if (heap_add_freepage(heap, sweep_page)) {
                 break;
             }
 #endif
@@ -8134,7 +8135,7 @@ gc_marks_finish(rb_objspace_t *objspace)
     /* finish incremental GC */
     if (is_incremental_marking(objspace)) {
         for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-            rb_heap_t *heap = &size_pools[i].eden_heap;
+            rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(&size_pools[i]);
             if (heap->pooled_pages) {
                 heap_move_pooled_pages_to_free_pages(heap);
                 gc_report(1, objspace, "gc_marks_finish: pooled pages are exists. retry.\n");
@@ -8186,7 +8187,7 @@ gc_marks_finish(rb_objspace_t *objspace)
 
     {
 	/* decide full GC is needed or not */
-	size_t total_slots = heap_allocatable_slots(objspace) + heap_eden_total_slots(objspace);
+        size_t total_slots = heap_allocatable_slots(objspace) + heap_eden_total_slots(objspace);
 	size_t sweep_slots = total_slots - objspace->marked_slots; /* will be swept slots */
 	size_t max_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_max_ratio);
 	size_t min_free_slots = (size_t)(total_slots * gc_params.heap_free_slots_min_ratio);
@@ -8194,7 +8195,7 @@ gc_marks_finish(rb_objspace_t *objspace)
         const int r_cnt = GET_VM()->ractor.cnt;
         const int r_mul = r_cnt > 8 ? 8 : r_cnt; // upto 8
 
-	GC_ASSERT(heap_eden_total_slots(objspace) >= objspace->marked_slots);
+        GC_ASSERT(heap_eden_total_slots(objspace) >= objspace->marked_slots);
 
 	/* setup free-able page counts */
         if (max_free_slots < gc_params.heap_init_slots * r_mul) {
