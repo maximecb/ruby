@@ -306,6 +306,7 @@ exts-note: $(EXTS_MK)
 	$(Q)$(MAKE) $(EXTS_NOTE)
 
 ext/extinit.c: $(srcdir)/template/extinit.c.tmpl $(PREP)
+	$(MAKEDIRS) $(@D)
 	$(Q)$(MINIRUBY) $(tooldir)/generic_erb.rb -o $@ -c \
 	    $(srcdir)/template/extinit.c.tmpl $(EXTINITS)
 
@@ -2459,6 +2460,7 @@ class.$(OBJEXT): {$(VPATH)}backward/2/stdarg.h
 class.$(OBJEXT): {$(VPATH)}class.c
 class.$(OBJEXT): {$(VPATH)}config.h
 class.$(OBJEXT): {$(VPATH)}constant.h
+class.$(OBJEXT): {$(VPATH)}debug_counter.h
 class.$(OBJEXT): {$(VPATH)}defines.h
 class.$(OBJEXT): {$(VPATH)}encoding.h
 class.$(OBJEXT): {$(VPATH)}id.h
@@ -8350,8 +8352,8 @@ miniinit.$(OBJEXT): {$(VPATH)}mini_builtin.c
 miniinit.$(OBJEXT): {$(VPATH)}miniinit.c
 miniinit.$(OBJEXT): {$(VPATH)}miniprelude.c
 miniinit.$(OBJEXT): {$(VPATH)}missing.h
-miniinit.$(OBJEXT): {$(VPATH)}node.h
 miniinit.$(OBJEXT): {$(VPATH)}nilclass.rb
+miniinit.$(OBJEXT): {$(VPATH)}node.h
 miniinit.$(OBJEXT): {$(VPATH)}numeric.rb
 miniinit.$(OBJEXT): {$(VPATH)}onigmo.h
 miniinit.$(OBJEXT): {$(VPATH)}oniguruma.h
@@ -8607,7 +8609,9 @@ mjit.$(OBJEXT): {$(VPATH)}thread_native.h
 mjit.$(OBJEXT): {$(VPATH)}util.h
 mjit.$(OBJEXT): {$(VPATH)}vm_callinfo.h
 mjit.$(OBJEXT): {$(VPATH)}vm_core.h
+mjit.$(OBJEXT): {$(VPATH)}vm_debug.h
 mjit.$(OBJEXT): {$(VPATH)}vm_opts.h
+mjit.$(OBJEXT): {$(VPATH)}vm_sync.h
 mjit_build_dir.$(OBJEXT): {$(VPATH)}config.h
 mjit_build_dir.$(OBJEXT): {$(VPATH)}internal/compiler_is.h
 mjit_build_dir.$(OBJEXT): {$(VPATH)}internal/compiler_is/apple.h

@@ -45,7 +45,7 @@
 
 #ifdef HAVE_MALLOC_USABLE_SIZE
 # ifdef RUBY_ALTERNATIVE_MALLOC_HEADER
-#  include RUBY_ALTERNATIVE_MALLOC_HEADER
+/* Alternative malloc header is included in ruby/missing.h */
 # elif defined(HAVE_MALLOC_H)
 #  include <malloc.h>
 # elif defined(HAVE_MALLOC_NP_H)
@@ -3108,6 +3108,13 @@ cc_table_free(rb_objspace_t *objspace, VALUE klass, bool alive)
     }
 }
 
+static enum rb_id_table_iterator_result
+cvar_table_free_i(VALUE value, void * ctx)
+{
+    xfree((void *) value);
+    return ID_TABLE_CONTINUE;
+}
+
 void
 rb_cc_table_free(VALUE klass)
 {
@@ -3218,6 +3225,10 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
 	}
 	if (RCLASS_IV_INDEX_TBL(obj)) {
             iv_index_tbl_free(RCLASS_IV_INDEX_TBL(obj));
+	}
+	if (RCLASS_CVC_TBL(obj)) {
+            rb_id_table_foreach_values(RCLASS_CVC_TBL(obj), cvar_table_free_i, NULL);
+            rb_id_table_free(RCLASS_CVC_TBL(obj));
 	}
 	if (RCLASS_SUBCLASSES(obj)) {
 	    if (BUILTIN_TYPE(obj) == T_MODULE) {
@@ -4664,6 +4675,9 @@ obj_memsize_of(VALUE obj, int use_all_types)
 	    if (RCLASS_IV_TBL(obj)) {
 		size += st_memsize(RCLASS_IV_TBL(obj));
 	    }
+	    if (RCLASS_CVC_TBL(obj)) {
+		size += rb_id_table_memsize(RCLASS_CVC_TBL(obj));
+	    }
 	    if (RCLASS_IV_INDEX_TBL(obj)) {
                 // TODO: more correct value
 		size += st_memsize(RCLASS_IV_INDEX_TBL(obj));
@@ -4970,7 +4984,7 @@ lock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 
     if (!VirtualProtect(body, HEAP_PAGE_SIZE, PAGE_NOACCESS, &old_protect)) {
 #else
-    if(mprotect(body, HEAP_PAGE_SIZE, PROT_NONE)) {
+    if (mprotect(body, HEAP_PAGE_SIZE, PROT_NONE)) {
 #endif
         rb_bug("Couldn't protect page %p", (void *)body);
     }
@@ -4987,7 +5001,7 @@ unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 
     if (!VirtualProtect(body, HEAP_PAGE_SIZE, PAGE_READWRITE, &old_protect)) {
 #else
-    if(mprotect(body, HEAP_PAGE_SIZE, PROT_READ | PROT_WRITE)) {
+    if (mprotect(body, HEAP_PAGE_SIZE, PROT_READ | PROT_WRITE)) {
 #endif
         rb_bug("Couldn't unprotect page %p", (void *)body);
     }
@@ -5045,7 +5059,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
      * T_NONE, it is an object that just got freed but hasn't been
      * added to the freelist yet */
 
-    while(1) {
+    while (1) {
         size_t index;
 
         bits_t *mark_bits = cursor->mark_bits;
@@ -5056,7 +5070,8 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
             index = BITMAP_INDEX(heap->compact_cursor_index);
             p = heap->compact_cursor_index;
             GC_ASSERT(cursor == GET_HEAP_PAGE(p));
-        } else {
+        }
+        else {
             index = 0;
             p = cursor->start;
         }
@@ -5068,7 +5083,8 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
 
         if (index == 0) {
             p = cursor->start + (BITS_BITLENGTH - NUM_IN_PAGE(cursor->start));
-        } else {
+        }
+        else {
             p = cursor->start + (BITS_BITLENGTH - NUM_IN_PAGE(cursor->start)) + (BITS_BITLENGTH * index);
         }
 
@@ -5112,7 +5128,7 @@ gc_unprotect_pages(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     struct heap_page *cursor = heap->compact_cursor;
 
-    while(cursor) {
+    while (cursor) {
         unlock_page_body(objspace, GET_PAGE_BODY(cursor->start));
         cursor = list_next(&heap->pages, cursor, page_node);
     }
@@ -5341,7 +5357,7 @@ gc_fill_swept_page_plane(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, b
                     /* Zombie slots don't get marked, but we can't reuse
                      * their memory until they have their finalizers run.*/
                     if (BUILTIN_TYPE(dest) != T_ZOMBIE) {
-                        if(!try_move(objspace, heap, sweep_page, dest)) {
+                        if (!try_move(objspace, heap, sweep_page, dest)) {
                             *finished_compacting = true;
                             (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, sizeof(RVALUE));
                             gc_report(5, objspace, "Quit compacting, couldn't find an object to move\n");
@@ -5654,7 +5670,6 @@ gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
     heap->free_pages = NULL;
 #if GC_ENABLE_INCREMENTAL_MARK
     heap->pooled_pages = NULL;
-    objspace->rincgc.pooled_slots = 0;
 #endif
 }
 
@@ -6637,7 +6652,7 @@ mark_current_machine_context(rb_objspace_t *objspace, rb_execution_context_t *ec
 {
     union {
 	rb_jmp_buf j;
-	VALUE v[sizeof(rb_jmp_buf) / sizeof(VALUE)];
+	VALUE v[sizeof(rb_jmp_buf) / (sizeof(VALUE))];
     } save_regs_gc_mark;
     VALUE *stack_start, *stack_end;
 
@@ -9985,6 +10000,27 @@ update_cc_tbl(rb_objspace_t *objspace, VALUE klass)
 }
 
 static enum rb_id_table_iterator_result
+update_cvc_tbl_i(ID id, VALUE cvc_entry, void *data)
+{
+    struct rb_cvar_class_tbl_entry *entry;
+
+    entry = (struct rb_cvar_class_tbl_entry *)cvc_entry;
+
+    entry->class_value = rb_gc_location(entry->class_value);
+
+    return ID_TABLE_CONTINUE;
+}
+
+static void
+update_cvc_tbl(rb_objspace_t *objspace, VALUE klass)
+{
+    struct rb_id_table *tbl = RCLASS_CVC_TBL(klass);
+    if (tbl) {
+        rb_id_table_foreach_with_replace(tbl, update_cvc_tbl_i, 0, objspace);
+    }
+}
+
+static enum rb_id_table_iterator_result
 update_const_table(VALUE value, void *data)
 {
     rb_const_entry_t *ce = (rb_const_entry_t *)value;
@@ -10055,6 +10091,7 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
         if (!RCLASS_EXT(obj)) break;
         update_m_tbl(objspace, RCLASS_M_TBL(obj));
         update_cc_tbl(objspace, obj);
+        update_cvc_tbl(objspace, obj);
 
         gc_update_tbl_refs(objspace, RCLASS_IV_TBL(obj));
 
@@ -10294,11 +10331,11 @@ gc_compact_stats(rb_execution_context_t *ec, VALUE self)
     VALUE moved = rb_hash_new();
 
     for (i=0; i<T_MASK; i++) {
-        if(objspace->rcompactor.considered_count_table[i]) {
+        if (objspace->rcompactor.considered_count_table[i]) {
             rb_hash_aset(considered, type_sym(i), SIZET2NUM(objspace->rcompactor.considered_count_table[i]));
         }
 
-        if(objspace->rcompactor.moved_count_table[i]) {
+        if (objspace->rcompactor.moved_count_table[i]) {
             rb_hash_aset(moved, type_sym(i), SIZET2NUM(objspace->rcompactor.moved_count_table[i]));
         }
     }

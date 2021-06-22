@@ -195,7 +195,8 @@ rb_mutex_locked_p(VALUE self)
 }
 
 static void
-thread_mutex_insert(rb_thread_t *thread, rb_mutex_t *mutex) {
+thread_mutex_insert(rb_thread_t *thread, rb_mutex_t *mutex)
+{
     if (thread->keeping_mutexes) {
         mutex->next_mutex = thread->keeping_mutexes;
     }
@@ -204,7 +205,8 @@ thread_mutex_insert(rb_thread_t *thread, rb_mutex_t *mutex) {
 }
 
 static void
-thread_mutex_remove(rb_thread_t *thread, rb_mutex_t *mutex) {
+thread_mutex_remove(rb_thread_t *thread, rb_mutex_t *mutex)
+{
     rb_mutex_t **keeping_mutexes = &thread->keeping_mutexes;
 
     while (*keeping_mutexes && *keeping_mutexes != mutex) {
@@ -268,7 +270,9 @@ mutex_owned_p(rb_fiber_t *fiber, rb_mutex_t *mutex)
     }
 }
 
-static VALUE call_rb_fiber_scheduler_block(VALUE mutex) {
+static VALUE
+call_rb_fiber_scheduler_block(VALUE mutex)
+{
     return rb_fiber_scheduler_block(rb_fiber_scheduler_current(), mutex, Qnil);
 }
 
@@ -859,11 +863,13 @@ rb_queue_initialize(int argc, VALUE *argv, VALUE self)
 {
     VALUE initial;
     struct rb_queue *q = queue_ptr(self);
+    if ((argc = rb_scan_args(argc, argv, "01", &initial)) == 1) {
+        initial = rb_to_array(initial);
+    }
     RB_OBJ_WRITE(self, &q->que, ary_buf_new());
     list_head_init(queue_waitq(q));
-    rb_scan_args(argc, argv, "01", &initial);
     if (argc == 1) {
-        rb_ary_concat(q->que, rb_to_array(initial));
+        rb_ary_concat(q->que, initial);
     }
     return self;
 }

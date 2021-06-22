@@ -218,23 +218,20 @@ struct rb_control_frame_struct;
 /* iseq data type */
 typedef struct rb_compile_option_struct rb_compile_option_t;
 
-#if (SIZEOF_SERIAL_T > SIZEOF_VOIDP) && defined(__CYGWIN__)
-#pragma pack(push, 4) /* == SIZEOF_VOIDP */
-#endif
-
 // imemo_constcache
 struct iseq_inline_constant_cache_entry {
     VALUE flags;
 
     VALUE value;              // v0
-    const rb_cref_t *ic_cref; // v1
-    rb_serial_t ic_serial;    // v2
-                              // v3
-};
-
-#if (SIZEOF_SERIAL_T > SIZEOF_VOIDP) && defined(__CYGWIN__)
-#pragma pack(pop)
+    rb_serial_t ic_serial;    // v1
+#if (SIZEOF_SERIAL_T < 2 * SIZEOF_VOIDP)
+    VALUE ic_padding;         // v2
 #endif
+    const rb_cref_t *ic_cref; // v3
+};
+STATIC_ASSERT(sizeof_iseq_inline_constant_cache_entry,
+              (offsetof(struct iseq_inline_constant_cache_entry, ic_cref) +
+	       sizeof(const rb_cref_t *)) <= sizeof(struct RObject));
 
 struct iseq_inline_constant_cache {
     struct iseq_inline_constant_cache_entry *entry;
@@ -242,6 +239,10 @@ struct iseq_inline_constant_cache {
 
 struct iseq_inline_iv_cache_entry {
     struct rb_iv_index_tbl_entry *entry;
+};
+
+struct iseq_inline_cvar_cache_entry {
+    struct rb_cvar_class_tbl_entry *entry;
 };
 
 union iseq_inline_storage_entry {
@@ -1160,6 +1161,7 @@ enum vm_svar_index {
 /* inline cache */
 typedef struct iseq_inline_constant_cache *IC;
 typedef struct iseq_inline_iv_cache_entry *IVC;
+typedef struct iseq_inline_cvar_cache_entry *ICVARC;
 typedef union iseq_inline_storage_entry *ISE;
 typedef const struct rb_callinfo *CALL_INFO;
 typedef const struct rb_callcache *CALL_CACHE;

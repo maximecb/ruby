@@ -735,7 +735,7 @@ set_compiling_iseqs(const rb_iseq_t *iseq)
     unsigned int pos = 0;
     while (pos < iseq->body->iseq_size) {
         int insn = rb_vm_insn_decode(iseq->body->iseq_encoded[pos]);
-        if (insn == BIN(opt_send_without_block)) {
+        if (insn == BIN(opt_send_without_block) || insn == BIN(opt_size)) {
             CALL_DATA cd = (CALL_DATA)iseq->body->iseq_encoded[pos + 1];
             extern const rb_iseq_t *rb_mjit_inlinable_iseq(const struct rb_callinfo *ci, const struct rb_callcache *cc);
             const rb_iseq_t *iseq = rb_mjit_inlinable_iseq(cd->ci, cd->cc);
@@ -1106,7 +1106,7 @@ load_func_from_so(const char *so_file, const char *funcname, struct rb_mjit_unit
     handle = dlopen(so_file, RTLD_NOW);
     if (handle == NULL) {
         mjit_warning("failure in loading code from '%s': %s", so_file, dlerror());
-        return (void *)NOT_ADDED_JIT_ISEQ_FUNC;
+        return (void *)NOT_COMPILED_JIT_ISEQ_FUNC;
     }
 
     func = dlsym(handle, funcname);
@@ -1142,7 +1142,7 @@ compile_prelude(FILE *f)
     fprintf(f, "#include \"");
     // print pch_file except .gch for gcc, but keep .pch for mswin
     for (; s < e; s++) {
-        switch(*s) {
+        switch (*s) {
           case '\\': case '"':
             fputc('\\', f);
         }

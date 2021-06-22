@@ -2051,6 +2051,7 @@ process_options(int argc, char **argv, ruby_cmdline_options_t *opt)
     rb_gvar_ractor_local("$-a");
 
     if ((rb_e_script = opt->e_script) != 0) {
+        rb_str_freeze(rb_e_script);
         rb_gc_register_mark_object(opt->e_script);
     }
 
@@ -2304,7 +2305,7 @@ open_load_file(VALUE fname_v, int *xflag)
 	      We need to wait if FIFO is empty. It's FIFO's semantics.
 	      rb_thread_wait_fd() release GVL. So, it's safe.
 	    */
-	    rb_thread_wait_fd(fd);
+	    rb_io_wait(f, RB_INT2NUM(RUBY_IO_READABLE), Qnil);
 	}
     }
     return f;
