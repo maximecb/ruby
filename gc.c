@@ -2512,6 +2512,10 @@ newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 static RVALUE *
 heap_get_freeobj_from_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
 {
+#if !USE_RVARGC
+    rb_bug("unreachable when not USE_RVARGC");
+#endif
+
     struct heap_page *page;
     RVALUE *p;
 
@@ -5684,13 +5688,14 @@ gc_sweep_start(rb_objspace_t *objspace)
         rb_size_pool_t *size_pool = &size_pools[i];
 
         if (size_pool->freelist) {
-            struct heap_page *page = size_pool->using_page;
-            page->freelist = (RVALUE *)size_pool->freelist;
-            size_pool->freelist = 0;
-            size_pool->using_page = NULL;
+#if !USE_RVARGC
+            rb_bug("size pool has freelist when USE_RVARGC is disabled");
+#endif
+            size_pool->using_page->freelist = (RVALUE *)size_pool->freelist;
         }
 
-        GC_ASSERT(size_pool->using_page == NULL);
+        size_pool->freelist = 0;
+        size_pool->using_page = NULL;
 
         gc_sweep_start_heap(objspace, SIZE_POOL_EDEN_HEAP(size_pool));
     }
