@@ -704,8 +704,10 @@ typedef struct rb_heap_struct {
 } rb_heap_t;
 
 typedef struct rb_size_pool_struct {
+#if USE_RVARGC
     intptr_t freelist;
     struct heap_page *using_page;
+#endif
 
     short slot_size;
 
@@ -2509,13 +2511,10 @@ newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
     return obj;
 }
 
+#if USE_RVARGC
 static RVALUE *
 heap_get_freeobj_from_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
 {
-#if !USE_RVARGC
-    rb_bug("unreachable when not USE_RVARGC");
-#endif
-
     struct heap_page *page;
     RVALUE *p;
 
@@ -2580,6 +2579,7 @@ size_pool_for_size(rb_objspace_t *objspace, size_t size)
 
     return size_pool;
 }
+#endif
 
 ALWAYS_INLINE(static VALUE newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *cr, int wb_protected, size_t alloc_size));
 
@@ -2612,10 +2612,7 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
             }
         }
         else {
-#if !USE_RVARGC
-            rb_bug("unreachable when not using rvargc");
-#endif
-
+#if USE_RVARGC
             rb_size_pool_t *size_pool = size_pool_for_size(objspace, alloc_size);
 
             obj = heap_get_freeobj_head(objspace, size_pool);
@@ -2623,6 +2620,9 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
                 obj = heap_get_freeobj(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
             }
             memset((void *)obj, 0, size_pool->slot_size);
+#else
+            rb_bug("unreachable when not using rvargc");
+#endif
         }
         GC_ASSERT(obj != 0);
         newobj_init(klass, flags, wb_protected, objspace, obj);
@@ -5687,15 +5687,14 @@ gc_sweep_start(rb_objspace_t *objspace)
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
 
+#if USE_RVARGC
         if (size_pool->freelist) {
-#if !USE_RVARGC
-            rb_bug("size pool has freelist when USE_RVARGC is disabled");
-#endif
             size_pool->using_page->freelist = (RVALUE *)size_pool->freelist;
+            size_pool->freelist = 0;
         }
 
-        size_pool->freelist = 0;
         size_pool->using_page = NULL;
+#endif
 
         gc_sweep_start_heap(objspace, SIZE_POOL_EDEN_HEAP(size_pool));
     }
