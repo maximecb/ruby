@@ -166,8 +166,8 @@ module GC
   #  This is intended to avoid probe effect.
   #
   #  This method is only expected to work on C Ruby.
-  def self.stat hash_or_key = nil
-    Primitive.gc_stat hash_or_key
+  def self.stat hash_or_key = nil, pool: nil
+    Primitive.gc_stat hash_or_key, pool
   end
 
   #  call-seq:
