@@ -681,7 +681,7 @@ typedef struct rb_heap_struct {
 
 typedef struct rb_size_pool_struct {
 #if USE_RVARGC
-    intptr_t freelist;
+    RVALUE *freelist;
     struct heap_page *using_page;
 #endif
 
@@ -2439,54 +2439,25 @@ newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 }
 
 #if USE_RVARGC
-static RVALUE *
-heap_get_freeobj_from_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
-{
-    struct heap_page *page;
-    RVALUE *p;
-
-    while (heap->free_pages == NULL) {
-	heap_prepare(objspace, size_pool, heap);
-    }
-    page = heap->free_pages;
-    heap->free_pages = page->free_next;
-    size_pool->using_page = page;
-
-    GC_ASSERT(page->free_slots != 0);
-    asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
-    p = page->freelist;
-    page->freelist = NULL;
-    asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
-    page->free_slots = 0;
-    asan_unpoison_object((VALUE)p, true);
-    return p;
-}
-
 static inline VALUE
 heap_get_freeobj(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
 {
-    intptr_t p = size_pool->freelist;
+    RVALUE *p = size_pool->freelist;
 
-    while (1) {
-	if (LIKELY(p)) {
-            asan_unpoison_object((VALUE)p, true);
-            size_pool->freelist = (intptr_t)((RVALUE *)p)->as.free.next;
-	    return (VALUE)p;
-	}
-	else {
-	    p = (intptr_t)heap_get_freeobj_from_next_freepage(objspace, size_pool, heap);
-	}
-    }
-}
+    if (UNLIKELY(p == NULL)) {
+        struct heap_page *page = heap_next_freepage(objspace, size_pool, heap);
+        size_pool->using_page = page;
 
-static inline VALUE
-heap_get_freeobj_head(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
-{
-    intptr_t p = size_pool->freelist;
-    if (LIKELY(p)) {
-	size_pool->freelist = (intptr_t)((RVALUE *)p)->as.free.next;
+        asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
+        p = page->freelist;
+        page->freelist = NULL;
+        asan_poison_memory_region(&page->freelist, sizeof(RVALUE*));
+        page->free_slots = 0;
     }
+
     asan_unpoison_object((VALUE)p, true);
+    size_pool->freelist = p->as.free.next;
+
     return (VALUE)p;
 }
 
@@ -2542,10 +2513,8 @@ newobj_slowpath(VALUE klass, VALUE flags, rb_objspace_t *objspace, rb_ractor_t *
 #if USE_RVARGC
             rb_size_pool_t *size_pool = size_pool_for_size(objspace, alloc_size);
 
-            obj = heap_get_freeobj_head(objspace, size_pool);
-            if (obj == Qfalse) {
-                obj = heap_get_freeobj(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
-            }
+            obj = heap_get_freeobj(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
+
             memset((void *)obj, 0, size_pool->slot_size);
 #else
             rb_bug("unreachable when not using rvargc");
