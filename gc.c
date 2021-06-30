@@ -2354,11 +2354,13 @@ static inline void heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
 static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap);
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
 
-int
-rb_slot_size(void)
+#if USE_RVARGC
+void *
+rb_gc_rvargc_object_data(VALUE obj)
 {
-    return sizeof(RVALUE);
+    return (void *)(obj + sizeof(RVALUE));
 }
+#endif
 
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
