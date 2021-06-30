@@ -71,8 +71,6 @@ struct rb_objspace; /* in vm_core.h */
     rb_obj_write((VALUE)(a), UNALIGNED_MEMBER_ACCESS((VALUE *)(slot)), \
                  (VALUE)(b), __FILE__, __LINE__)
 
-#define RVARGC_PAYLOAD_INIT(obj, size) (void *)rb_rvargc_payload_init((VALUE)obj, (size_t)size)
-
 typedef struct ractor_newobj_cache {
     struct RVALUE *freelist;
     struct heap_page *using_page;
