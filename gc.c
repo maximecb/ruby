@@ -3625,16 +3625,18 @@ objspace_each_objects_ensure(VALUE arg)
     struct each_obj_data *data = (struct each_obj_data *)arg;
     rb_objspace_t *objspace = data->objspace;
 
-    /* Reenable incremental GC */
+    /* Reenable incremental GC. */
     if (data->reenable_incremental) {
         objspace->flags.dont_incremental = FALSE;
     }
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        /* Free pages buffer */
         struct heap_page **pages = data->pages[i];
-        GC_ASSERT(pages);
-        free(pages);
+        /* pages could be NULL if an error was raised during setup (e.g.
+         * malloc failed due to out of memory). */
+        if (pages) {
+            free(pages);
+        }
     }
 
     return Qnil;
@@ -3645,6 +3647,30 @@ objspace_each_objects_try(VALUE arg)
 {
     struct each_obj_data *data = (struct each_obj_data *)arg;
     rb_objspace_t *objspace = data->objspace;
+
+    /* Copy pages from all size_pools to their respective buffers. */
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t *size_pool = &size_pools[i];
+        size_t size = size_mul_or_raise(SIZE_POOL_EDEN_HEAP(size_pool)->total_pages, sizeof(struct heap_page *), rb_eRuntimeError);
+
+        struct heap_page **pages = malloc(size);
+        if (!pages) rb_memerror();
+
+        /* Set up pages buffer by iterating over all pages in the current eden
+         * heap. This will be a snapshot of the state of the heap before we
+         * call the callback over each page that exists in this buffer. Thus it
+         * is safe for the callback to allocate objects without possibly entering
+         * an infinite loop. */
+        struct heap_page *page = 0;
+        size_t pages_count = 0;
+        list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
+            pages[pages_count] = page;
+            pages_count++;
+        }
+        data->pages[i] = pages;
+        data->pages_counts[i] = pages_count;
+        GC_ASSERT(pages_count == SIZE_POOL_EDEN_HEAP(size_pool)->total_pages);
+    }
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
@@ -3720,7 +3746,7 @@ rb_objspace_each_objects(each_obj_callback *callback, void *data)
 static void
 objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected)
 {
-    /* Disable incremental GC */
+    /* Disable incremental GC. */
     bool reenable_incremental = FALSE;
     if (protected) {
         reenable_incremental = !objspace->flags.dont_incremental;
@@ -3735,35 +3761,11 @@ objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void
 
         .callback = callback,
         .data = data,
+
+        .pages = {NULL},
+        .pages_counts = {0},
     };
 
-    // Copy pages from all size_pools to their respective buffers
-    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        rb_size_pool_t *size_pool = &size_pools[i];
-        // TODO: ditto as below
-        size_t size = size_mul_or_raise(SIZE_POOL_EDEN_HEAP(size_pool)->total_pages, sizeof(struct heap_page *), rb_eRuntimeError);
-
-        struct heap_page **pages = malloc(size);
-        // TODO: free prev buffers to prevent memory leak
-        if (!pages) rb_memerror();
-
-        /* Set up pages buffer by iterating over all pages in the current eden
-         * heap. This will be a snapshot of the state of the heap before we
-         * call the callback over each page that exists in this buffer. Thus it
-         * is safe for the callback to allocate objects without possibly entering
-         * an infinite loop. */
-        struct heap_page *page = 0;
-        size_t pages_count = 0;
-        list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
-            pages[pages_count] = page;
-            pages_count++;
-        }
-        each_obj_data.pages[i] = pages;
-        each_obj_data.pages_counts[i] = pages_count;
-        GC_ASSERT(pages_count == SIZE_POOL_EDEN_HEAP(size_pool)->total_pages);
-    }
-
-    /* Run the callback */
     rb_ensure(objspace_each_objects_try, (VALUE)&each_obj_data,
               objspace_each_objects_ensure, (VALUE)&each_obj_data);
 }
