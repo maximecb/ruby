@@ -1938,7 +1938,7 @@ heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
 
 #if GC_ENABLE_INCREMENTAL_MARK
 static inline void
-heap_add_poolpage(rb_objspace_t *objspace, rb_heap_t *heap, rb_size_pool_t *size_pool, struct heap_page *page)
+heap_add_poolpage(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page)
 {
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
     GC_ASSERT(page->free_slots != 0);
@@ -3617,7 +3617,6 @@ struct each_obj_data {
 
     struct heap_page **pages[SIZE_POOL_COUNT];
     size_t pages_counts[SIZE_POOL_COUNT];
-    /*rb_size_pool_t *size_pool;*/
 };
 
 static VALUE
@@ -5448,7 +5447,6 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, intptr_t p, bits_t bits
                             gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
                             ctx->freed_slots++;
                         }
-
                     }
                     break;
 
@@ -5558,9 +5556,10 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     p = sweep_page->start;
     bits = sweep_page->mark_bits;
 
-    int out_of_range_bits = (NUM_IN_PAGE(p) + sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) % BITS_BITLENGTH;
+    int page_rvalue_count = sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE));
+    int out_of_range_bits = (NUM_IN_PAGE(p) + page_rvalue_count) % BITS_BITLENGTH;
     if (out_of_range_bits != 0) { // sizeof(RVALUE) == 64
-        bits[BITMAP_INDEX(p) + (sweep_page->total_slots * (size_pool->slot_size / sizeof(RVALUE))) / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
+        bits[BITMAP_INDEX(p) + page_rvalue_count / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
     }
 
     // Skip out of range slots at the head of the page
@@ -5626,6 +5625,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     gc_report(2, objspace, "page_sweep: end.\n");
 }
 
+#if !USE_RVARGC
 /* allocate additional minimum page to work */
 static void
 gc_heap_prepare_minimum_pages(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
@@ -5640,6 +5640,7 @@ gc_heap_prepare_minimum_pages(rb_objspace_t *objspace, rb_size_pool_t *size_pool
         }
     }
 }
+#endif
 
 static const char *
 gc_mode_name(enum gc_mode mode)
@@ -5833,7 +5834,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
 #if GC_ENABLE_INCREMENTAL_MARK
 	    if (need_pool) {
-                heap_add_poolpage(objspace, heap, size_pool, sweep_page);
+                heap_add_poolpage(objspace, heap, sweep_page);
                 need_pool = FALSE;
 	    }
 	    else {
