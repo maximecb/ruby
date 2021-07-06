@@ -10265,9 +10265,8 @@ gc_verify_compaction_references(rb_execution_context_t *ec, VALUE self, VALUE do
         if (RTEST(double_heap)) {
             for (int i = 0; i < SIZE_POOL_COUNT; i++) {
                 rb_size_pool_t *size_pool = &size_pools[i];
-                // FIXME: we should double each size class, not add the total
-                // to each size class
-                heap_add_pages(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool), heap_allocated_pages);
+                rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
+                heap_add_pages(objspace, size_pool, heap, heap->total_pages);
             }
         }
 
