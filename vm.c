@@ -3721,8 +3721,6 @@ Init_BareVM(void)
     rb_native_mutex_initialize(&vm->ractor.sync.lock);
     rb_native_cond_initialize(&vm->ractor.sync.barrier_cond);
     rb_native_cond_initialize(&vm->ractor.sync.terminate_cond);
-
-    rb_ractor_main_bare_setup(vm, th->ractor, th);
 }
 
 void

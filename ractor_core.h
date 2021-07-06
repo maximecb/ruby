@@ -156,7 +156,6 @@ rb_ractor_self(const rb_ractor_t *r)
 }
 
 rb_ractor_t *rb_ractor_main_alloc(void);
-void rb_ractor_main_bare_setup(rb_vm_t *vm, rb_ractor_t *main_ractor, rb_thread_t *main_thread);
 void rb_ractor_main_setup(rb_vm_t *vm, rb_ractor_t *main_ractor, rb_thread_t *main_thread);
 void rb_ractor_atexit(rb_execution_context_t *ec, VALUE result);
 void rb_ractor_atexit_exception(rb_execution_context_t *ec);
