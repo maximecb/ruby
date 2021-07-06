@@ -4124,7 +4124,6 @@ bool rb_obj_is_main_ractor(VALUE gv);
 void
 rb_objspace_call_finalizer(rb_objspace_t *objspace)
 {
-    RVALUE *p, *pend;
     size_t i;
 
 #if RGENGC_CHECK_MODE >= 2
@@ -4166,9 +4165,11 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
     /* run data/file object's finalizers */
     for (i = 0; i < heap_allocated_pages; i++) {
         struct heap_page *page = heap_pages_sorted[i];
-	short slot_bits = page->size_pool->slot_size / sizeof(RVALUE);
-        p = page->start; pend = p + page->total_slots * slot_bits;
-        while (p < pend) {
+        short stride = page->size_pool->slot_size;
+
+        uintptr_t p = (uintptr_t)page->start;
+        uintptr_t pend = p + page->total_slots * stride;
+        for (; p < pend; p += stride) {
             VALUE vp = (VALUE)p;
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
@@ -4182,7 +4183,7 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
                 if (RTYPEDDATA_P(vp)) {
 		    RDATA(p)->dfree = RANY(p)->as.typeddata.type->function.dfree;
 		}
-                p->as.free.flags = 0;
+                RANY(p)->as.free.flags = 0;
 		if (RANY(p)->as.data.dfree == RUBY_DEFAULT_FREE) {
 		    xfree(DATA_PTR(p));
 		}
@@ -4202,7 +4203,6 @@ rb_objspace_call_finalizer(rb_objspace_t *objspace)
                 GC_ASSERT(BUILTIN_TYPE(vp) == T_NONE);
                 asan_poison_object(vp);
             }
-	    p += slot_bits;
 	}
     }
 
@@ -4771,17 +4771,17 @@ count_objects(int argc, VALUE *argv, VALUE os)
 
     for (i = 0; i < heap_allocated_pages; i++) {
 	struct heap_page *page = heap_pages_sorted[i];
-	RVALUE *p, *pend;
-        int stride = page->size_pool->slot_size / sizeof(RVALUE);
+        short stride = page->size_pool->slot_size;
 
-	p = page->start; pend = p + page->total_slots * stride;
+        uintptr_t p = (uintptr_t)page->start;
+        uintptr_t pend = p + page->total_slots * stride;
         for (;p < pend; p += stride) {
             VALUE vp = (VALUE)p;
             GC_ASSERT((NUM_IN_PAGE(vp) * sizeof(RVALUE)) % page->size_pool->slot_size == 0);
 
             void *poisoned = asan_poisoned_object_p(vp);
             asan_unpoison_object(vp, false);
-            if (p->as.basic.flags) {
+            if (RANY(p)->as.basic.flags) {
                 counts[BUILTIN_TYPE(vp)]++;
 	    }
 	    else {
