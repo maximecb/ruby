@@ -3716,11 +3716,9 @@ static int
 os_obj_of_i(void *vstart, void *vend, size_t stride, void *data)
 {
     struct os_each_struct *oes = (struct os_each_struct *)data;
-    intptr_t start = (intptr_t)vstart;
-    intptr_t end = (intptr_t)vend;
 
-    for (; start != end; start += stride) {
-	volatile VALUE v = (VALUE)start;
+    VALUE v = (VALUE)vstart;
+    for (; v != (VALUE)vend; v += stride) {
 	if (!internal_object_p(v)) {
 	    if (!oes->of || rb_obj_is_kind_of(v, oes->of)) {
                 if (!rb_multi_ractor_p() || rb_ractor_shareable_p(v)) {
@@ -7997,7 +7995,9 @@ gc_marks_finish(rb_objspace_t *objspace)
     }
 
 #if RGENGC_CHECK_MODE >= 4
+    during_gc = FALSE;
     gc_marks_check(objspace, gc_check_after_marks_i, "after_marks");
+    during_gc = TRUE;
 #endif
 
     {

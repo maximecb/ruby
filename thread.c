@@ -1798,23 +1798,24 @@ rb_thread_io_blocking_region(rb_blocking_function_t *func, void *data1, int fd)
     rb_execution_context_t * volatile ec = GET_EC();
     volatile int saved_errno = 0;
     enum ruby_tag_type state;
-    COROUTINE_STACK_LOCAL(struct waiting_fd, wfd);
 
-    wfd->fd = fd;
-    wfd->th = rb_ec_thread_ptr(ec);
+    struct waiting_fd waiting_fd = {
+        .fd = fd,
+        .th = rb_ec_thread_ptr(ec)
+    };
 
     RB_VM_LOCK_ENTER();
     {
-        list_add(&rb_ec_vm_ptr(ec)->waiting_fds, &wfd->wfd_node);
+        list_add(&rb_ec_vm_ptr(ec)->waiting_fds, &waiting_fd.wfd_node);
     }
     RB_VM_LOCK_LEAVE();
 
     EC_PUSH_TAG(ec);
     if ((state = EC_EXEC_TAG()) == TAG_NONE) {
-	BLOCKING_REGION(wfd->th, {
-	    val = func(data1);
-	    saved_errno = errno;
-	}, ubf_select, wfd->th, FALSE);
+        BLOCKING_REGION(waiting_fd.th, {
+            val = func(data1);
+            saved_errno = errno;
+        }, ubf_select, waiting_fd.th, FALSE);
     }
     EC_POP_TAG();
 
@@ -1824,13 +1825,12 @@ rb_thread_io_blocking_region(rb_blocking_function_t *func, void *data1, int fd)
      */
     RB_VM_LOCK_ENTER();
     {
-        list_del(&wfd->wfd_node);
-        COROUTINE_STACK_FREE(wfd);
+        list_del(&waiting_fd.wfd_node);
     }
     RB_VM_LOCK_LEAVE();
 
     if (state) {
-	EC_JUMP_TAG(ec, state);
+        EC_JUMP_TAG(ec, state);
     }
     /* TODO: check func() */
     RUBY_VM_CHECK_INTS_BLOCKING(ec);
@@ -3153,7 +3153,7 @@ rb_thread_s_ignore_deadlock(VALUE _)
  *  deadlock condition via some other means, such as a signal.
  *
  *     Thread.ignore_deadlock = true
- *     queue = Queue.new
+ *     queue = Thread::Queue.new
  *
  *     trap(:SIGUSR1){queue.push "Received signal"}
  *
@@ -4242,6 +4242,9 @@ sigwait_timeout(rb_thread_t *th, int sigwait_fd, const rb_hrtime_t *orig,
     return orig;
 }
 
+#define sigwait_signals_fd(result, cond, sigwait_fd) \
+    (result > 0 && (cond) ? (result--, (sigwait_fd)) : -1)
+
 static VALUE
 do_select(VALUE p)
 {
@@ -4277,13 +4280,10 @@ do_select(VALUE p)
 	}, set->sigwait_fd >= 0 ? ubf_sigwait : ubf_select, set->th, TRUE);
 
         if (set->sigwait_fd >= 0) {
-            if (result > 0 && rb_fd_isset(set->sigwait_fd, set->rset)) {
-                result--;
-                (void)check_signals_nogvl(set->th, set->sigwait_fd);
-            }
-            else {
-                (void)check_signals_nogvl(set->th, -1);
-            }
+            int fd = sigwait_signals_fd(result,
+                                        rb_fd_isset(set->sigwait_fd, set->rset),
+                                        set->sigwait_fd);
+            (void)check_signals_nogvl(set->th, fd);
         }
 
         RUBY_VM_CHECK_INTS_BLOCKING(set->th->ec); /* may raise */
@@ -4430,12 +4430,8 @@ rb_thread_wait_for_single_fd(int fd, int events, struct timeval *timeout)
             }, ubf, wfd.th, TRUE);
 
             if (fds[1].fd >= 0) {
-                if (result > 0 && fds[1].revents) {
-                    result--;
-                    (void)check_signals_nogvl(wfd.th, fds[1].fd);
-                } else {
-                    (void)check_signals_nogvl(wfd.th, -1);
-                }
+                int fd1 = sigwait_signals_fd(result, fds[1].revents, fds[1].fd);
+                (void)check_signals_nogvl(wfd.th, fd1);
                 rb_sigwait_fd_put(wfd.th, fds[1].fd);
                 rb_sigwait_fd_migrate(wfd.th->vm);
             }

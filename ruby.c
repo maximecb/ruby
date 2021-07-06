@@ -94,6 +94,8 @@ void rb_warning_category_update(unsigned int mask, unsigned int bits);
 #define EACH_FEATURES(X, SEP) \
     X(gems) \
     SEP \
+    X(error_highlight) \
+    SEP \
     X(did_you_mean) \
     SEP \
     X(rubyopt) \
@@ -320,6 +322,7 @@ usage(const char *name, int help, int highlight, int columns)
     };
     static const struct message features[] = {
 	M("gems",    "",        "rubygems (only for debugging, default: "DEFAULT_RUBYGEMS_ENABLED")"),
+	M("error_highlight", "", "error_highlight (default: "DEFAULT_RUBYGEMS_ENABLED")"),
 	M("did_you_mean", "",   "did_you_mean (default: "DEFAULT_RUBYGEMS_ENABLED")"),
 	M("rubyopt", "",        "RUBYOPT environment variable (default: enabled)"),
 	M("frozen-string-literal", "", "freeze all string literals (default: disabled)"),
@@ -931,6 +934,8 @@ feature_option(const char *str, int len, void *arg, const unsigned int enable)
 	rb_exc_raise(rb_exc_new_str(rb_eRuntimeError, mesg));
 #undef ADD_FEATURE_NAME
     }
+#else
+    (void)set;
 #endif
     rb_warn("unknown argument for --%s: `%.*s'",
 	    enable ? "enable" : "disable", len, str);
@@ -1508,6 +1513,9 @@ ruby_opt_init(ruby_cmdline_options_t *opt)
 
     if (opt->features.set & FEATURE_BIT(gems)) {
         rb_define_module("Gem");
+        if (opt->features.set & FEATURE_BIT(error_highlight)) {
+            rb_define_module("ErrorHighlight");
+        }
         if (opt->features.set & FEATURE_BIT(did_you_mean)) {
             rb_define_module("DidYouMean");
         }

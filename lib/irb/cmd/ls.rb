@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 require "reline"
-require 'set'
 require_relative "nop"
 require_relative "../color"
 
@@ -24,17 +23,20 @@ module IRB
       end
 
       def dump_methods(o, klass, obj)
-        maps = class_method_map(obj.singleton_class.ancestors)
+        singleton_class = begin obj.singleton_class; rescue TypeError; nil end
+        maps = class_method_map((singleton_class || klass).ancestors)
         maps.each do |mod, methods|
-          name = mod == obj.singleton_class ? "#{klass}.methods" : "#{mod}#methods"
+          name = mod == singleton_class ? "#{klass}.methods" : "#{mod}#methods"
           o.dump(name, methods)
         end
       end
 
       def class_method_map(classes)
-        dumped = Set.new
+        dumped = Array.new
         classes.reject { |mod| mod >= Object }.map do |mod|
-          methods = mod.public_instance_methods(false).select { |m| dumped.add?(m) }
+          methods = mod.public_instance_methods(false).select do |m|
+            dumped.push(m) unless dumped.include?(m)
+          end
           [mod, methods]
         end.reverse
       end

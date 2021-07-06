@@ -962,6 +962,8 @@ AS_CASE(["$target_os"], [*android*], [
 AS_UNSET(ORIG_LIBS)
 POSTLINK=:
 AC_SUBST(POSTLINK)
+cleanlibs=
+AC_SUBST(cleanlibs)
 AS_CASE(["$target_os"],
 [nextstep*], [	],
 [openstep*], [	],
@@ -1060,6 +1062,7 @@ main()
 		AC_CHECK_HEADERS(crt_externs.h, [], [], [
 		    #include <crt_externs.h>
 		])
+		cleanlibs='$(TARGET_SO).dSYM'
 		],
 [hpux*], [	LIBS="-lm $LIBS"
 		ac_cv_c_inline=no],
@@ -1300,8 +1303,11 @@ AS_IF([test "x$with_jemalloc" != xno],[
       with_jemalloc=yes
     ],
     [test x$with_jemalloc = xyes && with_jemalloc=no])
-  AC_CHECK_HEADER(jemalloc/jemalloc.h, [
-    AC_DEFINE(RUBY_ALTERNATIVE_MALLOC_HEADER, [<jemalloc/jemalloc.h>])
+  for malloc_header in jemalloc/jemalloc.h jemalloc.h; do
+    AC_CHECK_HEADER($malloc_header, [break], [malloc_header=])
+  done
+  AS_IF([test "$malloc_header" != ""], [
+    AC_DEFINE_UNQUOTED(RUBY_ALTERNATIVE_MALLOC_HEADER, [<$malloc_header>])
   ],
   [test x$with_jemalloc = xyes && with_jemalloc=no])
   AS_IF([test "x$with_jemalloc" != xyes], [
@@ -1310,7 +1316,7 @@ AS_IF([test "x$with_jemalloc" != xno],[
       @%:@ifdef RUBY_ALTERNATIVE_MALLOC_HEADER
       @%:@include RUBY_ALTERNATIVE_MALLOC_HEADER
       @%:@else
-      @%:@include <jemalloc.h>
+      extern const char *malloc_conf;
       @%:@endif], [return !&malloc_conf])],
       [rb_cv_jemalloc_demangle=yes],
       [rb_cv_jemalloc_demangle=no])
@@ -2483,7 +2489,6 @@ AC_ARG_WITH(coroutine,
     AS_HELP_STRING([--with-coroutine=IMPLEMENTATION], [specify the coroutine implementation to use]),
     [coroutine_type=$withval], [coroutine_type=])
 AS_CASE([$coroutine_type], [yes|''], [
-    AC_MSG_CHECKING(native coroutine implementation for ${target_cpu}-${target_os})
     coroutine_type=
     AS_CASE(["$target_cpu-$target_os"],
         [universal-darwin*], [
@@ -2530,10 +2535,10 @@ AS_CASE([$coroutine_type], [yes|''], [
             coroutine_type=x86
         ],
         [*-openbsd*], [
-            coroutine_type=copy
+            coroutine_type=pthread
         ],
         [*-haiku*], [
-            coroutine_type=copy
+            coroutine_type=pthread
         ],
         [*-emscripten*], [
             coroutine_type=emscripten
@@ -2541,17 +2546,18 @@ AS_CASE([$coroutine_type], [yes|''], [
         [
             AC_CHECK_FUNCS([getcontext swapcontext makecontext],
                 [coroutine_type=ucontext],
-                [coroutine_type=copy; break]
+                [coroutine_type=pthread; break]
             )
         ]
     )
+    AC_MSG_CHECKING(native coroutine implementation for ${target_cpu}-${target_os})
     AC_MSG_RESULT(${coroutine_type})
 ])
 COROUTINE_H=coroutine/$coroutine_type/Context.h
 AS_IF([test ! -f "$srcdir/$COROUTINE_H"],
       [AC_MSG_ERROR('$coroutine_type' is not supported as coroutine)])
 AS_CASE([$coroutine_type],
-    [copy|ucontext], [
+    [ucontext|pthread], [
         COROUTINE_SRC=coroutine/$coroutine_type/Context.c
     ],
     [
@@ -3407,6 +3413,10 @@ AS_CASE("$enable_shared", [yes], [
 	AS_IF([test "$rb_cv_binary_elf" != "yes" ], [
 	    LIBRUBY_SO="$LIBRUBY_SO.\$(TEENY)"
 	    LIBRUBY_ALIASES=''
+	], [test "$load_relative" = yes], [
+	    libprefix="'\$\$ORIGIN/../${libdir_basename}'"
+	    LIBRUBY_RPATHFLAGS="-Wl,-rpath,${libprefix}"
+	    LIBRUBY_RELATIVE=yes
 	])
 	],
     [netbsd*], [

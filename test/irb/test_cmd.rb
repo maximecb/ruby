@@ -391,7 +391,7 @@ module TestIRB
         "  def m1() end\n",
         "  def m3() end\n",
         "end\n",
-        
+
         "module M2\n",
         "  include M\n",
         "  def m4() end\n",
@@ -419,6 +419,25 @@ module TestIRB
       assert_match(/M#methods:\s+m1\s+m3\n/m, out)
       assert_match(/M2#methods:\s+m4\n/m, out)
       assert_match(/C.methods:\s+m5\n/m, out)
+    end
+
+    def test_ls_with_no_singleton_class
+      input = TestInputMethod.new([
+        "ls 42",
+      ])
+      IRB.init_config(nil)
+      workspace = IRB::WorkSpace.new(self)
+      IRB.conf[:VERBOSE] = false
+      irb = IRB::Irb.new(workspace, input)
+      IRB.conf[:MAIN_CONTEXT] = irb.context
+      irb.context.return_format = "=> %s\n"
+      out, err = capture_output do
+        irb.eval_input
+      end
+      assert_empty err
+      assert_match(/Comparable#methods:\s+/, out)
+      assert_match(/Numeric#methods:\s+/, out)
+      assert_match(/Integer#methods:\s+/, out)
     end
 
     def test_show_source
