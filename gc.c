@@ -1362,22 +1362,6 @@ RVALUE_FLAGS_AGE(VALUE flags)
     return (int)((flags & (FL_PROMOTED0 | FL_PROMOTED1)) >> RVALUE_AGE_SHIFT);
 }
 
-#if USE_RVARGC
-static VALUE
-payload_or_self(VALUE obj)
-{
-    struct heap_page *p = GET_HEAP_PAGE(obj);
-
-    if (p->size_pool->slot_size == sizeof(RVALUE)) {
-        return obj;
-    }
-
-    int offset = ((intptr_t)obj - (intptr_t)p->start) % p->size_pool->slot_size;
-
-    return (VALUE)((intptr_t)obj - offset);
-}
-#endif
-
 static int
 check_rvalue_consistency_force(const VALUE obj, int terminate)
 {
@@ -1939,10 +1923,10 @@ heap_pages_free_unused_pages(rb_objspace_t *objspace)
 {
     size_t i, j;
 
-    bool has_pages_in_tomb_heap = false;
+    bool has_pages_in_tomb_heap = FALSE;
     for (i = 0; i < SIZE_POOL_COUNT; i++) {
         if (!list_empty(&size_pools[i].tomb_heap.pages)) {
-            has_pages_in_tomb_heap = true;
+            has_pages_in_tomb_heap = TRUE;
             break;
         }
     }
@@ -1968,7 +1952,7 @@ heap_pages_free_unused_pages(rb_objspace_t *objspace)
         GC_ASSERT(himem <= (intptr_t)heap_pages_himem);
         heap_pages_himem = (RVALUE *)himem;
 
-        GC_ASSERT(j == heap_allocated_pages);
+	GC_ASSERT(j == heap_allocated_pages);
     }
 }
 
@@ -2000,16 +1984,14 @@ heap_page_allocate(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
     start = (intptr_t)((VALUE)page_body + sizeof(struct heap_page_header));
 
     if ((VALUE)start % sizeof(RVALUE) != 0) {
-	int delta = (int)sizeof(RVALUE) - (start % (int)sizeof(RVALUE));
-	start = start + delta;
+        int delta = (int)sizeof(RVALUE) - (start % (int)sizeof(RVALUE));
+        start = start + delta;
         GC_ASSERT(NUM_IN_PAGE(start) == 0 || NUM_IN_PAGE(start) == 1);
 
-        /*
-           Find a num in page that is evenly divisible by `stride`.
-           This is to ensure that objects are aligned with bit planes.
-           In other words, ensure there are an even number of objects
-           per bit plane.
-         */
+        /* Find a num in page that is evenly divisible by `stride`.
+         * This is to ensure that objects are aligned with bit planes.
+         * In other words, ensure there are an even number of objects
+         * per bit plane. */
         if (NUM_IN_PAGE(start) == 1) {
             start += stride - sizeof(RVALUE);
         }
@@ -3533,7 +3515,7 @@ objspace_each_objects_ensure(VALUE arg)
     struct each_obj_data *data = (struct each_obj_data *)arg;
     rb_objspace_t *objspace = data->objspace;
 
-    /* Reenable incremental GC. */
+    /* Reenable incremental GC */
     if (data->reenable_incremental) {
         objspace->flags.dont_incremental = FALSE;
     }
@@ -3654,7 +3636,7 @@ rb_objspace_each_objects(each_obj_callback *callback, void *data)
 static void
 objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected)
 {
-    /* Disable incremental GC. */
+    /* Disable incremental GC */
     bool reenable_incremental = FALSE;
     if (protected) {
         reenable_incremental = !objspace->flags.dont_incremental;
@@ -3673,7 +3655,6 @@ objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void
         .pages = {NULL},
         .pages_counts = {0},
     };
-
     rb_ensure(objspace_each_objects_try, (VALUE)&each_obj_data,
               objspace_each_objects_ensure, (VALUE)&each_obj_data);
 }
@@ -6606,10 +6587,6 @@ gc_mark_maybe(rb_objspace_t *objspace, VALUE obj)
     (void)VALGRIND_MAKE_MEM_DEFINED(&obj, sizeof(obj));
 
     if (is_pointer_to_heap(objspace, (void *)obj)) {
-#if USE_RVARGC
-        obj = payload_or_self(obj);
-#endif
-
         void *ptr = __asan_region_is_poisoned((void *)obj, SIZEOF_VALUE);
         asan_unpoison_object(obj, false);
 
@@ -8864,7 +8841,7 @@ ready_to_gc(rb_objspace_t *objspace)
     if (dont_gc_val() || during_gc || ruby_disable_gc) {
         for (int i = 0; i < SIZE_POOL_COUNT; i++) {
             rb_size_pool_t *size_pool = &size_pools[i];
-	    heap_ready_to_gc(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
+            heap_ready_to_gc(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
         }
         return FALSE;
     }
@@ -10144,17 +10121,17 @@ gc_update_references(rb_objspace_t * objspace)
     struct heap_page *page = NULL;
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        short should_set_mark_bits = 1;
+        bool should_set_mark_bits = TRUE;
         rb_size_pool_t *size_pool = &size_pools[i];
-        rb_heap_t * heap = &size_pool->eden_heap;
+        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
 
-        list_for_each(&SIZE_POOL_EDEN_HEAP(size_pool)->pages, page, page_node) {
+        list_for_each(&heap->pages, page, page_node) {
             intptr_t start = (intptr_t)page->start;
             intptr_t end = start + (page->total_slots * size_pool->slot_size);
 
             gc_ref_update((void *)start, (void *)end, size_pool->slot_size, objspace, page);
             if (page == heap->sweeping_page) {
-                should_set_mark_bits = 0;
+                should_set_mark_bits = FALSE;
             }
             if (should_set_mark_bits) {
                 gc_setup_mark_bits(page);
