@@ -10544,7 +10544,7 @@ setup_gc_stat_symbols(void)
 }
 
 static size_t
-gc_stat_internal(VALUE hash_or_sym, long pool)
+gc_stat_internal(VALUE hash_or_sym)
 {
     rb_objspace_t *objspace = &rb_objspace;
     VALUE hash = Qnil, key = Qnil;
@@ -10570,55 +10570,44 @@ gc_stat_internal(VALUE hash_or_sym, long pool)
     SET(count, objspace->profile.count);
 
     /* implementation dependent counters */
-    if (pool == -1) {
-        SET(heap_allocated_pages, heap_allocated_pages);
-        SET(heap_sorted_length, heap_pages_sorted_length);
-        SET(heap_allocatable_pages, heap_allocatable_pages(objspace));
-        SET(heap_available_slots, objspace_available_slots(objspace));
-        SET(heap_live_slots, objspace_live_slots(objspace));
-        SET(heap_free_slots, objspace_free_slots(objspace));
-        SET(heap_final_slots, heap_pages_final_slots);
-        SET(heap_marked_slots, objspace->marked_slots);
-        SET(heap_eden_pages, heap_eden_total_pages(objspace));
-        SET(heap_tomb_pages, heap_tomb_total_pages(objspace));
-        SET(total_allocated_pages, objspace->profile.total_allocated_pages);
-        SET(total_freed_pages, objspace->profile.total_freed_pages);
-        SET(total_allocated_objects, objspace->total_allocated_objects);
-        SET(total_freed_objects, objspace->profile.total_freed_objects);
-        SET(malloc_increase_bytes, malloc_increase);
-        SET(malloc_increase_bytes_limit, malloc_limit);
-        SET(minor_gc_count, objspace->profile.minor_gc_count);
-        SET(major_gc_count, objspace->profile.major_gc_count);
-        SET(compact_count, objspace->profile.compact_count);
-        SET(read_barrier_faults, objspace->profile.read_barrier_faults);
-        SET(total_moved_objects, objspace->rcompactor.total_moved);
-        SET(remembered_wb_unprotected_objects, objspace->rgengc.uncollectible_wb_unprotected_objects);
-        SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
-        SET(old_objects, objspace->rgengc.old_objects);
-        SET(old_objects_limit, objspace->rgengc.old_objects_limit);
+    SET(heap_allocated_pages, heap_allocated_pages);
+    SET(heap_sorted_length, heap_pages_sorted_length);
+    SET(heap_allocatable_pages, heap_allocatable_pages(objspace));
+    SET(heap_available_slots, objspace_available_slots(objspace));
+    SET(heap_live_slots, objspace_live_slots(objspace));
+    SET(heap_free_slots, objspace_free_slots(objspace));
+    SET(heap_final_slots, heap_pages_final_slots);
+    SET(heap_marked_slots, objspace->marked_slots);
+    SET(heap_eden_pages, heap_eden_total_pages(objspace));
+    SET(heap_tomb_pages, heap_tomb_total_pages(objspace));
+    SET(total_allocated_pages, objspace->profile.total_allocated_pages);
+    SET(total_freed_pages, objspace->profile.total_freed_pages);
+    SET(total_allocated_objects, objspace->total_allocated_objects);
+    SET(total_freed_objects, objspace->profile.total_freed_objects);
+    SET(malloc_increase_bytes, malloc_increase);
+    SET(malloc_increase_bytes_limit, malloc_limit);
+    SET(minor_gc_count, objspace->profile.minor_gc_count);
+    SET(major_gc_count, objspace->profile.major_gc_count);
+    SET(compact_count, objspace->profile.compact_count);
+    SET(read_barrier_faults, objspace->profile.read_barrier_faults);
+    SET(total_moved_objects, objspace->rcompactor.total_moved);
+    SET(remembered_wb_unprotected_objects, objspace->rgengc.uncollectible_wb_unprotected_objects);
+    SET(remembered_wb_unprotected_objects_limit, objspace->rgengc.uncollectible_wb_unprotected_objects_limit);
+    SET(old_objects, objspace->rgengc.old_objects);
+    SET(old_objects_limit, objspace->rgengc.old_objects_limit);
 #if RGENGC_ESTIMATE_OLDMALLOC
-        SET(oldmalloc_increase_bytes, objspace->rgengc.oldmalloc_increase);
-        SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
+    SET(oldmalloc_increase_bytes, objspace->rgengc.oldmalloc_increase);
+    SET(oldmalloc_increase_bytes_limit, objspace->rgengc.oldmalloc_increase_limit);
 #endif
 
 #if RGENGC_PROFILE
-        SET(total_generated_normal_object_count, objspace->profile.total_generated_normal_object_count);
-        SET(total_generated_shady_object_count, objspace->profile.total_generated_shady_object_count);
-        SET(total_shade_operation_count, objspace->profile.total_shade_operation_count);
-        SET(total_promoted_count, objspace->profile.total_promoted_count);
-        SET(total_remembered_normal_object_count, objspace->profile.total_remembered_normal_object_count);
-        SET(total_remembered_shady_object_count, objspace->profile.total_remembered_shady_object_count);
+    SET(total_generated_normal_object_count, objspace->profile.total_generated_normal_object_count);
+    SET(total_generated_shady_object_count, objspace->profile.total_generated_shady_object_count);
+    SET(total_shade_operation_count, objspace->profile.total_shade_operation_count);
+    SET(total_promoted_count, objspace->profile.total_promoted_count);
+    SET(total_remembered_normal_object_count, objspace->profile.total_remembered_normal_object_count);
+    SET(total_remembered_shady_object_count, objspace->profile.total_remembered_shady_object_count);
 #endif /* RGENGC_PROFILE */
-    }
-    else {
-        rb_size_pool_t *size_pool = &size_pools[pool];
-        SET(heap_allocatable_pages, size_pool->allocatable_pages);
-        SET(heap_eden_pages, SIZE_POOL_EDEN_HEAP(size_pool)->total_pages);
-        SET(heap_tomb_pages, SIZE_POOL_TOMB_HEAP(size_pool)->total_pages);
-#if USE_RVARGC
-        SET(major_gc_count, size_pool->force_major_gc_count);
-#endif
-    }
 #undef SET
 
     if (!NIL_P(key)) { /* matched key should return above */
@@ -10640,27 +10629,13 @@ gc_stat_internal(VALUE hash_or_sym, long pool)
 }
 
 static VALUE
-gc_stat(rb_execution_context_t *ec, VALUE self, VALUE arg, VALUE pool) // arg is (nil || hash || symbol)
+gc_stat(rb_execution_context_t *ec, VALUE self, VALUE arg) // arg is (nil || hash || symbol)
 {
-    long pool_idx = -1;
-    if (NIL_P(pool)) {
-        // ok
-    }
-    else if (RB_TYPE_P(pool, T_FIXNUM)) {
-        pool_idx = FIX2LONG(pool);
-        if (pool_idx < 0 || pool_idx > SIZE_POOL_COUNT) {
-            rb_raise(rb_eTypeError, "pool out of range");
-        }
-    }
-    else {
-        rb_raise(rb_eTypeError, "pool must be nil or an integer");
-    }
-
     if (NIL_P(arg)) {
         arg = rb_hash_new();
     }
     else if (SYMBOL_P(arg)) {
-        size_t value = gc_stat_internal(arg, pool_idx);
+        size_t value = gc_stat_internal(arg);
         return SIZET2NUM(value);
     }
     else if (RB_TYPE_P(arg, T_HASH)) {
@@ -10670,7 +10645,7 @@ gc_stat(rb_execution_context_t *ec, VALUE self, VALUE arg, VALUE pool) // arg is
         rb_raise(rb_eTypeError, "non-hash or symbol given");
     }
 
-    gc_stat_internal(arg, pool_idx);
+    gc_stat_internal(arg);
     return arg;
 }
 
@@ -10678,11 +10653,11 @@ size_t
 rb_gc_stat(VALUE key)
 {
     if (SYMBOL_P(key)) {
-	size_t value = gc_stat_internal(key, -1);
+	size_t value = gc_stat_internal(key);
 	return value;
     }
     else {
-	gc_stat_internal(key, -1);
+	gc_stat_internal(key);
 	return 0;
     }
 }
