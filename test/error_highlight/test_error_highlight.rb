@@ -1,6 +1,7 @@
 require "test/unit"
 
 require "error_highlight"
+require "tempfile"
 
 class ErrorHighlightTest < Test::Unit::TestCase
   class DummyFormatter
@@ -998,5 +999,37 @@ undefined method `time' for 1:Integer
 
   ensure
     ErrorHighlight.formatter = original_formatter
+  end
+
+  def test_hard_tabs
+    tmp = Tempfile.new(["error_highlight_test", ".rb"], binmode: true)
+    tmp << "\t \t1.time {}\n"
+    tmp.close(false)
+
+    assert_error_message(NoMethodError, <<~END.gsub("_", "\t")) do
+undefined method `time' for 1:Integer
+
+_ _1.time {}
+_ _ ^^^^^
+    END
+
+      load tmp.path
+    end
+  end
+
+  def test_no_final_newline
+    tmp = Tempfile.new(["error_highlight_test", ".rb"])
+    tmp << "1.time {}"
+    tmp.close(false)
+
+    assert_error_message(NoMethodError, <<~END) do
+undefined method `time' for 1:Integer
+
+1.time {}
+ ^^^^^
+    END
+
+      load tmp.path
+    end
   end
 end

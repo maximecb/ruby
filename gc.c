@@ -2335,7 +2335,7 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
 }
 
 static inline void heap_add_freepage(rb_heap_t *heap, struct heap_page *page);
-static struct heap_page * heap_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap);
+static struct heap_page *heap_next_freepage(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap);
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
 
 #if USE_RVARGC
@@ -5184,7 +5184,7 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
-        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(pool);
+        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
         heap->compact_cursor = NULL;
         heap->compact_cursor_index = 0;
     }
