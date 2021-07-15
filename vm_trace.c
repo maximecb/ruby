@@ -763,6 +763,7 @@ symbol2event_flag(VALUE v)
     C(return, RETURN);
     C(c_call, C_CALL);
     C(c_return, C_RETURN);
+    C(constant_access, CONSTANT_ACCESS);
     C(raise, RAISE);
     C(b_call, B_CALL);
     C(b_return, B_RETURN);
@@ -953,6 +954,23 @@ rb_tracearg_return_value(rb_trace_arg_t *trace_arg)
 }
 
 VALUE
+rb_tracearg_constant_value(rb_trace_arg_t *trace_arg)
+{
+    if (trace_arg->event & (RUBY_EVENT_CONSTANT_ACCESS)) {
+        /* ok */
+    }
+    else {
+        rb_raise(rb_eRuntimeError, "not supported by this event");
+    }
+
+    if (trace_arg->data == Qundef) {
+        rb_bug("tp_attr_constant_value_m: unreachable");
+    }
+
+    return trace_arg->data;
+}
+
+VALUE
 rb_tracearg_raised_exception(rb_trace_arg_t *trace_arg)
 {
     if (trace_arg->event & (RUBY_EVENT_RAISE)) {
@@ -1090,6 +1108,12 @@ static VALUE
 tracepoint_attr_return_value(rb_execution_context_t *ec, VALUE tpval)
 {
     return rb_tracearg_return_value(get_trace_arg());
+}
+
+static VALUE
+tracepoint_attr_constant_value(rb_execution_context_t *ec, VALUE tpval)
+{
+    return rb_tracearg_constant_value(get_trace_arg());
 }
 
 static VALUE
