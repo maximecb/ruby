@@ -5165,8 +5165,8 @@ static void
 gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
 {
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        rb_size_pool_t * pool = &size_pools[i];
-        rb_heap_t * heap = &pool->eden_heap;
+        rb_size_pool_t *size_pool = &size_pools[i];
+        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
         gc_unprotect_pages(objspace, heap);
     }
 
@@ -5183,8 +5183,8 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
     objspace->profile.compact_count++;
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        rb_size_pool_t * pool = &size_pools[i];
-        rb_heap_t * heap = &pool->eden_heap;
+        rb_size_pool_t *size_pool = &size_pools[i];
+        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(pool);
         heap->compact_cursor = NULL;
         heap->compact_cursor_index = 0;
     }
@@ -5850,7 +5850,7 @@ gc_compact_start(rb_objspace_t *objspace)
     struct heap_page *page = NULL;
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
-        rb_heap_t * heap = &size_pools[i].eden_heap;
+        rb_heap_t *heap = &size_pools[i].eden_heap;
         list_for_each(&heap->pages, page, page_node) {
             page->flags.before_sweep = TRUE;
         }
@@ -10115,7 +10115,7 @@ extern rb_symbols_t ruby_global_symbols;
 #define global_symbols ruby_global_symbols
 
 static void
-gc_update_references(rb_objspace_t * objspace)
+gc_update_references(rb_objspace_t *objspace)
 {
     rb_execution_context_t *ec = GET_EC();
     rb_vm_t *vm = rb_ec_vm_ptr(ec);
