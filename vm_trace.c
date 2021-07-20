@@ -600,6 +600,7 @@ get_event_name(rb_event_flag_t event)
       case RUBY_EVENT_CLASS:    return "class";
       case RUBY_EVENT_END:      return "end";
       case RUBY_EVENT_CALL:     return "call";
+      case RUBY_EVENT_CONSTANT_ACCESS:     return "constant_access";
       case RUBY_EVENT_RETURN:	return "return";
       case RUBY_EVENT_C_CALL:	return "c-call";
       case RUBY_EVENT_C_RETURN:	return "c-return";
@@ -621,6 +622,7 @@ get_event_id(rb_event_flag_t event)
 	C(end, END);
 	C(call, CALL);
 	C(return, RETURN);
+	C(constant_access, CONSTANT_ACCESS);
 	C(c_call, C_CALL);
 	C(c_return, C_RETURN);
 	C(raise, RAISE);
