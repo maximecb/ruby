@@ -4329,6 +4329,10 @@ vm_define_module(ID id, rb_num_t flags, VALUE cbase)
     if ((mod = vm_const_get_under(id, flags, cbase)) != 0) {
         if (!vm_check_if_module(id, mod))
             unmatched_redefinition("module", cbase, id, mod);
+
+        rb_execution_context_t *ec = GET_EC();
+        EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, mod);
+
         return mod;
     }
     else {
