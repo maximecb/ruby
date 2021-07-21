@@ -4309,6 +4309,10 @@ vm_define_class(ID id, rb_num_t flags, VALUE cbase, VALUE super)
     if ((klass = vm_const_get_under(id, flags, cbase)) != 0) {
         if (!vm_check_if_class(id, flags, super, klass))
             unmatched_redefinition("class", cbase, id, klass);
+
+        rb_execution_context_t *ec = GET_EC();
+        EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, klass);
+
         return klass;
     }
     else {
