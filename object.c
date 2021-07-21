@@ -38,6 +38,7 @@
 #include "ruby/util.h"
 #include "ruby/assert.h"
 #include "builtin.h"
+#include "vm_core.h"
 
 /*!
  * \defgroup object Core objects and their operations
@@ -2505,6 +2506,9 @@ rb_mod_const_get(int argc, VALUE *argv, VALUE mod)
         }
 #endif
     }
+
+    rb_execution_context_t *ec = GET_EC();
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, mod);
 
     return mod;
 
