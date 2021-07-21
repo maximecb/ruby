@@ -2554,6 +2554,8 @@ rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
                 rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main Ractor.", rb_class_path(klass), rb_id2name(id));
             }
         }
+        rb_execution_context_t *ec = GET_EC();
+        EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, c);
         return c;
     }
     return rb_const_missing(klass, ID2SYM(id));
@@ -3063,6 +3065,9 @@ rb_const_set(VALUE klass, ID id, VALUE val)
 	    }
 	}
     }
+
+    rb_execution_context_t *ec = GET_EC();
+    EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, val);
 }
 
 static struct autoload_data_i *
