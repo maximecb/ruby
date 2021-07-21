@@ -2548,12 +2548,14 @@ static VALUE
 rb_const_get_0(VALUE klass, ID id, int exclude, int recurse, int visibility)
 {
     VALUE c = rb_const_search(klass, id, exclude, recurse, visibility);
+    rb_execution_context_t *ec = GET_EC();
     if (c != Qundef) {
         if (UNLIKELY(!rb_ractor_main_p())) {
             if (!rb_ractor_shareable_p(c)) {
                 rb_raise(rb_eRactorIsolationError, "can not access non-shareable objects in constant %"PRIsVALUE"::%s by non-main Ractor.", rb_class_path(klass), rb_id2name(id));
             }
         }
+        EXEC_EVENT_HOOK(ec, RUBY_EVENT_CONSTANT_ACCESS, ec->cfp->self, 0, 0, 0, c);
         return c;
     }
     return rb_const_missing(klass, ID2SYM(id));
