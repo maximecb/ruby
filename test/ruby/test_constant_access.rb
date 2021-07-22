@@ -74,6 +74,20 @@ class TestConstantAccess < Test::Unit::TestCase
     assert_equal([ExampleModule, ExampleModule::BAR], constant_values)
   end
 
+  def test_module_eval
+    ExampleModule.module_eval do
+      def self.foo
+        self::Nested::FOO
+      end
+    end
+
+     constant_values = perform do
+       ExampleModule.foo
+    end
+
+    assert_equal([ExampleModule, ExampleModule::Nested, ExampleModule::Nested::FOO], constant_values)
+  end
+
   private
 
   def perform
