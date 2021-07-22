@@ -13,7 +13,7 @@ class TestConstantAccess < Test::Unit::TestCase
       ExampleModule::Nested::FOO
     end
 
-    assert_equal(constant_values, [ExampleModule, ExampleModule::Nested, ExampleModule::Nested::FOO])
+    assert_equal([ExampleModule, ExampleModule::Nested, ExampleModule::Nested::FOO], constant_values)
   end
 
   def test_setting_constants
@@ -23,7 +23,7 @@ class TestConstantAccess < Test::Unit::TestCase
       RUBY
     end
 
-    assert_equal(constant_values, [ExampleModule, ExampleModule::Nested, ExampleModule::Nested::BAR])
+    assert_equal([ExampleModule, ExampleModule::Nested, ExampleModule::Nested::BAR], constant_values)
   end
 
   def test_reopening_module
@@ -39,7 +39,7 @@ class TestConstantAccess < Test::Unit::TestCase
       RUBY
     end
 
-    assert_equal(constant_values, [TestReopeningModule])
+    assert_equal([TestReopeningModule], constant_values)
   end
 
   def test_reopening_class
@@ -55,7 +55,7 @@ class TestConstantAccess < Test::Unit::TestCase
       RUBY
     end
 
-    assert_equal(constant_values, [TestReopeningClass])
+    assert_equal([TestReopeningClass], constant_values)
   end
 
   def test_const_get
@@ -63,7 +63,7 @@ class TestConstantAccess < Test::Unit::TestCase
       Object.const_get("::ExampleModule::Nested::FOO")
     end
 
-    assert_equal(constant_values, [Object, ExampleModule, ExampleModule::Nested, ExampleModule::Nested::FOO])
+    assert_equal([Object, ExampleModule, ExampleModule::Nested, ExampleModule::Nested::FOO], constant_values)
   end
 
   def test_const_set
@@ -71,7 +71,7 @@ class TestConstantAccess < Test::Unit::TestCase
       ExampleModule.const_set(:BAR, "bar")
     end
 
-    assert_equal(constant_values, [ExampleModule, ExampleModule::BAR])
+    assert_equal([ExampleModule, ExampleModule::BAR], constant_values)
   end
 
   private
