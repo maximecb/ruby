@@ -81,7 +81,9 @@ struct RString {
                 VALUE shared;
             } aux;
         } heap;
-        char ary[RSTRING_EMBED_LEN_MAX + 1];
+        struct {
+            char ary[RSTRING_EMBED_LEN_MAX + 1];
+        } embed;
     } as;
 };
 
@@ -131,7 +133,7 @@ rbimpl_rstring_getmem(VALUE str)
         /* Expecting compilers to optimize this on-stack struct away. */
         struct RString retval;
         retval.as.heap.len = RSTRING_EMBED_LEN(str);
-        retval.as.heap.ptr = RSTRING(str)->as.ary;
+        retval.as.heap.ptr = RSTRING(str)->as.embed.ary;
         return retval;
     }
 }
