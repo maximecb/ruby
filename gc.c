@@ -2246,9 +2246,11 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     rb_ractor_setup_belonging(obj);
 #endif
 
-#if RGENGC_CHECK_MODE
+#if RGENGC_CHECK_MODE || RGENGC_DEBUG >= 5
     p->as.values.v1 = p->as.values.v2 = p->as.values.v3 = 0;
+#endif
 
+#if RGENGC_CHECK_MODE
     RB_VM_LOCK_ENTER_NO_BARRIER();
     {
         check_rvalue_consistency(obj);
@@ -2326,17 +2328,61 @@ static struct heap_page *heap_next_freepage(rb_objspace_t *objspace, rb_size_poo
 static inline void ractor_set_cache(rb_ractor_t *cr, struct heap_page *page);
 
 #if USE_RVARGC
-void *
-rb_gc_rvargc_object_data(VALUE obj)
+static inline unsigned char
+size_pool_idx_for_size(size_t size)
 {
-    return (void *)(obj + sizeof(RVALUE));
+    size_t slot_count = CEILDIV(size, sizeof(RVALUE));
+
+    /* size_pool_idx is ceil(log2(slot_count)) */
+    size_t size_pool_idx = 64 - nlz_int64(slot_count - 1);
+    GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
+    return (char)size_pool_idx;
+}
+
+char
+rb_gc_rvargc_size_pool_id_for_size(size_t size)
+{
+    return size_pool_idx_for_size(size);
+}
+
+size_t
+rb_gc_rvargc_pool_slot_size(char pool_id)
+{
+    GC_ASSERT(pool_id < SIZE_POOL_COUNT);
+
+    size_t slot_size = (1 << pool_id) * sizeof(RVALUE);
+
+#if RGENGC_CHECK_MODE
+    rb_objspace_t *objspace = &rb_objspace;
+    GC_ASSERT(size_pools[pool_id].slot_size == slot_size);
+#endif
+
+    return slot_size;
+}
+
+bool
+rb_gc_rvargc_allocatable_p(size_t size)
+{
+    return size <= rb_gc_rvargc_pool_slot_size(SIZE_POOL_COUNT - 1);
+}
+
+// TODO: this was added for debugging, maybe not needed?
+size_t
+rb_gc_obj_slot_size(VALUE obj)
+{
+    if (is_pointer_to_heap(&rb_objspace, obj)) {
+        return GET_HEAP_PAGE(obj)->size_pool->slot_size;
+    }
+    else {
+        return 0;
+    }
 }
 #endif
 
 static inline VALUE
 ractor_cached_free_region(rb_objspace_t *objspace, rb_ractor_t *cr, size_t size)
 {
-    if (size != sizeof(RVALUE)) {
+    if (size > sizeof(RVALUE)) {
         return Qfalse;
     }
 
@@ -2410,6 +2456,19 @@ newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 }
 
 #if USE_RVARGC
+static inline rb_size_pool_t *
+size_pool_for_size(rb_objspace_t *objspace, size_t size)
+{
+    unsigned char size_pool_idx = size_pool_idx_for_size(size);
+
+    rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
+    GC_ASSERT(size_pool->slot_size >= (short)size);
+    GC_ASSERT(size_pools[size_pool_idx - 1].slot_size < (short)size);
+
+    return size_pool;
+}
+
+
 static inline VALUE
 heap_get_freeobj(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
 {
@@ -2430,23 +2489,6 @@ heap_get_freeobj(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *
     size_pool->freelist = p->as.free.next;
 
     return (VALUE)p;
-}
-
-static inline rb_size_pool_t *
-size_pool_for_size(rb_objspace_t *objspace, size_t size)
-{
-    size_t slot_count = CEILDIV(size, sizeof(RVALUE));
-
-    /* size_pool_idx is ceil(log2(slot_count)) */
-    size_t size_pool_idx = 64 - nlz_int64(slot_count - 1);
-    GC_ASSERT(size_pool_idx > 0);
-    GC_ASSERT(size_pool_idx < SIZE_POOL_COUNT);
-
-    rb_size_pool_t *size_pool = &size_pools[size_pool_idx];
-    GC_ASSERT(size_pool->slot_size >= (short)size);
-    GC_ASSERT(size_pools[size_pool_idx - 1].slot_size < (short)size);
-
-    return size_pool;
 }
 #endif
 
@@ -2573,7 +2615,6 @@ VALUE
 rb_wb_unprotected_newobj_of(VALUE klass, VALUE flags, size_t size)
 {
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
-    size = size + sizeof(RVALUE);
     return newobj_of(klass, flags, 0, 0, 0, FALSE, size);
 }
 
@@ -2581,7 +2622,6 @@ VALUE
 rb_wb_protected_newobj_of(VALUE klass, VALUE flags, size_t size)
 {
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
-    size = size + sizeof(RVALUE);
     return newobj_of(klass, flags, 0, 0, 0, TRUE, size);
 }
 
@@ -2589,7 +2629,6 @@ VALUE
 rb_ec_wb_protected_newobj_of(rb_execution_context_t *ec, VALUE klass, VALUE flags, size_t size)
 {
     GC_ASSERT((flags & FL_WB_PROTECTED) == 0);
-    size = size + sizeof(RVALUE);
     return newobj_of_cr(rb_ec_ractor_ptr(ec), klass, flags, 0, 0, 0, TRUE, size);
 }
 

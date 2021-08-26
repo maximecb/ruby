@@ -58,16 +58,24 @@
 
 enum ruby_rstring_flags {
     RSTRING_NOEMBED         = RUBY_FL_USER1,
+#if USE_RVARGC
+    RSTRING_SIZE_POOL_ID_MASK = RUBY_FL_USER3 | RUBY_FL_USER4,
+#else
     RSTRING_EMBED_LEN_MASK  = RUBY_FL_USER2 | RUBY_FL_USER3 | RUBY_FL_USER4 |
                               RUBY_FL_USER5 | RUBY_FL_USER6,
+#endif
     /* Actually,  string  encodings are  also  encoded  into the  flags,  using
      * remaining bits.*/
     RSTRING_FSTR            = RUBY_FL_USER17
 };
 
 enum ruby_rstring_consts {
+#if USE_RVARGC
+    RSTRING_SIZE_POOL_ID_SHIFT = RUBY_FL_USHIFT + 3
+#else
     RSTRING_EMBED_LEN_SHIFT = RUBY_FL_USHIFT + 2,
     RSTRING_EMBED_LEN_MAX   = RBIMPL_EMBED_LEN_MAX_OF(char) - 1
+#endif
 };
 
 struct RString {
@@ -82,7 +90,12 @@ struct RString {
             } aux;
         } heap;
         struct {
+#if USE_RVARGC
+            short len;
+            char ary[];
+#else
             char ary[RSTRING_EMBED_LEN_MAX + 1];
+#endif
         } embed;
     } as;
 };
@@ -108,9 +121,13 @@ RSTRING_EMBED_LEN(VALUE str)
     RBIMPL_ASSERT_TYPE(str, RUBY_T_STRING);
     RBIMPL_ASSERT_OR_ASSUME(! RB_FL_ANY_RAW(str, RSTRING_NOEMBED));
 
+#if USE_RVARGC
+    short f = RSTRING(str)->as.embed.len;
+#else
     VALUE f = RBASIC(str)->flags;
     f &= RSTRING_EMBED_LEN_MASK;
     f >>= RSTRING_EMBED_LEN_SHIFT;
+#endif
     return RBIMPL_CAST((long)f);
 }
 
