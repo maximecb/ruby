@@ -4,13 +4,10 @@ require '-test-/string'
 require 'rbconfig/sizeof'
 
 class Test_StringCapacity < Test::Unit::TestCase
-  def capa(str)
-    Bug::String.capacity(str)
-  end
-
   def test_capacity_embedded
-    size = RbConfig::SIZEOF['void*'] * 3 - 1
-    assert_equal size, capa('foo')
+    assert_equal GC::INTERNAL_CONSTANTS[:RVALUE_SIZE] - embed_header_size - 1, capa('foo')
+    assert_equal max_embed_len, capa('1' * max_embed_len)
+    assert_equal max_embed_len, capa('1' * (max_embed_len - 1))
   end
 
   def test_capacity_shared
@@ -18,7 +15,12 @@ class Test_StringCapacity < Test::Unit::TestCase
   end
 
   def test_capacity_normal
-    assert_equal 128, capa('1'*128)
+    assert_equal max_embed_len + 1, capa('1' * (max_embed_len + 1))
+    if GC.using_rvargc?
+      assert_equal 1000, capa('1' * 1000)
+    else
+      assert_equal 128, capa('1' * 128)
+    end
   end
 
   def test_s_new_capacity
@@ -39,7 +41,15 @@ class Test_StringCapacity < Test::Unit::TestCase
   end
 
   def test_literal_capacity
-    s = "I am testing string literal capacity"
+    s =
+      if GC.using_rvargc?
+        s = eval(%{
+          # frozen_string_literal: true
+          "#{"a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]}"
+        })
+      else
+        "I am testing string literal capacity"
+      end
     assert_equal(s.length, capa(s))
   end
 
@@ -52,8 +62,31 @@ class Test_StringCapacity < Test::Unit::TestCase
 
   def test_capacity_fstring
     s = String.new("I am testing", capacity: 1000)
-    s << "fstring capacity"
+    s <<
+      if GC.using_rvargc?
+        "a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
+      else
+        "fstring capacity"
+      end
     s = -s
     assert_equal(s.length, capa(s))
+  end
+
+  private
+
+  def capa(str)
+    Bug::String.capacity(str)
+  end
+
+  def embed_header_size
+    if GC.using_rvargc?
+      2 * RbConfig::SIZEOF['void*'] + RbConfig::SIZEOF['short']
+    else
+      2 * RbConfig::SIZEOF['void*']
+    end
+  end
+
+  def max_embed_len
+    GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE] - embed_header_size - 1
   end
 end
