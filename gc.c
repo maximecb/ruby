@@ -2601,6 +2601,7 @@ static inline VALUE
 newobj_of(VALUE klass, VALUE flags, VALUE v1, VALUE v2, VALUE v3, int wb_protected, size_t alloc_size)
 {
     VALUE obj = newobj_of0(klass, flags, wb_protected, GET_RACTOR(), alloc_size);
+
     return newobj_fill(obj, v1, v2, v3);
 }
 
@@ -5503,7 +5504,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
         }
     }
 
-#if RGENGC_CHECK_MODE
+//#if RGENGC_CHECK_MODE
     short freelist_len = 0;
     RVALUE *ptr = sweep_page->freelist;
     while (ptr) {
@@ -5513,7 +5514,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     if (freelist_len != sweep_page->free_slots) {
         rb_bug("inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
     }
-#endif
+//#endif
 
     gc_report(2, objspace, "page_sweep: end.\n");
 }
@@ -5588,7 +5589,23 @@ gc_sweep_start(rb_objspace_t *objspace)
 
 #if USE_RVARGC
         if (size_pool->freelist) {
-            size_pool->using_page->freelist = (RVALUE *)size_pool->freelist;
+            if (size_pool->using_page->freelist) {
+                RVALUE *p = size_pool->using_page->freelist;
+                asan_unpoison_object((VALUE)p, false);
+                while (p->as.free.next) {
+                    RVALUE *prev = p;
+                    p = p->as.free.next;
+                    asan_poison_object((VALUE)prev);
+                    asan_unpoison_object((VALUE)p, false);
+                }
+
+                p->as.free.next = (RVALUE *)size_pool->freelist;
+            }
+            else {
+                size_pool->using_page->freelist = (RVALUE *)size_pool->freelist;
+            }
+
+            size_pool->using_page = NULL;
             size_pool->freelist = 0;
         }
 

@@ -324,7 +324,6 @@ RBIMPL_ATTR_ARTIFICIAL()
 static inline void
 rbimpl_fl_set_raw_raw(struct RBasic *obj, VALUE flags)
 {
-    fprintf(stderr, "FL_SET_RAW: %p (set?: %d)\n", obj, !!(flags & FL_USER1));
     obj->flags |= flags;
 }
 

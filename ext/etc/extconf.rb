@@ -55,3 +55,4 @@ have_func('rb_deprecate_constant(Qnil, "None")', [decl])
 $distcleanfiles << "constdefs.h"
 
 create_makefile("etc")
+
