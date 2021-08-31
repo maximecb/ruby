@@ -4,7 +4,7 @@
 static VALUE
 bug_str_capacity(VALUE klass, VALUE str)
 {
-    return 0;
+    return LONG2FIX(rb_str_capacity(str));
     /*
     return
 	STR_EMBED_P(str) ? INT2FIX(RSTRING_EMBED_LEN_MAX) : \

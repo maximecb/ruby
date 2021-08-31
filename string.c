@@ -1370,7 +1370,10 @@ rb_str_tmp_frozen_release(VALUE orig, VALUE tmp)
 
     if (STR_EMBED_P(tmp)) {
 	assert(OBJ_FROZEN_RAW(tmp));
+/*#if !USE_RVARGC*/
+        /* Cannot force recycle in RVARGC because tmp may be shared root of orig. */
 	rb_gc_force_recycle(tmp);
+/*#endif*/
     }
     else if (FL_TEST_RAW(orig, STR_SHARED) &&
 	    !FL_TEST_RAW(orig, STR_TMPLOCK|RUBY_FL_FREEZE)) {
@@ -1401,12 +1404,13 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 
     if (STR_EMBED_P(orig)) {
 	str = str_new(klass, RSTRING_PTR(orig), RSTRING_LEN(orig));
+        assert(STR_EMBED_P(str));
     }
     else {
 	if (FL_TEST_RAW(orig, STR_SHARED)) {
 	    VALUE shared = RSTRING(orig)->as.heap.aux.shared;
-	    long ofs = RSTRING(orig)->as.heap.ptr - RSTRING(shared)->as.heap.ptr;
-	    long rest = RSTRING(shared)->as.heap.len - ofs - RSTRING(orig)->as.heap.len;
+	    long ofs = RSTRING(orig)->as.heap.ptr - RSTRING_PTR(shared);
+	    long rest = RSTRING_LEN(shared) - ofs - RSTRING(orig)->as.heap.len;
 #if !USE_RVARGC
 	    assert(!STR_EMBED_P(shared));
 	    assert(OBJ_FROZEN(shared));
@@ -1425,13 +1429,30 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 		return shared;
 	    }
 	}
+    /* TODO: Fix incompatibility with rb_str_scan
+     * rb_str_scan requires that the orig ptr does not get modified.
+     * rb_reg_search0 (re.c:1613) calls this function.
+     */
+#if !USE_RVARGC
         else if (STR_EMBEDDABLE_P(RSTRING_LEN(orig), TERM_LEN(orig))) {
             str = str_alloc_embed(klass, RSTRING_LEN(orig) + TERM_LEN(orig));
 	    STR_SET_EMBED(str);
 	    memcpy(RSTRING_PTR(str), RSTRING_PTR(orig), RSTRING_LEN(orig));
 	    STR_SET_EMBED_LEN(str, RSTRING_LEN(orig));
 	    TERM_FILL(RSTRING_END(str), TERM_LEN(orig));
+/* For compatibility with rb_str_drop_bytes
+#if USE_RVARGC
+            if (!FL_TEST_RAW(orig, STR_NOFREE)) {
+                xfree(RSTRING_PTR(orig));
+                RBASIC(orig)->flags &= ~STR_NOFREE;
+            }
+
+            RSTRING(orig)->as.heap.ptr = RSTRING(str)->as.embed.ary;
+            STR_SET_SHARED(orig, str);
+#endif
+*/
 	}
+#endif
 	else {
 	    str = str_alloc_heap(klass);
 	    STR_SET_NOEMBED(str);
@@ -1473,8 +1494,8 @@ STATIC_ASSERT(STR_BUF_MIN_SIZE, STR_BUF_MIN_SIZE > RSTRING_EMBED_LEN_MAX);
 VALUE
 rb_str_buf_new(long capa)
 {
-    if (STR_EMBEDDABLE_P(capa, 0)) {
-        return str_alloc_embed(rb_cString, capa);
+    if (STR_EMBEDDABLE_P(capa, 1)) {
+        return str_alloc_embed(rb_cString, capa + 1);
     }
 
     VALUE str = str_alloc_heap(rb_cString);
@@ -1591,7 +1612,7 @@ str_shared_replace(VALUE str, VALUE str2)
             long len = RSTRING_LEN(str2);
 
             char *new_ptr = ALLOC_N(char, len + termlen);
-            memcpy(new_ptr, RSTRING(str2)->as.embed.ary, RSTRING(str)->as.embed.len);
+            memcpy(new_ptr, RSTRING(str2)->as.embed.ary, RSTRING(str2)->as.embed.len);
             RSTRING(str2)->as.heap.ptr = new_ptr;
             RSTRING(str2)->as.heap.len = len;
             RSTRING(str2)->as.heap.aux.capa = len;
