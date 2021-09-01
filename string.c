@@ -357,13 +357,13 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
 	 * at next time */
 
 	if (rb_objspace_garbage_object_p(str)) {
-            fprintf(stderr, "fstr_update_callback: existing garbage %p\n", (void *)str);
+            /*fprintf(stderr, "fstr_update_callback: existing garbage %p\n", (void *)str);*/
 	    arg->fstr = Qundef;
 	    return ST_DELETE;
 	}
 
 	arg->fstr = str;
-        fprintf(stderr, "fstr_update_callback: existing %p\n", (void *)str);
+        /*fprintf(stderr, "fstr_update_callback: existing %p\n", (void *)str);*/
 	return ST_STOP;
     }
     else {
@@ -396,9 +396,9 @@ fstr_update_callback(st_data_t *key, st_data_t *value, st_data_t data, int exist
 	}
 	RBASIC(str)->flags |= RSTRING_FSTR;
 
-        fprintf(stderr, "fstr_update_callback: not existing %p (ptr: %p, len: %ld, hash: %ld)\n", (void *)str, RSTRING_PTR(str), RSTRING_LEN(str), rb_str_hash(str));
-        if (RSTRING_LEN(str) == 367)
-        fprintf(stderr, "-----\n%.*s\n-----\n", RSTRING_LEN(str), RSTRING_PTR(str));
+        /*fprintf(stderr, "fstr_update_callback: not existing %p (ptr: %p, len: %ld, hash: %ld)\n", (void *)str, RSTRING_PTR(str), RSTRING_LEN(str), rb_str_hash(str));*/
+        /*if (RSTRING_LEN(str) == 367)*/
+        /*fprintf(stderr, "-----\n%.*s\n-----\n", RSTRING_LEN(str), RSTRING_PTR(str));*/
 
 	*key = *value = arg->fstr = str;
 	return ST_CONTINUE;
@@ -1409,6 +1409,25 @@ str_new_frozen(VALUE klass, VALUE orig)
 }
 
 static VALUE
+heap_str_make_shared(VALUE klass, VALUE orig)
+{
+    assert(!STR_EMBED_P(orig));
+    assert(!STR_SHARED_P(orig));
+
+    VALUE str = str_alloc_heap(klass);
+    STR_SET_NOEMBED(str);
+    RSTRING(str)->as.heap.len = RSTRING_LEN(orig);
+    RSTRING(str)->as.heap.ptr = RSTRING_PTR(orig);
+    RSTRING(str)->as.heap.aux.capa = RSTRING(orig)->as.heap.aux.capa;
+    RBASIC(str)->flags |= RBASIC(orig)->flags & STR_NOFREE;
+    RBASIC(orig)->flags &= ~STR_NOFREE;
+    STR_SET_SHARED(orig, str);
+    if (klass == 0)
+        FL_UNSET_RAW(str, STR_BORROWED);
+    return str;
+}
+
+static VALUE
 str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 {
     VALUE str;
@@ -1444,7 +1463,7 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
      * rb_str_scan requires that the orig ptr does not get modified.
      * rb_reg_search0 (re.c:1613) calls this function.
      */
-#if !USE_RVARGC
+/*#if !USE_RVARGC*/
         else if (STR_EMBEDDABLE_P(RSTRING_LEN(orig), TERM_LEN(orig))) {
             str = str_alloc_embed(klass, RSTRING_LEN(orig) + TERM_LEN(orig));
 	    STR_SET_EMBED(str);
@@ -1463,18 +1482,9 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 #endif
 */
 	}
-#endif
+/*#endif*/
 	else {
-	    str = str_alloc_heap(klass);
-	    STR_SET_NOEMBED(str);
-	    RSTRING(str)->as.heap.len = RSTRING_LEN(orig);
-	    RSTRING(str)->as.heap.ptr = RSTRING_PTR(orig);
-	    RSTRING(str)->as.heap.aux.capa = RSTRING(orig)->as.heap.aux.capa;
-	    RBASIC(str)->flags |= RBASIC(orig)->flags & STR_NOFREE;
-	    RBASIC(orig)->flags &= ~STR_NOFREE;
-	    STR_SET_SHARED(orig, str);
-	    if (klass == 0)
-		FL_UNSET_RAW(str, STR_BORROWED);
+            str = heap_str_make_shared(klass, orig);
 	}
     }
 
@@ -1546,14 +1556,14 @@ rb_str_tmp_new(long len)
 void
 rb_str_free(VALUE str)
 {
-    fprintf(stderr, "rb_str_free: %p (fstr? %d)\n", (void *)str, FL_TEST(str, RSTRING_FSTR));
+    /*fprintf(stderr, "rb_str_free: %p (fstr? %d)\n", (void *)str, FL_TEST(str, RSTRING_FSTR));*/
     if (FL_TEST(str, RSTRING_FSTR)) {
 	st_data_t fstr = (st_data_t)str;
 
         RB_VM_LOCK_ENTER();
         {
             int ok = st_delete(rb_vm_fstring_table(), &fstr, NULL);
-            if (!ok) {
+            if (!ok && 0) {
                 ok = st_lookup(rb_vm_fstring_table(), fstr, NULL);
                 fprintf(stderr, "rb_str_free: %p not deleted (ptr: %p, len %ld, hash: %ld, still exists? %d)\n", (void *)str, RSTRING_PTR(str), RSTRING_LEN(str), rb_str_hash(str), ok);
         if (RSTRING_LEN(str) == 367)
@@ -1754,8 +1764,10 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
         }
         assert(!STR_SHARED_P(root));
         assert(RB_OBJ_FROZEN_RAW(root));
-        RSTRING(dup)->as.heap.len = RSTRING(str)->as.heap.len;
-        RSTRING(dup)->as.heap.ptr = RSTRING(str)->as.heap.ptr;
+        /*RSTRING(dup)->as.heap.len = RSTRING(str)->as.heap.len;*/
+        /*RSTRING(dup)->as.heap.ptr = RSTRING(str)->as.heap.ptr;*/
+        RSTRING(dup)->as.heap.len = RSTRING_LEN(str);
+        RSTRING(dup)->as.heap.ptr = RSTRING_PTR(str);
         RB_OBJ_WRITE(dup, &RSTRING(dup)->as.heap.aux.shared, root);
         flags |= RSTRING_NOEMBED | STR_SHARED;
     }
@@ -5009,7 +5021,8 @@ rb_str_drop_bytes(VALUE str, long len)
 	if (fl == STR_NOEMBED) xfree(oldptr);
     }
     else {
-	if (!STR_SHARED_P(str)) rb_str_new_frozen(str);
+	/*if (!STR_SHARED_P(str)) rb_str_new_frozen(str);*/
+        if (!STR_SHARED_P(str)) heap_str_make_shared(rb_obj_class(str), str);
 	ptr = RSTRING(str)->as.heap.ptr += len;
 	RSTRING(str)->as.heap.len = nlen;
     }
