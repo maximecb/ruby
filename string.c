@@ -1742,7 +1742,8 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
 	;
     VALUE flags = FL_TEST_RAW(str, flag_mask);
     int encidx = 0;
-    if (flags & STR_NOEMBED) {
+    // TODO: dont use negative if
+    if (!STR_EMBED_P(str)) {
         VALUE root = str;
         if (FL_TEST_RAW(str, STR_SHARED)) {
             root = RSTRING(str)->as.heap.aux.shared;
@@ -1763,7 +1764,7 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
         RSTRING(dup)->as.embed.len = RSTRING(str)->as.embed.len;
         MEMCPY(RSTRING(dup)->as.embed.ary, RSTRING(str)->as.embed.ary,
                char, RSTRING(str)->as.embed.len);
-        flag_mask &= ~RSTRING_NOEMBED;
+        flags &= ~RSTRING_NOEMBED;
     }
 
     if ((flags & ENCODING_MASK) == (ENCODING_INLINE_MAX<<ENCODING_SHIFT)) {
