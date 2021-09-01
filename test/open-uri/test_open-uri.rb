@@ -94,10 +94,7 @@ class TestOpenURI < Test::Unit::TestCase
       srv.mount_proc("/foo200big", lambda { |req, res| res.body = content } )
       URI.open("#{url}/foo200big") {|f|
         assert_equal("200", f.status[0])
-        p content[0...200].chars
-        puts f
-        p f.read[0...200].chars
-        #assert_equal(content, f.read)
+        assert_equal(content, f.read)
       }
     }
   end

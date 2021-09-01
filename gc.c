@@ -13593,7 +13593,8 @@ Init_GC(void)
     rb_hash_aset(gc_constants, ID2SYM(rb_intern("HEAP_PAGE_BITMAP_SIZE")), SIZET2NUM(HEAP_PAGE_BITMAP_SIZE));
     rb_hash_aset(gc_constants, ID2SYM(rb_intern("HEAP_PAGE_BITMAP_PLANES")), SIZET2NUM(HEAP_PAGE_BITMAP_PLANES));
     rb_hash_aset(gc_constants, ID2SYM(rb_intern("HEAP_PAGE_SIZE")), SIZET2NUM(HEAP_PAGE_SIZE));
-    rb_hash_aset(gc_constants, ID2SYM(rb_intern("RVARGC_SIZE_POOL_COUNT")), LONG2FIX(SIZE_POOL_COUNT));
+    rb_hash_aset(gc_constants, ID2SYM(rb_intern("SIZE_POOL_COUNT")), LONG2FIX(SIZE_POOL_COUNT));
+    rb_hash_aset(gc_constants, ID2SYM(rb_intern("RVARGC_MAX_ALLOCATE_SIZE")), LONG2FIX(rb_gc_rvargc_pool_slot_size(SIZE_POOL_COUNT - 1)));
     OBJ_FREEZE(gc_constants);
     /* internal constants */
     rb_define_const(rb_mGC, "INTERNAL_CONSTANTS", gc_constants);
