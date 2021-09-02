@@ -41,9 +41,15 @@ class Test_StringCapacity < Test::Unit::TestCase
   end
 
   def test_literal_capacity
-    skip if GC.using_rvargc?
-
-    s = "I am testing string literal capacity"
+    s =
+      if GC.using_rvargc?
+        s = eval(%{
+          # frozen_string_literal: true
+          "#{"a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]}"
+        })
+      else
+        "I am testing string literal capacity"
+      end
     assert_equal(s.length, capa(s))
   end
 
@@ -56,7 +62,12 @@ class Test_StringCapacity < Test::Unit::TestCase
 
   def test_capacity_fstring
     s = String.new("I am testing", capacity: 1000)
-    s << "fstring capacity"
+    s <<
+      if GC.using_rvargc?
+        "a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
+      else
+        "fstring capacity"
+      end
     s = -s
     assert_equal(s.length, capa(s))
   end
