@@ -1425,14 +1425,18 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 {
     VALUE str;
 
-    if (STR_EMBED_P(orig)) {
-	str = str_new(klass, RSTRING_PTR(orig), RSTRING_LEN(orig));
+    long len = RSTRING_LEN(orig);
+
+    if (STR_EMBED_P(orig) || STR_EMBEDDABLE_P(len, 1)) {
+	str = str_new(klass, RSTRING_PTR(orig), len);
         assert(STR_EMBED_P(str));
     }
     else {
 	if (FL_TEST_RAW(orig, STR_SHARED)) {
 	    VALUE shared = RSTRING(orig)->as.heap.aux.shared;
 	    long ofs = RSTRING(orig)->as.heap.ptr - RSTRING_PTR(shared);
+            assert(ofs >= 0);
+            assert(ofs <= RSTRING(shared)->as.heap.len);
 	    long rest = RSTRING_LEN(shared) - ofs - RSTRING(orig)->as.heap.len;
 #if !USE_RVARGC
 	    assert(!STR_EMBED_P(shared));
@@ -1443,6 +1447,7 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 		(klass != RBASIC(shared)->klass) ||
 		ENCODING_GET(shared) != ENCODING_GET(orig)) {
 		str = str_new_shared(klass, shared);
+                assert(!STR_EMBED_P(str));
 		RSTRING(str)->as.heap.ptr += ofs;
 		RSTRING(str)->as.heap.len -= ofs + rest;
 	    }
