@@ -10042,7 +10042,19 @@ gc_update_object_references(rb_objspace_t *objspace, VALUE obj)
 
       case T_STRING:
         if (STR_SHARED_P(obj)) {
+#if USE_RVARGC
+            VALUE orig_shared = any->as.string.as.heap.aux.shared;
+#endif
             UPDATE_IF_MOVED(objspace, any->as.string.as.heap.aux.shared);
+#if USE_RVARGC
+            VALUE shared = any->as.string.as.heap.aux.shared;
+            if (STR_EMBED_P(shared)) {
+                size_t offset = (size_t)any->as.string.as.heap.ptr - (size_t)RSTRING(orig_shared)->as.embed.ary;
+                GC_ASSERT(any->as.string.as.heap.ptr >= RSTRING(orig_shared)->as.embed.ary);
+                GC_ASSERT(offset <= (size_t)RSTRING(shared)->as.embed.len);
+                any->as.string.as.heap.ptr = RSTRING(shared)->as.embed.ary + offset;
+            }
+#endif
         }
         break;
 

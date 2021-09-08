@@ -185,13 +185,13 @@ def string2cstr(rstring):
         rstring = rstring.Dereference()
     flags = rstring.GetValueForExpressionPath(".basic->flags").unsigned
     if flags & RUBY_T_MASK != RUBY_T_STRING:
-        raise TypeError("not a string")
+        raise TypeError("is not a string")
     if flags & RUBY_FL_USER1:
         cptr = int(rstring.GetValueForExpressionPath(".as.heap.ptr").value, 0)
         clen = int(rstring.GetValueForExpressionPath(".as.heap.len").value, 0)
     else:
         cptr = int(rstring.GetValueForExpressionPath(".as.embed.ary").location, 0)
-        clen = int(rstring.GetValueForExpressionPath(".as.embed.len").location, 0)
+        clen = int(rstring.GetValueForExpressionPath(".as.embed.len").value, 0)
         # clen = (flags & RSTRING_EMBED_LEN_MASK) >> RSTRING_EMBED_LEN_SHIFT
     return cptr, clen
 
@@ -310,7 +310,6 @@ def lldb_inspect(debugger, target, result, val):
             else:
                 len = val.GetValueForExpressionPath("->as.heap.len").GetValueAsSigned()
                 ptr = val.GetValueForExpressionPath("->as.heap.ptr")
-                #print(val.GetValueForExpressionPath("->as.heap"), file=result)
             result.write("T_ARRAY: %slen=%d" % (flaginfo, len))
             if flags & RUBY_FL_USER1:
                 result.write(" (embed)")

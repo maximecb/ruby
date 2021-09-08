@@ -63,7 +63,7 @@ bug_str_unterminated_substring(VALUE str, VALUE vbeg, VALUE vlen)
     str = rb_str_new_shared(str);
     if (STR_EMBED_P(str)) {
 #if USE_RVARGC
-        // TODO
+        RSTRING(str)->as.embed.len = (short)len;
 #else
 	RSTRING(str)->basic.flags &= ~RSTRING_EMBED_LEN_MASK;
 	RSTRING(str)->basic.flags |= len << RSTRING_EMBED_LEN_SHIFT;
@@ -117,7 +117,7 @@ bug_str_s_cstr_noembed(VALUE self, VALUE str)
     FL_SET((str2), STR_NOEMBED);
     memcpy(buf, RSTRING_PTR(str), capacity);
 #if USE_RVARGC
-    // TODO
+    RBASIC(str2)->flags &= ~(STR_SHARED | FL_USER5 | FL_USER6);
 #else
     RBASIC(str2)->flags &= ~RSTRING_EMBED_LEN_MASK;
 #endif

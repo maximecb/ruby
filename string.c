@@ -106,14 +106,14 @@ VALUE rb_cSymbol;
 
 #define STR_SET_NOEMBED(str) do {\
     FL_SET((str), STR_NOEMBED);\
-    if (!USE_RVARGC) {\
+    if (USE_RVARGC) {\
+        FL_UNSET((str), STR_SHARED | STR_SHARED_ROOT | STR_BORROWED);\
+    }\
+    else {\
         STR_SET_EMBED_LEN((str), 0);\
     }\
 } while (0)
-/*#define STR_SET_EMBED(str) FL_UNSET((str), (STR_NOEMBED|STR_NOFREE))*/
-#define STR_SET_EMBED(str) do {\
-    FL_UNSET((str), (STR_NOEMBED|STR_NOFREE)); \
-} while (0)
+#define STR_SET_EMBED(str) FL_UNSET((str), (STR_NOEMBED|STR_NOFREE))
 #if USE_RVARGC
 # define STR_SET_EMBED_LEN(str, n) do { \
     assert(str_embed_capa(str) > (n));\
@@ -182,6 +182,8 @@ VALUE rb_cSymbol;
 
 #define STR_SET_SHARED(str, shared_str) do { \
     if (!FL_TEST(str, STR_FAKESTR)) { \
+        assert(RSTRING_PTR(shared_str) <= RSTRING_PTR(str));\
+        assert(RSTRING_PTR(str) <= RSTRING_PTR(shared_str) + RSTRING_LEN(shared_str));\
 	RB_OBJ_WRITE((str), &RSTRING(str)->as.heap.aux.shared, (shared_str)); \
 	FL_SET((str), STR_SHARED); \
         FL_SET((shared_str), STR_SHARED_ROOT); \
@@ -1374,6 +1376,7 @@ rb_str_tmp_frozen_release(VALUE orig, VALUE tmp)
 
     if (STR_EMBED_P(tmp)) {
 	assert(OBJ_FROZEN_RAW(tmp));
+        assert(STR_SHARED_P(orig) ? RSTRING(orig)->as.heap.aux.shared != tmp : TRUE);
 /*#if !USE_RVARGC*/
         /* Cannot force recycle in RVARGC because tmp may be shared root of orig. */
 	rb_gc_force_recycle(tmp);
@@ -1406,6 +1409,7 @@ heap_str_make_shared(VALUE klass, VALUE orig)
 {
     assert(!STR_EMBED_P(orig));
     assert(!STR_SHARED_P(orig));
+    assert(!OBJ_FROZEN(orig));
 
     VALUE str = str_alloc_heap(klass);
     STR_SET_NOEMBED(str);
@@ -1435,9 +1439,10 @@ str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding)
 	if (FL_TEST_RAW(orig, STR_SHARED)) {
 	    VALUE shared = RSTRING(orig)->as.heap.aux.shared;
 	    long ofs = RSTRING(orig)->as.heap.ptr - RSTRING_PTR(shared);
-            assert(ofs >= 0);
-            assert(ofs <= RSTRING(shared)->as.heap.len);
 	    long rest = RSTRING_LEN(shared) - ofs - RSTRING(orig)->as.heap.len;
+            assert(ofs >= 0);
+            assert(rest >= 0);
+            assert(ofs + rest <= RSTRING_LEN(shared));
 #if !USE_RVARGC
 	    assert(!STR_EMBED_P(shared));
 #endif
@@ -1611,15 +1616,15 @@ str_shared_replace(VALUE str, VALUE str2)
 #if USE_RVARGC
         if (STR_EMBED_P(str2)) {
             assert(!FL_TEST(str2, STR_SHARED));
-            long len = RSTRING_LEN(str2);
+            long len = RSTRING(str2)->as.embed.len;
+            assert(len + termlen <= str_embed_capa(str2));
 
             char *new_ptr = ALLOC_N(char, len + termlen);
-            memcpy(new_ptr, RSTRING(str2)->as.embed.ary, RSTRING(str2)->as.embed.len);
+            memcpy(new_ptr, RSTRING(str2)->as.embed.ary, len + termlen);
             RSTRING(str2)->as.heap.ptr = new_ptr;
             RSTRING(str2)->as.heap.len = len;
             RSTRING(str2)->as.heap.aux.capa = len;
             STR_SET_NOEMBED(str2);
-            TERM_FILL(new_ptr + len, termlen);
         }
 #endif
 
@@ -1762,27 +1767,8 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
 }
 
 static inline VALUE
-str_get_frozen_root(VALUE klass, VALUE str)
-{
-    VALUE flags = RBASIC(str)->flags;
-
-    if (flags & STR_NOEMBED) {
-        if (STR_SHARED_P(str)) {
-            str = RSTRING(str)->as.heap.aux.shared;
-        }
-        else if (UNLIKELY(!(flags & FL_FREEZE))) {
-            str = str_new_frozen(klass, str);
-        }
-    }
-
-    return str;
-}
-
-static inline VALUE
 ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
 {
-    /*str = str_get_frozen_root(klass, str);*/
-
     VALUE dup;
     if (FL_TEST(str, STR_NOEMBED)) {
         dup = ec_str_alloc_heap(ec, klass);
@@ -1797,8 +1783,6 @@ ec_str_duplicate(struct rb_execution_context_struct *ec, VALUE klass, VALUE str)
 static inline VALUE
 str_duplicate(VALUE klass, VALUE str)
 {
-    /*str = str_get_frozen_root(klass, str);*/
-
     VALUE dup;
     if (FL_TEST(str, STR_NOEMBED)) {
         dup = str_alloc_heap(klass);
@@ -1916,7 +1900,8 @@ rb_str_init(int argc, VALUE *argv, VALUE str)
 	    if (STR_EMBED_P(str)) { /* make noembed always */
                 char *new_ptr = ALLOC_N(char, (size_t)capa + termlen);
 #if USE_RVARGC
-                memcpy(new_ptr, RSTRING(str)->as.embed.ary, RSTRING(str)->as.embed.len);
+                assert(RSTRING(str)->as.embed.len + 1 <= str_embed_capa(str));
+                memcpy(new_ptr, RSTRING(str)->as.embed.ary, RSTRING(str)->as.embed.len + 1);
 #else
                 memcpy(new_ptr, RSTRING(str)->as.embed.ary, RSTRING_EMBED_LEN_MAX + 1);
 #endif
@@ -2296,7 +2281,7 @@ rb_str_opt_plus(VALUE str1, VALUE str2)
  */
 
 VALUE
-rb_str_times_internal(VALUE str, VALUE times)
+rb_str_times(VALUE str, VALUE times)
 {
     VALUE str2;
     long n, len;
@@ -2351,13 +2336,6 @@ rb_str_times_internal(VALUE str, VALUE times)
     rb_enc_cr_str_copy_for_substr(str2, str);
 
     return str2;
-}
-
-VALUE
-rb_str_times(VALUE str, VALUE times)
-{
-    VALUE new_str = rb_str_times_internal(str, times);
-    return new_str;
 }
 
 /*
@@ -5843,9 +5821,6 @@ rb_str_clear(VALUE str)
     str_discard(str);
     STR_SET_EMBED(str);
     STR_SET_EMBED_LEN(str, 0);
-#if USE_RVARGC
-    FL_UNSET(str, STR_SHARED);
-#endif
     RSTRING_PTR(str)[0] = 0;
     if (rb_enc_asciicompat(STR_ENC_GET(str)))
 	ENC_CODERANGE_SET(str, ENC_CODERANGE_7BIT);
