@@ -5386,6 +5386,23 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     } while (bitset);
 }
 
+/*#if RGENGC_CHECK_MODE*/
+static void
+heap_page_verify_freelist(struct heap_page *page)
+{
+    short freelist_len = 0;
+    RVALUE *ptr = page->freelist;
+    while (ptr) {
+        freelist_len++;
+        ptr = ptr->as.free.next;
+    }
+
+    if (freelist_len != page->free_slots) {
+        rb_bug("inconsistent freelist length: expected %d but was %d", page->free_slots, freelist_len);
+    }
+}
+/*#endif*/
+
 static inline void
 gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, struct gc_sweep_context *ctx)
 {
@@ -5473,15 +5490,7 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     }
 
 //#if RGENGC_CHECK_MODE
-    short freelist_len = 0;
-    RVALUE *ptr = sweep_page->freelist;
-    while (ptr) {
-        freelist_len++;
-        ptr = ptr->as.free.next;
-    }
-    if (freelist_len != sweep_page->free_slots) {
-        rb_bug("inconsistent freelist length: expected %d but was %d", sweep_page->free_slots, freelist_len);
-    }
+    heap_page_verify_freelist(sweep_page);
 //#endif
 
     gc_report(2, objspace, "page_sweep: end.\n");
@@ -5895,6 +5904,10 @@ invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
 
     /*page->free_slots += (ctx.empty_slots + ctx.freed_slots);*/
     objspace->profile.total_freed_objects += ctx.freed_slots;
+
+//#if RGENGC_CHECK_MODE
+    heap_page_verify_freelist(page);
+//#endif
 }
 
 static void
