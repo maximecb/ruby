@@ -5893,7 +5893,7 @@ invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
         p += BITS_BITLENGTH;
     }
 
-    page->free_slots += (ctx.empty_slots + ctx.freed_slots);
+    /*page->free_slots += (ctx.empty_slots + ctx.freed_slots);*/
     objspace->profile.total_freed_objects += ctx.freed_slots;
 }
 
