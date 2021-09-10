@@ -5907,7 +5907,7 @@ invalidate_moved_page(rb_objspace_t *objspace, struct heap_page *page)
     objspace->profile.total_freed_objects += ctx.freed_slots;
 
 //#if RGENGC_CHECK_MODE
-    heap_page_verify_freelist(page);
+    /*heap_page_verify_freelist(page);*/
 //#endif
 }
 
