@@ -5844,7 +5844,9 @@ invalidate_moved_plane(rb_objspace_t *objspace, struct heap_page *page, uintptr_
                     gc_move(objspace, object, forwarding_object, page->size_pool->slot_size);
                     /* forwarding_object is now our actual object, and "object"
                      * is the free slot for the original page */
-                    heap_page_add_freeobj(objspace, GET_HEAP_PAGE(object), object);
+                    struct heap_page *orig_page = GET_HEAP_PAGE(object);
+                    orig_page->free_slots++;
+                    heap_page_add_freeobj(objspace, orig_page, object);
 
                     GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(forwarding_object), forwarding_object));
                     GC_ASSERT(BUILTIN_TYPE(forwarding_object) != T_MOVED);
