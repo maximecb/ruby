@@ -4719,8 +4719,17 @@ vm_inlined_ic_hit_p(VALUE flags, VALUE value, const rb_cref_t *ic_cref, rb_seria
 
         VM_ASSERT((flags & IMEMO_CONST_CACHE_SHAREABLE) ? rb_ractor_shareable_p(value) : true);
 
-        return (ic_cref == NULL || // no need to check CREF
-                ic_cref == vm_get_cref(reg_ep));
+        if (ic_cref == NULL) {
+            return true;
+        }
+        else if (ic_cref == vm_get_cref(reg_ep)) {
+            return true;
+        }
+        else {
+            fprintf(stderr, "!!!! cref constant ic bust\n");
+            rb_backtrace();
+            return false;
+        }
     }
     return false;
 }
