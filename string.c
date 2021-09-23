@@ -196,6 +196,86 @@ VALUE rb_cSymbol;
 #define STR_EMBEDDABLE_P(len, termlen) \
     ((len) <= RSTRING_EMBED_LEN_MAX + 1 - (termlen))
 
+RBIMPL_ATTR_PURE_UNLESS_DEBUG()
+RBIMPL_ATTR_ARTIFICIAL()
+/**
+ * Queries the length of the string.
+ *
+ * @param[in]  str  String in question.
+ * @return     Its length, in bytes.
+ * @pre        `str`  must  be an  instance  of  ::RString,  and must  has  its
+ *             ::RSTRING_NOEMBED flag off.
+ *
+ * @internal
+ *
+ * This was a macro  before.  It was inevitable to be  public, since macros are
+ * global constructs.   But should it be  forever?  Now that it  is a function,
+ * @shyouhei thinks  it could  just be  eliminated, hidden  into implementation
+ * details.
+ */
+inline long
+RSTRING_EMBED_LEN(VALUE str)
+{
+    RBIMPL_ASSERT_TYPE(str, RUBY_T_STRING);
+    RBIMPL_ASSERT_OR_ASSUME(! RB_FL_ANY_RAW(str, RSTRING_NOEMBED));
+
+    VALUE f = RBASIC(str)->flags;
+    f &= RSTRING_EMBED_LEN_MASK;
+    f >>= RSTRING_EMBED_LEN_SHIFT;
+    return RBIMPL_CAST((long)f);
+}
+
+RBIMPL_WARNING_PUSH()
+#if RBIMPL_COMPILER_IS(Intel)
+RBIMPL_WARNING_IGNORED(413)
+#endif
+
+RBIMPL_ATTR_PURE_UNLESS_DEBUG()
+RBIMPL_ATTR_ARTIFICIAL()
+/**
+ * @private
+ *
+ * "Expands" an embedded  string into an ordinal one.  This  is a function that
+ * returns aggregated type.   The returned struct always  has its `as.heap.len`
+ * an `as.heap.ptr` fields set appropriately.
+ *
+ * This is an implementation detail that 3rd parties should never bother.
+ */
+inline struct RString
+rbimpl_rstring_getmem(VALUE str)
+{
+    RBIMPL_ASSERT_TYPE(str, RUBY_T_STRING);
+
+    if (RB_FL_ANY_RAW(str, RSTRING_NOEMBED)) {
+        return *RSTRING(str);
+    }
+    else {
+        /* Expecting compilers to optimize this on-stack struct away. */
+        struct RString retval;
+        retval.as.heap.len = RSTRING_EMBED_LEN(str);
+        retval.as.heap.ptr = RSTRING(str)->as.ary;
+        return retval;
+    }
+}
+
+RBIMPL_WARNING_POP()
+
+RBIMPL_ATTR_PURE_UNLESS_DEBUG()
+RBIMPL_ATTR_ARTIFICIAL()
+/**
+ * Queries the length of the string.
+ *
+ * @param[in]  str  String in question.
+ * @return     Its length, in bytes.
+ * @pre        `str` must be an instance of ::RString.
+ */
+inline long
+RSTRING_LEN(VALUE str)
+{
+    return rbimpl_rstring_getmem(str).as.heap.len;
+}
+
+
 static VALUE str_replace_shared_without_enc(VALUE str2, VALUE str);
 static VALUE str_new_frozen(VALUE klass, VALUE orig);
 static VALUE str_new_frozen_buffer(VALUE klass, VALUE orig, int copy_encoding);
