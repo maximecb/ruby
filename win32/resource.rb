@@ -5,6 +5,8 @@ require './rbconfig'
 CONFIG = RbConfig::MAKEFILE_CONFIG
 
 version = RUBY_VERSION.split(/\./)
+# Reject prerelease tags
+version[-1] = version[-1].split("-")[0]
 patch = CONFIG['PATCHLEVEL']
 nversion = (version + [patch.to_i < 0 ? '0' : patch]).join(',')
 sversion = version.join('.') + (patch.to_i < 0 ? 'dev' : "p#{patch}")
