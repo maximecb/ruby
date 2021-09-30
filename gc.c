@@ -2246,11 +2246,9 @@ newobj_init(VALUE klass, VALUE flags, int wb_protected, rb_objspace_t *objspace,
     rb_ractor_setup_belonging(obj);
 #endif
 
-#if RGENGC_CHECK_MODE || RGENGC_DEBUG >= 5
-    p->as.values.v1 = p->as.values.v2 = p->as.values.v3 = 0;
-#endif
-
 #if RGENGC_CHECK_MODE
+    p->as.values.v1 = p->as.values.v2 = p->as.values.v3 = 0;
+
     RB_VM_LOCK_ENTER_NO_BARRIER();
     {
         check_rvalue_consistency(obj);
@@ -2349,7 +2347,7 @@ size_pool_slot_size(char pool_id)
 }
 
 bool
-rb_gc_rvargc_allocatable_p(size_t size)
+rb_gc_size_allocatable_p(size_t size)
 {
     return size <= size_pool_slot_size(SIZE_POOL_COUNT - 1);
 }
@@ -2582,7 +2580,6 @@ static inline VALUE
 newobj_of(VALUE klass, VALUE flags, VALUE v1, VALUE v2, VALUE v3, int wb_protected, size_t alloc_size)
 {
     VALUE obj = newobj_of0(klass, flags, wb_protected, GET_RACTOR(), alloc_size);
-
     return newobj_fill(obj, v1, v2, v3);
 }
 
@@ -4695,9 +4692,7 @@ obj_memsize_of(VALUE obj, int use_all_types)
 	       BUILTIN_TYPE(obj), (void*)obj);
     }
 
-    size += GET_HEAP_PAGE(obj)->slot_size;
-
-    return size;
+    return size + GET_HEAP_PAGE(obj)->slot_size;
 }
 
 size_t

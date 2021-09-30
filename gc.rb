@@ -257,6 +257,7 @@ module GC
     Primitive.gc_verify_compaction_references(double_heap, toward == :empty)
   end
 
+  # :nodoc:
   # call-seq:
   #     GC.using_rvargc? -> true or false
   #

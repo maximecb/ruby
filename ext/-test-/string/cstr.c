@@ -68,7 +68,7 @@ bug_str_unterminated_substring(VALUE str, VALUE vbeg, VALUE vlen)
 	RSTRING(str)->basic.flags &= ~RSTRING_EMBED_LEN_MASK;
 	RSTRING(str)->basic.flags |= len << RSTRING_EMBED_LEN_SHIFT;
 #endif
-	memmove(RSTRING(str)->as.embed.ary, RSTRING(str)->as.embed.ary + beg, len);
+        memmove(RSTRING(str)->as.embed.ary, RSTRING(str)->as.embed.ary + beg, len);
     }
     else {
 	RSTRING(str)->as.heap.ptr += beg;
