@@ -29,13 +29,7 @@ class TestObjSpace < Test::Unit::TestCase
   end
 
   def test_memsize_of_root_shared_string
-    a =
-      if GC.using_rvargc?
-        # Make sure string is not embedded
-        "a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
-      else
-        "hello" * 5
-      end
+    a = "a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
     b = a.dup
     c = nil
     ObjectSpace.each_object(String) {|x| break c = x if x == a and x.frozen?}

@@ -16,11 +16,7 @@ class Test_StringCapacity < Test::Unit::TestCase
 
   def test_capacity_normal
     assert_equal max_embed_len + 1, capa('1' * (max_embed_len + 1))
-    if GC.using_rvargc?
-      assert_equal 1000, capa('1' * 1000)
-    else
-      assert_equal 128, capa('1' * 128)
-    end
+    assert_equal max_embed_len + 100, capa('1' * (max_embed_len + 100))
   end
 
   def test_s_new_capacity
@@ -41,15 +37,10 @@ class Test_StringCapacity < Test::Unit::TestCase
   end
 
   def test_literal_capacity
-    s =
-      if GC.using_rvargc?
-        s = eval(%{
-          # frozen_string_literal: true
-          "#{"a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]}"
-        })
-      else
-        "I am testing string literal capacity"
-      end
+    s = eval(%{
+      # frozen_string_literal: true
+      "#{"a" * (max_embed_len + 1)}"
+    })
     assert_equal(s.length, capa(s))
   end
 
@@ -61,13 +52,8 @@ class Test_StringCapacity < Test::Unit::TestCase
   end
 
   def test_capacity_fstring
-    s = String.new("I am testing", capacity: 1000)
-    s <<
-      if GC.using_rvargc?
-        "a" * GC::INTERNAL_CONSTANTS[:RVARGC_MAX_ALLOCATE_SIZE]
-      else
-        "fstring capacity"
-      end
+    s = String.new("a" * max_embed_len, capacity: 1000)
+    s << "fstring capacity"
     s = -s
     assert_equal(s.length, capa(s))
   end
