@@ -1724,7 +1724,6 @@ str_duplicate_setup(VALUE klass, VALUE str, VALUE dup)
         MEMCPY(RSTRING(dup)->as.embed.ary, RSTRING(str)->as.embed.ary,
                char, RSTRING_EMBED_LEN(str));
         flags &= ~RSTRING_NOEMBED;
-
     }
     else {
         VALUE root = str;
@@ -2405,8 +2404,8 @@ str_make_independent_expand(VALUE str, long len, long expand, const int termlen)
     if (!STR_EMBED_P(str) && str_embed_capa(str) >= capa + termlen) {
 	ptr = RSTRING(str)->as.heap.ptr;
 	STR_SET_EMBED(str);
-	memcpy(RSTRING(str)->as.embed.ary, ptr, len);
-	TERM_FILL(RSTRING(str)->as.embed.ary + len, termlen);
+        memcpy(RSTRING(str)->as.embed.ary, ptr, len);
+        TERM_FILL(RSTRING(str)->as.embed.ary + len, termlen);
 	STR_SET_EMBED_LEN(str, len);
 	return;
     }

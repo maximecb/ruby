@@ -37,11 +37,9 @@ struct rb_objspace; /* in vm_core.h */
                    rb_wb_unprotected_newobj_of((c), (f), s))
 
 /* optimized version of NEWOBJ() */
-#define RB_NEWOBJ_OF(var, T, c, f) \
-  RB_RVARGC_NEWOBJ_OF(var, T, c, f, RVALUE_SIZE)
+#define RB_NEWOBJ_OF(var, T, c, f) RB_RVARGC_NEWOBJ_OF(var, T, c, f, RVALUE_SIZE)
 
-#define RB_EC_NEWOBJ_OF(ec, var, T, c, f) \
-  RB_RVARGC_EC_NEWOBJ_OF(ec, var, T, c, f, RVALUE_SIZE)
+#define RB_EC_NEWOBJ_OF(ec, var, T, c, f) RB_RVARGC_EC_NEWOBJ_OF(ec, var, T, c, f, RVALUE_SIZE)
 
 #define NEWOBJ_OF(var, T, c, f) RB_NEWOBJ_OF((var), T, (c), (f))
 #define RVARGC_NEWOBJ_OF(var, T, c, f, s) RB_RVARGC_NEWOBJ_OF((var), T, (c), (f), (s))

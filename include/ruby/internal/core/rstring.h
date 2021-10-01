@@ -286,6 +286,11 @@ struct RString {
             */
 #if USE_RVARGC
             short len;
+            /* This is a length 1 array because:
+             *   1. GCC has a bug that does not optimize C flexible array members
+             *      (https://gcc.gnu.org/bugzilla/show_bug.cgi?id=102452)
+             *   2. Zero length arrays are not supported by all compilers
+             */
             char ary[1];
 #else
             char ary[RSTRING_EMBED_LEN_MAX + 1];

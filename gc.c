@@ -2854,7 +2854,7 @@ is_pointer_to_heap(rb_objspace_t *objspace, void *ptr)
 	mid = (lo + hi) / 2;
 	page = heap_pages_sorted[mid];
 	if (page->start <= p) {
-	    if ((uintptr_t)p < ((uintptr_t)page->start + (page->total_slots * page->slot_size))) {
+            if ((uintptr_t)p < ((uintptr_t)page->start + (page->total_slots * page->slot_size))) {
                 RB_DEBUG_COUNTER_INC(gc_isptr_maybe);
 
                 if (page->flags.in_tomb) {
