@@ -546,7 +546,7 @@ class TestRange < Test::Unit::TestCase
     assert_not_operator('A'..'Z', :===, 'ana')
     assert_operator('A'.., :===, 'ANA')
     assert_operator(..'Z', :===, 'ANA')
-    assert_operator(nil..nil, :===, 'ANA')
+    assert_not_operator(nil..nil, :===, 'ANA')
   end
 
   def test_eqq_time

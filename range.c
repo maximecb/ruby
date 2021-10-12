@@ -1946,10 +1946,13 @@ r_cover_range_p(VALUE range, VALUE beg, VALUE end, VALUE val)
 static VALUE
 r_cover_p(VALUE range, VALUE beg, VALUE end, VALUE val)
 {
-    if (NIL_P(beg) || r_less(beg, val) <= 0) {
+    int b_nil = 0, e_nil = 0;
+    if ((b_nil = NIL_P(beg)) || r_less(beg, val) <= 0) {
 	int excl = EXCL(range);
-	if (NIL_P(end) || r_less(val, end) <= -excl)
-	    return Qtrue;
+	if ((e_nil = NIL_P(end)) || r_less(val, end) <= -excl)
+            if(!(b_nil && e_nil)) {
+                return Qtrue;
+            }
     }
     return Qfalse;
 }
