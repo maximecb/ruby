@@ -82,6 +82,39 @@ class TestISeq < Test::Unit::TestCase
     end;
   end if defined?(RubyVM::InstructionSequence.load)
 
+  def test_cdhash_after_roundtrip
+    # CDHASH was not built properly when loading from binary and
+    # was causing opt_case_dispatch to clobber its stack canary
+    # for its "leaf" instruction attribute.
+    iseq = compile(<<~EOF)
+      case Class.new(String).new("foo")
+      when "foo"
+        42
+      end
+    EOF
+    assert_equal(42, ISeq.load_from_binary(iseq.to_binary).eval)
+  end
+
+  def test_super_with_block
+    iseq = compile(<<~EOF)
+      def touch(*) # :nodoc:
+        foo { super }
+      end
+      42
+    EOF
+    assert_equal(42, ISeq.load_from_binary(iseq.to_binary).eval)
+  end
+
+  def test_super_with_block_and_kwrest
+    iseq = compile(<<~EOF)
+      def touch(**) # :nodoc:
+        foo { super }
+      end
+      42
+    EOF
+    assert_equal(42, ISeq.load_from_binary(iseq.to_binary).eval)
+  end
+
   def test_lambda_with_ractor_roundtrip
     iseq = compile(<<~EOF)
       x = 42
@@ -313,6 +346,14 @@ class TestISeq < Test::Unit::TestCase
       m = ISeq.compile("class TestISeq::Inspect; def #{name}; end; instance_method(:#{name}); end").eval
       assert_match(/:#{name}@/, ISeq.of(m).inspect, name)
     end
+  end
+
+  def anon_star(*); end
+
+  def test_anon_param_in_disasm
+    iseq = RubyVM::InstructionSequence.of(method(:anon_star))
+    param_names = iseq.to_a[iseq.to_a.index(:method) + 1]
+    assert_equal [2], param_names
   end
 
   def strip_lineno(source)
