@@ -125,6 +125,23 @@ class TestISeq < Test::Unit::TestCase
     assert_equal(42, ISeq.load_from_binary(iseq.to_binary).eval)
   end
 
+  def test_ractor_unshareable_outer_variable
+    name = "\u{2603 26a1}"
+    y = eval("proc {#{name} = nil; proc {|x| #{name} = x}}").call
+    assert_raise_with_message(ArgumentError, /\(#{name}\)/) do
+      Ractor.make_shareable(y)
+    end
+    y = eval("proc {#{name} = []; proc {|x| #{name}}}").call
+    assert_raise_with_message(Ractor::IsolationError, /`#{name}'/) do
+      Ractor.make_shareable(y)
+    end
+    obj = Object.new
+    def obj.foo(*) ->{super} end
+    assert_raise_with_message(Ractor::IsolationError, /hidden variable/) do
+      Ractor.make_shareable(obj.foo)
+    end
+  end
+
   def test_disasm_encoding
     src = "\u{3042} = 1; \u{3042}; \u{3043}"
     asm = compile(src).disasm

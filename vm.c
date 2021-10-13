@@ -1012,9 +1012,14 @@ env_copy(const VALUE *src_ep, VALUE read_only_variables)
                 if (id ==  src_env->iseq->body->local_table[j]) {
                     VALUE v = src_env->env[j];
                     if (!rb_ractor_shareable_p(v)) {
-                        rb_raise(rb_eRactorIsolationError,
-                                 "can not make shareable Proc because it can refer unshareable object %"
-                                 PRIsVALUE" from variable `%s'", rb_inspect(v), rb_id2name(id));
+                        VALUE name = rb_id2str(id);
+                        VALUE msg = rb_sprintf("can not make shareable Proc because it can refer"
+                                               " unshareable object %+" PRIsVALUE " from ", v);
+                        if (name)
+                            rb_str_catf(msg, "variable `%" PRIsVALUE "'", name);
+                        else
+                            rb_str_cat_cstr(msg, "a hidden variable");
+                        rb_exc_raise(rb_exc_new_str(rb_eRactorIsolationError, msg));
                     }
                     env_body[j] = v;
                     rb_ary_delete_at(read_only_variables, i);
