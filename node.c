@@ -853,6 +853,15 @@ dump_node(VALUE buf, VALUE indent, int comment, const NODE * node)
 	F_NODE(nd_undef, "old name");
 	return;
 
+	case NODE_ENUM:
+		ANN("enum definition");
+		ANN("format: enum [nd_cpath]; [nd_body]; end");
+		ANN("example: enum MyEnum; ..; end");
+		F_NODE(nd_cpath, "enum path");
+		LAST_NODE;
+		F_NODE(nd_body, "enum definition");
+		return;		
+
       case NODE_CLASS:
 	ANN("class definition");
 	ANN("format: class [nd_cpath] < [nd_super]; [nd_body]; end");

@@ -4352,7 +4352,7 @@ static VALUE
 vm_declare_class(ID id, rb_num_t flags, VALUE cbase, VALUE super)
 {
     /* new class declaration */
-    VALUE s = VM_DEFINECLASS_HAS_SUPERCLASS_P(flags) ? super : rb_cObject;
+    VALUE s = VM_DEFINECLASS_HAS_SUPERCLASS_P(flags) ? super : (flags & VM_DEFINECLASS_TYPE_ENUM) ? rb_cEnum : rb_cObject;
     VALUE c = declare_under(id, cbase, rb_define_class_id(id, s));
     rb_define_alloc_func(c, rb_get_alloc_func(c));
     rb_class_inherited(s, c);
@@ -4433,6 +4433,7 @@ vm_find_or_create_class_by_id(ID id,
 
     switch (type) {
       case VM_DEFINECLASS_TYPE_CLASS:
+    case VM_DEFINECLASS_TYPE_ENUM:
 	/* classdef returns class scope value */
 	return vm_define_class(id, flags, cbase, super);
 

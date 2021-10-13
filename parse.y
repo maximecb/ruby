@@ -135,6 +135,7 @@ enum lex_state_bits {
     EXPR_LABEL_bit,		/* flag bit, label is allowed. */
     EXPR_LABELED_bit,		/* flag bit, just after a label. */
     EXPR_FITEM_bit,		/* symbol literal as FNAME. */
+	EXPR_SENUM_bit,
     EXPR_MAX_STATE
 };
 /* examine combinations */
@@ -153,8 +154,9 @@ enum lex_state_e {
     DEF_EXPR(LABEL),
     DEF_EXPR(LABELED),
     DEF_EXPR(FITEM),
+	DEF_EXPR(SENUM),
     EXPR_VALUE = EXPR_BEG,
-    EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS),
+    EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS | EXPR_SENUM),
     EXPR_ARG_ANY  =  (EXPR_ARG | EXPR_CMDARG),
     EXPR_END_ANY  =  (EXPR_END | EXPR_ENDARG | EXPR_ENDFN),
     EXPR_NONE = 0
@@ -1136,6 +1138,7 @@ static int looking_at_eol_p(struct parser_params *p);
 
 %token <id>
         keyword_class        "`class'"
+		keyword_senum        "`senum'"
         keyword_module       "`module'"
         keyword_def          "`def'"
         keyword_undef        "`undef'"
@@ -2353,7 +2356,7 @@ reswords	: keyword__LINE__ | keyword__FILE__ | keyword__ENCODING__
 		| keyword_rescue | keyword_retry | keyword_return | keyword_self
 		| keyword_super | keyword_then | keyword_true | keyword_undef
 		| keyword_when | keyword_yield | keyword_if | keyword_unless
-		| keyword_while | keyword_until
+		| keyword_while | keyword_until | keyword_senum
 		;
 
 arg		: lhs '=' lex_ctxt arg_rhs
@@ -3210,6 +3213,33 @@ primary		: literal
 			p->ctxt.in_class = $<ctxt>1.in_class;
 			p->ctxt.shareable_constant_value = $<ctxt>1.shareable_constant_value;
 		    }
+		| k_senum cpath
+		    {
+			if (p->ctxt.in_def) {
+			    YYLTYPE loc = code_loc_gen(&@1, &@2);
+			    yyerror1(&loc, "enum definition in method body");
+			}
+			p->ctxt.in_class = 1;
+			local_push(p, 0);
+		    }
+		  bodystmt
+		  k_end
+		    {
+				
+		    /*%%%*/
+			$$ = NEW_ENUM($2, $4, &@$);
+			// $$ = NEW_CLASS($2, $4, NEW_CONST(":Object", @1), &@$);
+			nd_set_line($$->nd_body, @5.end_pos.lineno);
+			set_line_body($4, @2.end_pos.lineno);
+			nd_set_line($$, @2.end_pos.lineno);
+		    /*% %*/
+		    /* ripper: class!($2, $3, $5) */
+			local_pop(p);
+				/* raise(SIGTRAP); */
+
+			p->ctxt.in_class = $<ctxt>1.in_class;
+			p->ctxt.shareable_constant_value = $<ctxt>1.shareable_constant_value;
+		    }
 		| k_class tLSHFT expr
 		    {
 			p->ctxt.in_def = 0;
@@ -3374,6 +3404,13 @@ k_for		: keyword_for
 k_class		: keyword_class
 		    {
 			token_info_push(p, "class", &@$);
+			$<ctxt>$ = p->ctxt;
+		    }
+		;
+
+k_senum		: keyword_senum
+		    {
+			token_info_push(p, "senum", &@$);
 			$<ctxt>$ = p->ctxt;
 		    }
 		;

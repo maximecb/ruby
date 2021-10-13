@@ -1042,6 +1042,7 @@ typedef enum {
     VM_DEFINECLASS_TYPE_CLASS           = 0x00,
     VM_DEFINECLASS_TYPE_SINGLETON_CLASS = 0x01,
     VM_DEFINECLASS_TYPE_MODULE          = 0x02,
+    VM_DEFINECLASS_TYPE_ENUM            = 0x03,
     /* 0x03..0x06 is reserved */
     VM_DEFINECLASS_TYPE_MASK            = 0x07
 } rb_vm_defineclass_type_t;

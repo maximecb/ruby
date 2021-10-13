@@ -9506,6 +9506,24 @@ iseq_compile_each0(rb_iseq_t *iseq, LINK_ANCHOR *const ret, const NODE *const no
 	}
 	break;
       }
+    case NODE_ENUM:
+    {
+	const rb_iseq_t *class_iseq = NEW_CHILD_ISEQ(node->nd_body,
+                                                     rb_str_freeze(rb_sprintf("<class:%" PRIsVALUE ">", rb_id2str(node->nd_cpath->nd_mid))),
+						     ISEQ_TYPE_CLASS, line);
+        const int flags = VM_DEFINECLASS_TYPE_ENUM |
+                          compile_cpath(ret, iseq, node->nd_cpath);
+
+        CHECK(COMPILE(ret, "super", node->nd_super));
+        ADD_INSN3(ret, node, defineclass, ID2SYM(node->nd_cpath->nd_mid), class_iseq, INT2FIX(flags));
+        RB_OBJ_WRITTEN(iseq, Qundef, (VALUE)class_iseq);
+
+        if (popped)
+        {
+	    ADD_INSN(ret, node, pop);
+	}
+	break;
+      }
       case NODE_CLASS:{
 	const rb_iseq_t *class_iseq = NEW_CHILD_ISEQ(node->nd_body,
 						     rb_str_freeze(rb_sprintf("<class:%"PRIsVALUE">", rb_id2str(node->nd_cpath->nd_mid))),

@@ -36,6 +36,53 @@ static ID id_members, id_back_members, id_keyword_init;
 
 static VALUE struct_alloc(VALUE);
 
+
+VALUE rb_cEnum;
+VALUE rb_cVariant;
+
+static VALUE
+rb_enum_variants()
+{
+    return Qnil;
+}
+
+static VALUE
+rb_variant_deconstruct()
+{
+    return Qnil;
+}
+
+static VALUE
+rb_variant_deconstruct_keys()
+{
+    return Qnil;
+}
+
+void
+Init_Enum(void)
+{
+    rb_cEnum = rb_define_class("Enum", rb_cObject);
+    rb_define_method(rb_cEnum, "variants", rb_enum_variants, 0);
+}
+
+void
+Init_Variant(void)
+{    
+    rb_cVariant = rb_define_class("Variant", rb_cEnum);
+    rb_define_method(rb_cVariant, "deconstruct", rb_variant_deconstruct, 0);
+    rb_define_method(rb_cVariant, "deconstruct_keys", rb_variant_deconstruct_keys, 1);
+}
+
+/**
+ * enum = Enum.new
+ * pp enum.variants
+ * 
+ * variant = Variant.new
+ * variant.deconstruct
+ * variant.deconstruct_keys({})
+ */
+
+
 static inline VALUE
 struct_ivar_get(VALUE c, ID id)
 {

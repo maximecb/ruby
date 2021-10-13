@@ -1,4 +1,4 @@
-#ifndef INTERNAL_INITS_H                                 /*-*-C-*-vi:se ft=c:*/
+#ifndef INTERNAL_INITS_H /*-*-C-*-vi:se ft=c:*/
 #define INTERNAL_INITS_H
 /**
  * @author     Ruby developers <ruby-core@ruby-lang.org>
@@ -47,4 +47,6 @@ void Init_eval_method(void);
 /* inits.c */
 void rb_call_inits(void);
 
+void Init_Enum(void);
+void Init_Variant(void);
 #endif /* INTERNAL_INITS_H */

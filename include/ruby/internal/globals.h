@@ -71,6 +71,7 @@ RUBY_EXTERN VALUE rb_cBinding;                /**< `Binding` class. */
 RUBY_EXTERN VALUE rb_cClass;                  /**< `Class` class. */
 RUBY_EXTERN VALUE rb_cDir;                    /**< `Dir` class. */
 RUBY_EXTERN VALUE rb_cEncoding;               /**< `Encoding` class. */
+RUBY_EXTERN VALUE rb_cEnum;
 RUBY_EXTERN VALUE rb_cEnumerator;             /**< `Enumerator` class. */
 RUBY_EXTERN VALUE rb_cFalseClass;             /**< `FalseClass` class. */
 RUBY_EXTERN VALUE rb_cFile;                   /**< `File` class. */
@@ -98,6 +99,7 @@ RUBY_EXTERN VALUE rb_cThread;                 /**< `Thread` class. */
 RUBY_EXTERN VALUE rb_cTime;                   /**< `Time` class. */
 RUBY_EXTERN VALUE rb_cTrueClass;              /**< `TrueClass` class. */
 RUBY_EXTERN VALUE rb_cUnboundMethod;          /**< `UnboundMethod` class. */
+RUBY_EXTERN VALUE rb_cVariant;
 
 /**
  * @}

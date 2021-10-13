@@ -539,6 +539,8 @@ node_children(rb_ast_t *ast, const NODE *node)
         return rb_ary_new_from_node_args(ast, 1, node->nd_undef);
       case NODE_CLASS:
         return rb_ary_new_from_node_args(ast, 3, node->nd_cpath, node->nd_super, node->nd_body);
+      case NODE_ENUM:
+        return rb_ary_new_from_node_args(ast, 3, node->nd_cpath, node->nd_super, node->nd_body);
       case NODE_MODULE:
         return rb_ary_new_from_node_args(ast, 2, node->nd_cpath, node->nd_body);
       case NODE_SCLASS:

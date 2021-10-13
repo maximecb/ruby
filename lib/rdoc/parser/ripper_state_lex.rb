@@ -21,8 +21,9 @@ class RDoc::Parser::RipperStateLex
   EXPR_LABEL = 1024
   EXPR_LABELED = 2048
   EXPR_FITEM = 4096
+  EXPR_SENUM = 8192
   EXPR_VALUE = EXPR_BEG
-  EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS)
+  EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS | EXPR_SENUM)
   EXPR_ARG_ANY  =  (EXPR_ARG | EXPR_CMDARG)
   EXPR_END_ANY  =  (EXPR_END | EXPR_ENDARG | EXPR_ENDFN)
 
@@ -109,6 +110,9 @@ class RDoc::Parser::RipperStateLex
     def on_kw(tok, data)
       case tok
       when 'class'
+        @lex_state = EXPR_CLASS
+        @in_fname = true
+      when 'senum'
         @lex_state = EXPR_CLASS
         @in_fname = true
       when 'def'

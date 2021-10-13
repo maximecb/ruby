@@ -76,6 +76,8 @@ rb_call_inits(void)
     CALL(vm_stack_canary);
     CALL(ast);
     CALL(gc_stress);
+    CALL(Enum);
+    CALL(Variant);
 
     // enable builtin loading
     CALL(builtin);
