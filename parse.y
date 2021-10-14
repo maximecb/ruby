@@ -66,6 +66,7 @@ struct lex_context {
     unsigned int in_kwarg: 1;
     unsigned int in_def: 1;
     unsigned int in_class: 1;
+	unsigned int in_enum: 1;
     BITFIELD(enum shareability, shareable_constant_value, 2);
 };
 
@@ -136,6 +137,7 @@ enum lex_state_bits {
     EXPR_LABELED_bit,		/* flag bit, just after a label. */
     EXPR_FITEM_bit,		/* symbol literal as FNAME. */
 	EXPR_SENUM_bit,
+	EXPR_VARIANT_bit,
     EXPR_MAX_STATE
 };
 /* examine combinations */
@@ -155,8 +157,9 @@ enum lex_state_e {
     DEF_EXPR(LABELED),
     DEF_EXPR(FITEM),
 	DEF_EXPR(SENUM),
+	DEF_EXPR(VARIANT),
     EXPR_VALUE = EXPR_BEG,
-    EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS | EXPR_SENUM),
+    EXPR_BEG_ANY  =  (EXPR_BEG | EXPR_MID | EXPR_CLASS | EXPR_SENUM | EXPR_VARIANT),
     EXPR_ARG_ANY  =  (EXPR_ARG | EXPR_CMDARG),
     EXPR_END_ANY  =  (EXPR_END | EXPR_ENDARG | EXPR_ENDFN),
     EXPR_NONE = 0
@@ -1139,6 +1142,7 @@ static int looking_at_eol_p(struct parser_params *p);
 %token <id>
         keyword_class        "`class'"
 		keyword_senum        "`senum'"
+		keyword_variant      "`variant'"
         keyword_module       "`module'"
         keyword_def          "`def'"
         keyword_undef        "`undef'"
@@ -1221,6 +1225,7 @@ static int looking_at_eol_p(struct parser_params *p);
 %type <node> f_block_optarg f_block_opt
 %type <node> f_arglist f_opt_paren_args f_paren_args f_args f_arg f_arg_item
 %type <node> f_optarg f_marg f_marg_list f_margs f_rest_marg
+%type <node> variant_decls variant_decl
 %type <node> assoc_list assocs assoc undef_list backref string_dvar for_var
 %type <node> block_param opt_block_param block_param_def f_opt
 %type <node> f_kwarg f_kw f_block_kwarg f_block_kw
@@ -2356,7 +2361,8 @@ reswords	: keyword__LINE__ | keyword__FILE__ | keyword__ENCODING__
 		| keyword_rescue | keyword_retry | keyword_return | keyword_self
 		| keyword_super | keyword_then | keyword_true | keyword_undef
 		| keyword_when | keyword_yield | keyword_if | keyword_unless
-		| keyword_while | keyword_until | keyword_senum
+		| keyword_while | keyword_until | keyword_senum 
+		| keyword_variant
 		;
 
 arg		: lhs '=' lex_ctxt arg_rhs
@@ -3213,31 +3219,31 @@ primary		: literal
 			p->ctxt.in_class = $<ctxt>1.in_class;
 			p->ctxt.shareable_constant_value = $<ctxt>1.shareable_constant_value;
 		    }
-		| k_senum cpath
+		| k_senum cpath term
 		    {
 			if (p->ctxt.in_def) {
 			    YYLTYPE loc = code_loc_gen(&@1, &@2);
 			    yyerror1(&loc, "enum definition in method body");
 			}
-			p->ctxt.in_class = 1;
+			p->ctxt.in_enum = 1;
 			local_push(p, 0);
 		    }
-		  bodystmt
+		  variant_decls
 		  k_end
 		    {
 				
 		    /*%%%*/
-			$$ = NEW_ENUM($2, $4, &@$);
+			$$ = NEW_ENUM($2, $5, &@$);
 			// $$ = NEW_CLASS($2, $4, NEW_CONST(":Object", @1), &@$);
-			nd_set_line($$->nd_body, @5.end_pos.lineno);
-			set_line_body($4, @2.end_pos.lineno);
+			nd_set_line($$->nd_body, @6.end_pos.lineno);
+			set_line_body($5, @3.end_pos.lineno);
 			nd_set_line($$, @2.end_pos.lineno);
 		    /*% %*/
 		    /* ripper: class!($2, $3, $5) */
 			local_pop(p);
 				/* raise(SIGTRAP); */
 
-			p->ctxt.in_class = $<ctxt>1.in_class;
+			p->ctxt.in_enum = $<ctxt>1.in_enum;
 			p->ctxt.shareable_constant_value = $<ctxt>1.shareable_constant_value;
 		    }
 		| k_class tLSHFT expr
@@ -3341,6 +3347,31 @@ primary		: literal
 		    }
 		;
 
+variant_decl : k_variant def_name f_arglist term
+			{
+				/*% EM VARIANT %*/
+				printf("kvar\n");
+				$$ = NEW_VARIANT($2, $3, &@$);
+			}
+		;
+
+variant_decls : variant_decl
+			{
+				// $$ = NEW_VARIANTS($1);
+				$$ = $1;
+			}
+			| variant_decls variant_decl
+			{
+				// $$ = NEW_VARIANTS($1);
+				// $$->nd_next = $2;
+				if (nd_type($1) == NODE_LIST) {
+					$$ = list_append(p, $1, $2);
+				} else {
+					$$ = list_append(p, NEW_LIST($1, &@$), $2);
+				}
+			}
+		;
+
 primary_value	: primary
 		    {
 			value_expr($1);
@@ -3415,6 +3446,13 @@ k_senum		: keyword_senum
 		    }
 		;
 
+k_variant   : keyword_variant
+		    {
+			token_info_push(p, "variant", &@$);
+			$<ctxt>$ = p->ctxt;
+		    }
+		;
+			
 k_module	: keyword_module
 		    {
 			token_info_push(p, "module", &@$);

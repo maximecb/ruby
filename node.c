@@ -862,6 +862,17 @@ dump_node(VALUE buf, VALUE indent, int comment, const NODE * node)
 		F_NODE(nd_body, "enum definition");
 		return;		
 
+	case NODE_VARIANT:
+		ANN("enum variant definition")
+		ANN("format: variant [nd_mid] [nd_defn]; end")
+		ANN("example: variant Some(x); end")
+		F_ID(nd_mid, "enum name");
+		LAST_NODE;
+		F_NODE(nd_defn, "enum arguments")
+/*	
+	case NODE_VARIANTS:
+		F_NODE(nd_next)
+
       case NODE_CLASS:
 	ANN("class definition");
 	ANN("format: class [nd_cpath] < [nd_super]; [nd_body]; end");
@@ -871,7 +882,7 @@ dump_node(VALUE buf, VALUE indent, int comment, const NODE * node)
 	LAST_NODE;
 	F_NODE(nd_body, "class definition");
 	return;
-
+*/
       case NODE_MODULE:
 	ANN("module definition");
 	ANN("format: module [nd_cpath]; [nd_body]; end");

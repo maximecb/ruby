@@ -125,7 +125,9 @@ enum node_type {
     NODE_HSHPTN,
     NODE_FNDPTN,
     NODE_ENUM,
-    NODE_LAST
+    NODE_LAST,
+    NODE_VARIANT,
+    NODE_VARIANTS
 };
 
 typedef struct rb_code_position_struct {
@@ -383,6 +385,10 @@ typedef struct RNode {
 #define NEW_POSTEXE(b,loc) NEW_NODE(NODE_POSTEXE,0,b,0,loc)
 #define NEW_ATTRASGN(r,m,a,loc) NEW_NODE(NODE_ATTRASGN,r,m,a,loc)
 #define NEW_ENUM(n, b, loc) NEW_NODE(NODE_ENUM, n, NEW_SCOPE(0, b, loc), 0, loc)
+#define NEW_VARIANT(name,args,loc) NEW_NODE(NODE_VARIANT, 0, name, NEW_SCOPE(args, 0, loc),loc)
+
+// #define NEW_DEFN(i,a,d,loc) NEW_NODE(NODE_DEFN,0,i,NEW_SCOPE(a,d,loc),loc)
+// #define NEW_DEFS(r,i,a,d,loc) NEW_NODE(NODE_DEFS,r,i,NEW_SCOPE(a,d,loc),loc)
 
 #define NODE_SPECIAL_REQUIRED_KEYWORD ((NODE *)-1)
 #define NODE_REQUIRED_KEYWORD_P(node) ((node)->nd_value == NODE_SPECIAL_REQUIRED_KEYWORD)

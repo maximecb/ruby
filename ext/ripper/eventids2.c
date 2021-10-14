@@ -212,6 +212,8 @@ ripper_token2eventid(enum yytokentype tok)
         [keyword_BEGIN] 	= O(kw),
         [keyword_END]		= O(kw),
         [keyword_do_LAMBDA]	= O(kw),
+        [keyword_senum] = O(kw),
+        [keyword_variant]   = O(kw),
         [tAMPER]		= O(op),
         [tANDOP]		= O(op),
         [tAREF] 		= O(op),
@@ -285,7 +287,6 @@ ripper_token2eventid(enum yytokentype tok)
         [tLABEL_END]		= O(label_end),
         [tLAMBDA]		= O(tlambda),
         [tLAMBEG]		= O(tlambeg),
-        [keyword_senum] = O(kw),
 
         /* ripper specific tokens */
         [tIGNORED_NL]		= O(ignored_nl),
