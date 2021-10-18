@@ -2073,3 +2073,18 @@ assert_equal '["sub", "sub"]', %q{
 
   [foo(sub), foo(sub)]
 }
+
+# attr_reader on frozen object
+assert_equal 'false', %q{
+  class Foo
+    attr_reader :exception
+
+    def failed?
+      !exception.nil?
+    end
+  end
+
+  foo = Foo.new.freeze
+  foo.failed?
+  foo.failed?
+}
