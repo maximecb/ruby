@@ -177,6 +177,7 @@ class_alloc(VALUE flags, VALUE klass)
 
 #if USE_RVARGC
     obj->ptr = (rb_classext_t *)((char *)obj + sizeof(struct RClass));
+    memset(obj->ptr, 0, sizeof(rb_classext_t));
 #else
     obj->ptr = ZALLOC(rb_classext_t);
 #endif
