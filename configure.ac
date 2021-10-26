@@ -696,6 +696,9 @@ AC_COMPILE_IFELSE([
 @%:@if !(defined(__SUNPRO_C)||defined(__SUNPRO_CC))
 @%:@error not sunpro
 @%:@endif],[])], [
+    # doubles are not aligned in solaris
+    CFLAGS="$CFLAGS -xmemalign=8i"
+
     for e in \
         E_STATEMENT_NOT_REACHED \
         E_INIT_SIGN_EXTEND \
@@ -807,6 +810,8 @@ AS_IF([test "$GCC" = yes], [
     # ANSI (no XCFLAGS because this is C only)
     AS_CASE(["$target_os"],
     [solaris*], [
+      # doubles are not aligned in solaris
+      CFLAGS="$CFLAGS -munaligned-doubles"
       # Because "-std=gnu99" affects existence of functions on Solaris,
       # "-std=gnu99" will be appended to CPPFLAGS.
 	for ansi_options in -std=gnu99; do
