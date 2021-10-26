@@ -697,7 +697,7 @@ AC_COMPILE_IFELSE([
 @%:@error not sunpro
 @%:@endif],[])], [
     # doubles are not aligned in solaris
-    RUBY_APPEND_OPTIONS(CXXFLAGS, -xmemalign=8i)
+    RUBY_APPEND_OPTIONS(optflags, -xmemalign=8i)
 
     for e in \
         E_STATEMENT_NOT_REACHED \
@@ -811,7 +811,7 @@ AS_IF([test "$GCC" = yes], [
     AS_CASE(["$target_os"],
     [solaris*], [
       # doubles are not aligned in solaris
-      RUBY_APPEND_OPTIONS(CXXFLAGS, -munaligned-doubles)
+      RUBY_APPEND_OPTIONS(optflags, -munaligned-doubles)
       # Because "-std=gnu99" affects existence of functions on Solaris,
       # "-std=gnu99" will be appended to CPPFLAGS.
 	for ansi_options in -std=gnu99; do
