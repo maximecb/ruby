@@ -2177,6 +2177,12 @@ rb_str_length(VALUE str)
     return LONG2NUM(str_strlen(str, NULL));
 }
 
+VALUE
+rb_str_address(VALUE str)
+{
+    return LONG2FIX((unsigned long)str);
+}
+
 /*
  *  call-seq:
  *    bytesize -> integer
@@ -12130,6 +12136,7 @@ Init_String(void)
     rb_include_module(rb_cString, rb_mComparable);
     rb_define_alloc_func(rb_cString, empty_str_alloc);
     rb_define_singleton_method(rb_cString, "try_convert", rb_str_s_try_convert, 1);
+    rb_define_method(rb_cString, "memory_address", rb_str_address, 0);
     rb_define_method(rb_cString, "initialize", rb_str_init, -1);
     rb_define_method(rb_cString, "initialize_copy", rb_str_replace, 1);
     rb_define_method(rb_cString, "<=>", rb_str_cmp_m, 1);
