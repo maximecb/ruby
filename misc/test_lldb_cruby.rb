@@ -16,7 +16,7 @@ eom
       tf.flush
       o, s = Open3.capture2('lldb', '-b', '-s', tf.path)
       assert_true s.success?, message
-      assert_match /^\(lldb\) rp obj\n#{pattern}/, o, message
+      assert_match pattern, o, message
     end
   end
 
@@ -25,7 +25,8 @@ eom
   end
 
   def test_rp_regex
-    assert_rp '/foo/', '[(]Regex'
+    assert_rp '/foo/', /\(Regex\) ->src {/
+    assert_rp '/foo/', /T_STRING: .* = "foo"/
   end
 
   def test_rp_symbol
@@ -33,8 +34,8 @@ eom
   end
 
   def test_rp_string
-    assert_rp '"abc"', /\(char \[\d+\]\) ary = "abc"/
-    assert_rp "\"\u3042\"", /\(char \[\d+\]\) ary = "\u3042"/
-    assert_rp '"' + "\u3042"*10 + '"', /\(RString::\(anonymous struct\)\) heap = \{/
+    assert_rp '"abc"', /T_STRING: .* = "abc"/
+    assert_rp "\"\u3042\"", /T_STRING: .* "\u3042"/
+    assert_rp '"' + "\u3042"*10 + '"', /T_STRING: .* = "#{"\u3042" * 10}"/
   end
 end
