@@ -5437,12 +5437,15 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     // Skip out of range slots at the head of the page
     bitset = ~bits[0];
     bitset >>= NUM_IN_PAGE(p);
+
     if (bitset) {
+        fprintf(stderr, "sweeping plane 0\n");
         gc_plane_sweep(objspace, heap, (uintptr_t)p, bitset, ctx);
     }
     p += (BITS_BITLENGTH - NUM_IN_PAGE(p));
 
     for (i=1; i < HEAP_PAGE_BITMAP_LIMIT; i++) {
+        fprintf(stderr, "%i\n", NUM_IN_PAGE(p));
         bitset = ~bits[i];
         if (bitset) {
             gc_plane_sweep(objspace, heap, (uintptr_t)p, bitset, ctx);
@@ -5700,24 +5703,11 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     struct heap_page *sweep_page = heap->sweeping_page;
     int unlink_limit = 3;
 
-#if GC_ENABLE_INCREMENTAL_MARK
-    int swept_slots = 0;
-#if USE_RVARGC
-    bool need_pool = TRUE;
-#else
-    int need_pool = will_be_incremental_marking(objspace) ? TRUE : FALSE;
-#endif
-
-    gc_report(2, objspace, "gc_sweep_step (need_pool: %d)\n", need_pool);
-#else
     gc_report(2, objspace, "gc_sweep_step\n");
-#endif
 
     if (sweep_page == NULL) return FALSE;
 
-#if GC_ENABLE_LAZY_SWEEP
-    gc_prof_sweep_timer_start(objspace);
-#endif
+    fprintf(stderr, "  starting sweep loop on page %p\n", (void *)sweep_page);
 
     do {
         RUBY_DEBUG_LOG("sweep_page:%p", (void *)sweep_page);
@@ -5728,10 +5718,12 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
             .freed_slots = 0,
             .empty_slots = 0,
         };
+        fprintf(stderr, "  loop: (calling gc_page_sweep)sweeping page %p\n", (void *)ctx.page);
         gc_page_sweep(objspace, size_pool, heap, &ctx);
         int free_slots = ctx.freed_slots + ctx.empty_slots;
 
         heap->sweeping_page = list_next(&heap->pages, sweep_page, page_node);
+        fprintf(stderr, "  loop: next page to sweep is %p\n", (void *)heap->sweeping_page);
 
 	if (sweep_page->final_slots + free_slots == sweep_page->total_slots &&
 	    heap_pages_freeable_pages > 0 &&
@@ -5743,46 +5735,29 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 	    heap_add_page(objspace, size_pool, SIZE_POOL_TOMB_HEAP(size_pool), sweep_page);
 	}
 	else if (free_slots > 0) {
-#if USE_RVARGC
             size_pool->freed_slots += ctx.freed_slots;
             size_pool->empty_slots += ctx.empty_slots;
-#endif
 
-#if GC_ENABLE_INCREMENTAL_MARK
-	    if (need_pool) {
-                heap_add_poolpage(objspace, heap, sweep_page);
-                need_pool = FALSE;
-	    }
-	    else {
-                heap_add_freepage(heap, sweep_page);
-                swept_slots += free_slots;
-                if (swept_slots > 2048) {
-                    break;
-                }
-	    }
-#else
             heap_add_freepage(heap, sweep_page);
+
+            fprintf(stderr, ">0 free slots on the page: stop this sweep step (%i)\n", free_slots);
             break;
-#endif
 	}
 	else {
 	    sweep_page->free_next = NULL;
 	}
+        fprintf(stderr, "  loop: ctx = {page: %p, final: %i, freed: %i, empty: %i}\n-----\n", 
+                (void *)ctx.page, ctx.final_slots, ctx.freed_slots, ctx.empty_slots);
     } while ((sweep_page = heap->sweeping_page));
 
     if (!heap->sweeping_page) {
-#if USE_RVARGC
+        fprintf(stderr, "finished sweeping pool\n");
         gc_sweep_finish_size_pool(objspace, size_pool);
-#endif
 
         if (!has_sweeping_pages(objspace)) {
             gc_sweep_finish(objspace);
         }
     }
-
-#if GC_ENABLE_LAZY_SWEEP
-    gc_prof_sweep_timer_stop(objspace);
-#endif
 
     return heap->free_pages != NULL;
 }
@@ -5791,9 +5766,11 @@ static void
 gc_sweep_rest(rb_objspace_t *objspace)
 {
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        fprintf(stderr, "Sweeping pool %i\n", i);
         rb_size_pool_t *size_pool = &size_pools[i];
 
         while (SIZE_POOL_EDEN_HEAP(size_pool)->sweeping_page) {
+            fprintf(stderr, "calling gc_sweep_step\n", i);
             gc_sweep_step(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
         }
     }
