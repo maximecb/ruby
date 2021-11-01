@@ -681,6 +681,7 @@ def lldb_dump_page_rvalue(debugger, command, result, internal_dict):
 
     dump_page_internal(page, target, process, thread, frame, result, debugger, highlight=val.GetValueAsUnsigned())
 
+
 def lldb_rb_id2str(debugger, command, result, internal_dict):
     if not ('RUBY_Qfalse' in globals()):
         init(debugger)
@@ -691,21 +692,33 @@ def lldb_rb_id2str(debugger, command, result, internal_dict):
     frame = thread.GetSelectedFrame()
     global_symbols = target.FindFirstGlobalVariable("ruby_global_symbols")
 
-    id_val = frame.EvaluateExpression(command).GetValueAsUnsigned()
-    num = rb_id_to_serial(id_val)
 
-    last_id = global_symbols.GetChildMemberWithName("last_id").GetValueAsUnsigned()
-    ID_ENTRY_SIZE = 2
-    ID_ENTRY_UNIT = int(target.FindFirstGlobalVariable("ID_ENTRY_UNIT").GetValue())
 
-    ids = global_symbols.GetChildMemberWithName("ids")
+class BaseCommand:
+    def __init__(self, debugger, internal_dict):
+        self.debugger = debugger
+        self.internal_dict = internal_dict
 
-    if (num <= last_id):
-        idx = num // ID_ENTRY_UNIT
-        ary = rb_ary_entry(target, ids, idx, result)
-        pos = (num % ID_ENTRY_UNIT) * ID_ENTRY_SIZE
-        id_str = rb_ary_entry(target, ary, pos, result)
-        obj_inspect(debugger, target, result, id_str)
+    def __call__(self, debugger, command, context, result):
+        self.target = self.debugger.GetSelectedTarget()
+        self.process = self.target.GetProcess()
+        self.thread = self.process.GetSelectedThread()
+        self.frame = self.thread.GetSelectedFrame()
+        self.global_symbols = self.target.FindFirstGlobalVariable("ruby_global_symbols")
+
+
+class DumpPage(BaseCommand):
+    def __call__(self, debugger, command, context, result):
+        super().__call__(debugger, command, context, result)
+
+        tHeapPageP = self.target.FindFirstType("struct heap_page").GetPointerType()
+        page = self.frame.EvaluateExpression(command)
+        page = page.Cast(tHeapPageP)
+
+        print(page, file = result)
+
+        dump_page_internal(page, self.target, self.process, self.thread, self.frame, result, debugger)
+
 
 def __lldb_init_module(debugger, internal_dict):
     CommandMapping = namedtuple('CommandMapping', ['function', 'callable_as'])
@@ -717,7 +730,7 @@ def __lldb_init_module(debugger, internal_dict):
             CommandMapping(function = 'lldb_heap_page', callable_as = 'heap_page'),
             CommandMapping(function = 'lldb_heap_page_body', callable_as = 'heap_page_body'),
             CommandMapping(function = 'lldb_rb_backtrace', callable_as = 'rbbt'),
-            CommandMapping(function = 'lldb_dump_page', callable_as = 'dump_page'),
+            #CommandMapping(function = 'lldb_dump_page', callable_as = 'dump_page'),
             CommandMapping(function = 'lldb_dump_page_rvalue', callable_as = 'dump_page_rvalue'),
             CommandMapping(function = 'lldb_rb_id2str', callable_as = 'rb_id2str'),
         ]
@@ -725,5 +738,6 @@ def __lldb_init_module(debugger, internal_dict):
     for c in commands:
         debugger.HandleCommand(f"command script add -f lldb_cruby.{c.function} {c.callable_as}")
 
+    debugger.HandleCommand(f"command script add -c lldb_cruby.DumpPage dump_page")
     init(debugger)
     print("lldb scripts for ruby has been installed.")
