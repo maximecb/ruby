@@ -7,6 +7,7 @@
 #
 
 from __future__ import print_function
+from collections import namedtuple
 import lldb
 import os
 import shlex
@@ -15,6 +16,39 @@ HEAP_PAGE_ALIGN_LOG = 14
 HEAP_PAGE_ALIGN_MASK = (~(~0 << HEAP_PAGE_ALIGN_LOG))
 HEAP_PAGE_ALIGN = (1 << HEAP_PAGE_ALIGN_LOG)
 HEAP_PAGE_SIZE = HEAP_PAGE_ALIGN
+
+class HeapPageIter:
+    def __init__(self, page, target):
+        self.page = page
+        self.target = target
+        self.start = page.GetChildMemberWithName('start').GetValueAsUnsigned();
+        self.num_slots = page.GetChildMemberWithName('total_slots').unsigned
+        self.slot_size = page.GetChildMemberWithName('size_pool').GetChildMemberWithName('slot_size').unsigned
+        self.counter = 0
+        self.tRBasic = target.FindFirstType("struct RBasic")
+        self.tRValue = target.FindFirstType("struct RVALUE")
+
+    def is_valid(self):
+        heap_page_header_size = self.target.FindFirstType("struct heap_page_header").GetByteSize()
+        rvalue_size = self.slot_size
+        heap_page_obj_limit = int((HEAP_PAGE_SIZE - heap_page_header_size) / self.slot_size)
+
+        return (heap_page_obj_limit - 1) <= self.num_slots <= heap_page_obj_limit
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.counter < self.num_slots:
+            obj_addr_i = self.start + (self.counter * self.slot_size)
+            obj_addr = lldb.SBAddress(obj_addr_i, self.target)
+            slot_info = (self.counter, obj_addr_i, self.target.CreateValueFromAddress("object", obj_addr, self.tRBasic))
+            self.counter += 1
+
+            return slot_info
+        else:
+            raise StopIteration
+
 
 class BackTrace:
     VM_FRAME_MAGIC_METHOD = 0x11110001
@@ -159,7 +193,10 @@ class BackTrace:
 
             curr_addr -= cfp_frame_size
 
-def lldb_init(debugger):
+
+
+
+def init(debugger):
     target = debugger.GetSelectedTarget()
     global SIZEOF_VALUE
     SIZEOF_VALUE = target.FindFirstType("VALUE").GetByteSize()
@@ -219,7 +256,7 @@ def append_command_output(debugger, command, result):
 
 def lldb_rp(debugger, command, result, internal_dict):
     if not ('RUBY_Qfalse' in globals()):
-        lldb_init(debugger)
+        init(debugger)
 
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
@@ -233,9 +270,9 @@ def lldb_rp(debugger, command, result, internal_dict):
     if error.Fail():
         print(error, file=result)
         return
-    lldb_inspect(debugger, target, result, val)
+    obj_inspect(debugger, target, result, val)
 
-def lldb_inspect(debugger, target, result, val):
+def obj_inspect(debugger, target, result, val):
     num = val.GetValueAsSigned()
     if num == RUBY_Qfalse:
         print('false', file=result)
@@ -355,18 +392,18 @@ def lldb_inspect(debugger, target, result, val):
         elif flType == RUBY_T_RATIONAL:
             tRRational = target.FindFirstType("struct RRational").GetPointerType()
             val = val.Cast(tRRational)
-            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->num"))
+            obj_inspect(debugger, target, result, val.GetValueForExpressionPath("->num"))
             output = result.GetOutput()
             result.Clear()
             result.write("(Rational) " + output.rstrip() + " / ")
-            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->den"))
+            obj_inspect(debugger, target, result, val.GetValueForExpressionPath("->den"))
         elif flType == RUBY_T_COMPLEX:
             tRComplex = target.FindFirstType("struct RComplex").GetPointerType()
             val = val.Cast(tRComplex)
-            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->real"))
+            obj_inspect(debugger, target, result, val.GetValueForExpressionPath("->real"))
             real = result.GetOutput().rstrip()
             result.Clear()
-            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->imag"))
+            obj_inspect(debugger, target, result, val.GetValueForExpressionPath("->imag"))
             imag = result.GetOutput().rstrip()
             result.Clear()
             if not imag.startswith("-"):
@@ -376,7 +413,7 @@ def lldb_inspect(debugger, target, result, val):
             tRRegex = target.FindFirstType("struct RRegexp").GetPointerType()
             val = val.Cast(tRRegex)
             print("(Regex) ->src {", file=result)
-            lldb_inspect(debugger, target, result, val.GetValueForExpressionPath("->src"))
+            obj_inspect(debugger, target, result, val.GetValueForExpressionPath("->src"))
             print("}", file=result)
         elif flType == RUBY_T_DATA:
             tRTypedData = target.FindFirstType("struct RTypedData").GetPointerType()
@@ -416,7 +453,7 @@ def lldb_inspect(debugger, target, result, val):
             print("Not-handled type %0#x" % flType, file=result)
             print(val, file=result)
 
-def count_objects(debugger, command, ctx, result, internal_dict):
+def lldb_count_objects(debugger, command, ctx, result, internal_dict):
     objspace = ctx.frame.EvaluateExpression("ruby_current_vm->objspace")
     num_pages = objspace.GetValueForExpressionPath(".heap_pages.allocated_pages").unsigned
 
@@ -441,7 +478,7 @@ def count_objects(debugger, command, ctx, result, internal_dict):
     for sym in value_types:
         print("%s: %d" % (sym, counts[globals()[sym]]))
 
-def stack_dump_raw(debugger, command, ctx, result, internal_dict):
+def lldb_stack_dump_raw(debugger, command, ctx, result, internal_dict):
     ctx.frame.EvaluateExpression("rb_vmdebug_stack_dump_raw_current()")
 
 def check_bits(page, bitmap_name, bitmap_index, bitmap_bit, v):
@@ -452,7 +489,7 @@ def check_bits(page, bitmap_name, bitmap_index, bitmap_bit, v):
     else:
         return ' '
 
-def heap_page(debugger, command, ctx, result, internal_dict):
+def lldb_heap_page(debugger, command, ctx, result, internal_dict):
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
     thread = process.GetSelectedThread()
@@ -465,7 +502,7 @@ def heap_page(debugger, command, ctx, result, internal_dict):
     append_command_output(debugger, "p (struct heap_page *) %0#x" % page.GetValueAsUnsigned(), result)
     append_command_output(debugger, "p *(struct heap_page *) %0#x" % page.GetValueAsUnsigned(), result)
 
-def heap_page_body(debugger, command, ctx, result, internal_dict):
+def lldb_heap_page_body(debugger, command, ctx, result, internal_dict):
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
     thread = process.GetSelectedThread()
@@ -487,7 +524,7 @@ def get_page(lldb, target, val):
     body = get_page_body(lldb, target, val)
     return body.GetValueForExpressionPath("->header.page")
 
-def dump_node(debugger, command, ctx, result, internal_dict):
+def lldb_dump_node(debugger, command, ctx, result, internal_dict):
     args = shlex.split(command)
     if not args:
         return
@@ -496,24 +533,6 @@ def dump_node(debugger, command, ctx, result, internal_dict):
     dump = ctx.frame.EvaluateExpression("(struct RString*)rb_parser_dump_tree((NODE*)(%s), 0)" % node)
     output_string(ctx, result, dump)
 
-def rb_backtrace(debugger, command, result, internal_dict):
-    bt = BackTrace(debugger, command, result, internal_dict)
-    frame = bt.frame
-
-    if command:
-        if frame.IsValid():
-            val = frame.EvaluateExpression(command)
-        else:
-            val = target.EvaluateExpression(command)
-
-        error = val.GetError()
-        if error.Fail():
-            print >> result, error
-            return
-    else:
-        print("Need an EC for now")
-
-    bt.print_bt(val)
 
 def dump_bits(target, result, page, object_address, end = "\n"):
     tRValue = target.FindFirstType("struct RVALUE")
@@ -533,42 +552,10 @@ def dump_bits(target, result, page, object_address, end = "\n"):
         check_bits(page, "wb_unprotected_bits", bitmap_index, bitmap_bit, "U"),
         ), end=end, file=result)
 
-class HeapPageIter:
-    def __init__(self, page, target):
-        self.page = page
-        self.target = target
-        self.start = page.GetChildMemberWithName('start').GetValueAsUnsigned();
-        self.num_slots = page.GetChildMemberWithName('total_slots').unsigned
-        self.slot_size = page.GetChildMemberWithName('size_pool').GetChildMemberWithName('slot_size').unsigned
-        self.counter = 0
-        self.tRBasic = target.FindFirstType("struct RBasic")
-        self.tRValue = target.FindFirstType("struct RVALUE")
-
-    def is_valid(self):
-        heap_page_header_size = self.target.FindFirstType("struct heap_page_header").GetByteSize()
-        rvalue_size = self.slot_size
-        heap_page_obj_limit = int((HEAP_PAGE_SIZE - heap_page_header_size) / self.slot_size)
-
-        return (heap_page_obj_limit - 1) <= self.num_slots <= heap_page_obj_limit
-
-    def __iter__(self):
-        return self
-
-    def __next__(self):
-        if self.counter < self.num_slots:
-            obj_addr_i = self.start + (self.counter * self.slot_size)
-            obj_addr = lldb.SBAddress(obj_addr_i, self.target)
-            slot_info = (self.counter, obj_addr_i, self.target.CreateValueFromAddress("object", obj_addr, self.tRBasic))
-            self.counter += 1
-
-            return slot_info
-        else:
-            raise StopIteration
-
 
 def dump_page_internal(page, target, process, thread, frame, result, debugger, highlight=None):
     if not ('RUBY_Qfalse' in globals()):
-        lldb_init(debugger)
+        init(debugger)
 
     ruby_type_map = ruby_types(debugger)
 
@@ -605,34 +592,6 @@ def dump_page_internal(page, target, process, thread, frame, result, debugger, h
             print(result_str, file=result)
     else:
         print("%s is not a valid heap page" % page, file=result)
-
-
-
-def dump_page(debugger, command, result, internal_dict):
-    target = debugger.GetSelectedTarget()
-    process = target.GetProcess()
-    thread = process.GetSelectedThread()
-    frame = thread.GetSelectedFrame()
-
-    tHeapPageP = target.FindFirstType("struct heap_page").GetPointerType()
-    page = frame.EvaluateExpression(command)
-    page = page.Cast(tHeapPageP)
-
-    dump_page_internal(page, target, process, thread, frame, result, debugger)
-
-
-def dump_page_rvalue(debugger, command, result, internal_dict):
-    target = debugger.GetSelectedTarget()
-    process = target.GetProcess()
-    thread = process.GetSelectedThread()
-    frame = thread.GetSelectedFrame()
-
-    val = frame.EvaluateExpression(command)
-    page = get_page(lldb, target, val)
-    page_type = target.FindFirstType("struct heap_page").GetPointerType()
-    page.Cast(page_type)
-
-    dump_page_internal(page, target, process, thread, frame, result, debugger, highlight=val.GetValueAsUnsigned())
 
 
 
@@ -676,9 +635,55 @@ def rb_id_to_serial(id_val):
     else:
         return id_val
 
-def rb_id2str(debugger, command, result, internal_dict):
+
+def lldb_rb_backtrace(debugger, command, result, internal_dict):
+    bt = BackTrace(debugger, command, result, internal_dict)
+    frame = bt.frame
+
+    if command:
+        if frame.IsValid():
+            val = frame.EvaluateExpression(command)
+        else:
+            val = target.EvaluateExpression(command)
+
+        error = val.GetError()
+        if error.Fail():
+            print >> result, error
+            return
+    else:
+        print("Need an EC for now")
+
+    bt.print_bt(val)
+
+def lldb_dump_page(debugger, command, result, internal_dict):
+    target = debugger.GetSelectedTarget()
+    process = target.GetProcess()
+    thread = process.GetSelectedThread()
+    frame = thread.GetSelectedFrame()
+
+    tHeapPageP = target.FindFirstType("struct heap_page").GetPointerType()
+    page = frame.EvaluateExpression(command)
+    page = page.Cast(tHeapPageP)
+
+    dump_page_internal(page, target, process, thread, frame, result, debugger)
+
+
+def lldb_dump_page_rvalue(debugger, command, result, internal_dict):
+    target = debugger.GetSelectedTarget()
+    process = target.GetProcess()
+    thread = process.GetSelectedThread()
+    frame = thread.GetSelectedFrame()
+
+    val = frame.EvaluateExpression(command)
+    page = get_page(lldb, target, val)
+    page_type = target.FindFirstType("struct heap_page").GetPointerType()
+    page.Cast(page_type)
+
+    dump_page_internal(page, target, process, thread, frame, result, debugger, highlight=val.GetValueAsUnsigned())
+
+def lldb_rb_id2str(debugger, command, result, internal_dict):
     if not ('RUBY_Qfalse' in globals()):
-        lldb_init(debugger)
+        init(debugger)
 
     target = debugger.GetSelectedTarget()
     process = target.GetProcess()
@@ -700,19 +705,25 @@ def rb_id2str(debugger, command, result, internal_dict):
         ary = rb_ary_entry(target, ids, idx, result)
         pos = (num % ID_ENTRY_UNIT) * ID_ENTRY_SIZE
         id_str = rb_ary_entry(target, ary, pos, result)
-        lldb_inspect(debugger, target, result, id_str)
+        obj_inspect(debugger, target, result, id_str)
 
 def __lldb_init_module(debugger, internal_dict):
-    debugger.HandleCommand("command script add -f lldb_cruby.lldb_rp rp")
-    debugger.HandleCommand("command script add -f lldb_cruby.count_objects rb_count_objects")
-    debugger.HandleCommand("command script add -f lldb_cruby.stack_dump_raw SDR")
-    debugger.HandleCommand("command script add -f lldb_cruby.dump_node dump_node")
-    debugger.HandleCommand("command script add -f lldb_cruby.heap_page heap_page")
-    debugger.HandleCommand("command script add -f lldb_cruby.heap_page_body heap_page_body")
-    debugger.HandleCommand("command script add -f lldb_cruby.rb_backtrace rbbt")
-    debugger.HandleCommand("command script add -f lldb_cruby.dump_page dump_page")
-    debugger.HandleCommand("command script add -f lldb_cruby.dump_page_rvalue dump_page_rvalue")
-    debugger.HandleCommand("command script add -f lldb_cruby.rb_id2str rb_id2str")
+    CommandMapping = namedtuple('CommandMapping', ['function', 'callable_as'])
+    commands = [
+            CommandMapping(function = 'lldb_rp', callable_as = 'rp'),
+            CommandMapping(function = 'lldb_count_objects', callable_as = 'rb_count_objects'),
+            CommandMapping(function = 'lldb_stack_dump_raw', callable_as = 'SDR'),
+            CommandMapping(function = 'lldb_dump_node', callable_as = 'dump_node'),
+            CommandMapping(function = 'lldb_heap_page', callable_as = 'heap_page'),
+            CommandMapping(function = 'lldb_heap_page_body', callable_as = 'heap_page_body'),
+            CommandMapping(function = 'lldb_rb_backtrace', callable_as = 'rbbt'),
+            CommandMapping(function = 'lldb_dump_page', callable_as = 'dump_page'),
+            CommandMapping(function = 'lldb_dump_page_rvalue', callable_as = 'dump_page_rvalue'),
+            CommandMapping(function = 'lldb_rb_id2str', callable_as = 'rb_id2str'),
+        ]
 
-    lldb_init(debugger)
+    for c in commands:
+        debugger.HandleCommand(f"command script add -f lldb_cruby.{c.function} {c.callable_as}")
+
+    init(debugger)
     print("lldb scripts for ruby has been installed.")
