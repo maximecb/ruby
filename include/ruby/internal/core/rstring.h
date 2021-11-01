@@ -175,6 +175,8 @@ enum ruby_rstring_flags {
      */
     RSTRING_EMBED_LEN_MASK  = RUBY_FL_USER2 | RUBY_FL_USER3 | RUBY_FL_USER4 |
                               RUBY_FL_USER5 | RUBY_FL_USER6,
+#else
+    RSTRING_MOVE_SIZE_POOL = RUBY_FL_USER4,
 #endif
 
     /* Actually,  string  encodings are  also  encoded  into the  flags,  using

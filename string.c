@@ -160,6 +160,7 @@ VALUE rb_cSymbol;
 	memset(term_fill_ptr, 0, term_fill_len);\
 } while (0)
 
+/* TODO: the flag set needs to be conditional on USE_RVARGC */
 #define RESIZE_CAPA(str,capacity) do {\
     const int termlen = TERM_LEN(str);\
     RESIZE_CAPA_TERM(str,capacity,termlen);\
@@ -173,6 +174,7 @@ VALUE rb_cSymbol;
 	    RSTRING(str)->as.heap.ptr = tmp;\
 	    RSTRING(str)->as.heap.len = tlen;\
             STR_SET_NOEMBED(str);\
+            RB_FL_SET(str, RSTRING_MOVE_SIZE_POOL);\
 	    RSTRING(str)->as.heap.aux.capa = (capacity);\
 	}\
     }\
