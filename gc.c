@@ -5027,6 +5027,17 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
 }
 
 static void
+gc_protect_pages(rb_objspace_t *objspace, rb_heap_t *heap)
+{
+    struct heap_page *cursor = heap->compact_cursor;
+
+    while (cursor) {
+        lock_page_body(objspace, GET_PAGE_BODY(cursor->start));
+        cursor = list_next(&heap->pages, cursor, page_node);
+    }
+}
+
+static void
 gc_unprotect_pages(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     struct heap_page *cursor = heap->compact_cursor;
@@ -5210,6 +5221,8 @@ gc_compact_finish_pool(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t 
 
     gc_update_references_heap(objspace, pool, heap);
     gc_update_references_rest(objspace);
+
+    gc_protect_pages(objspace, heap);
 }
 
 static void gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap) {
