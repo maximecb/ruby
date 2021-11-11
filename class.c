@@ -42,7 +42,7 @@ rb_class_subclass_add(VALUE super, VALUE klass)
 {
     rb_subclass_entry_t *entry, *head;
 
-    if (super && super != Qundef) {
+    if (super != Qundef) {
 	entry = ALLOC(rb_subclass_entry_t);
 	entry->klass = klass;
 	entry->next = NULL;
