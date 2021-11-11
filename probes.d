@@ -225,6 +225,34 @@ provider ruby {
      * `lineno` the line number where the cache is _being cleared_ (an int)
   */
   probe method__cache__clear(const char *class, const char *filename, int lineno);
+
+  /*
+     ruby:::vm-gvl-acquire-begin(waiting);
+
+     This probe is fired when a thread attempts to acquire the GVL.
+
+      * `waiting` the number of threads waiting for the GVL (long)
+  */
+  probe vm__gvl__acquire__begin(long waiting);
+
+  /*
+     ruby:::vm-gvl-acquire-end(waiting);
+
+     This probe is fired when a thread successfully acquires the GVL.
+
+      * `waiting` the number of threads waiting for the GVL (long)
+  */
+  probe vm__gvl__acquire__end(long waiting);
+
+  /*
+     ruby:::vm-gvl-release(waiting);
+
+     This probe is fired when a thread releases the GVL.
+
+      * `waiting` the number of threads waiting for the GVL (long)
+  */
+  probe vm__gvl__release(long waiting);
+
 };
 
 #pragma D attributes Stable/Evolving/Common provider ruby provider
