@@ -13,6 +13,7 @@
 
 #include "gc.h"
 #include "mjit.h"
+#include "probes.h"
 
 #ifdef HAVE_SYS_RESOURCE_H
 #include <sys/resource.h>
@@ -237,6 +238,9 @@ do_gvl_timer(rb_vm_t *vm, rb_thread_t *th)
     vm->gvl.timer = 0;
 }
 
+#define RUBY_DTRACE_VM_HOOK(name, arg0) \
+    do {if (UNLIKELY(RUBY_DTRACE_VM_##name##_ENABLED())) RUBY_DTRACE_VM_##name(arg0);} while (0)
+
 static void
 gvl_acquire_common(rb_vm_t *vm, rb_thread_t *th)
 {
@@ -247,6 +251,9 @@ gvl_acquire_common(rb_vm_t *vm, rb_thread_t *th)
 	          "we must not be in ubf_list and GVL waitq at the same time");
 
         list_add_tail(&vm->gvl.waitq, &nd->node.gvl);
+
+        vm->gvl.waiting++;
+        RUBY_DTRACE_VM_HOOK(GVL_ACQUIRE_BEGIN, vm->gvl.waiting);
 
         do {
             if (!vm->gvl.timer) {
@@ -259,6 +266,8 @@ gvl_acquire_common(rb_vm_t *vm, rb_thread_t *th)
 
         list_del_init(&nd->node.gvl);
 
+        vm->gvl.waiting--;
+
         if (vm->gvl.need_yield) {
             vm->gvl.need_yield = 0;
             rb_native_cond_signal(&vm->gvl.switch_cond);
@@ -267,6 +276,8 @@ gvl_acquire_common(rb_vm_t *vm, rb_thread_t *th)
     else { /* reset timer if uncontended */
         vm->gvl.timer_err = ETIMEDOUT;
     }
+
+    RUBY_DTRACE_VM_HOOK(GVL_ACQUIRE_END, vm->gvl.waiting);
     vm->gvl.owner = th;
     if (!vm->gvl.timer) {
         if (!designate_timer_thread(vm) && !ubf_threads_empty()) {
@@ -287,6 +298,7 @@ static const native_thread_data_t *
 gvl_release_common(rb_vm_t *vm)
 {
     native_thread_data_t *next;
+    RUBY_DTRACE_VM_HOOK(GVL_RELEASE, vm->gvl.waiting);
     vm->gvl.owner = 0;
     next = list_top(&vm->gvl.waitq, native_thread_data_t, node.ubf);
     if (next) rb_native_cond_signal(&next->cond.gvlq);
@@ -346,6 +358,7 @@ gvl_init(rb_vm_t *vm)
     rb_native_cond_initialize(&vm->gvl.switch_cond);
     rb_native_cond_initialize(&vm->gvl.switch_wait_cond);
     list_head_init(&vm->gvl.waitq);
+    vm->gvl.waiting = 0;
     vm->gvl.owner = 0;
     vm->gvl.timer = 0;
     vm->gvl.timer_err = ETIMEDOUT;
