@@ -150,7 +150,9 @@ hash_table_raw_insert(struct rb_id_table *tbl, id_key_t key, VALUE val)
     int mask = tbl->capa - 1;
     int ix = key & mask;
     int d = 1;
-    assert(key != 0);
+    if (key == 0) {
+        rb_bug("hash_table_raw_insert key = 0");
+    }
     while (ITEM_KEY_ISSET(tbl, ix)) {
 	ITEM_SET_COLLIDED(tbl, ix);
 	ix = (ix + d) & mask;
