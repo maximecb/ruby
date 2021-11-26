@@ -5098,6 +5098,11 @@ read_barrier_signal(int sig, siginfo_t * info, void * data)
     sigaddset(&set, SIGSEGV);
     sigprocmask(SIG_UNBLOCK, &set, &prev_set);
 
+    // If info->si_addr is not in the GC heap, call the original handler
+    if (!heap_page_for_ptr(&rb_objspace, (uintptr_t)info->si_addr)){
+        raise(sig);
+        return;
+    }
     // run handler
     read_barrier_handler((uintptr_t)info->si_addr);
 
