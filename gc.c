@@ -65,6 +65,7 @@
 # include <sys/time.h>
 #endif
 
+
 #ifdef HAVE_SYS_RESOURCE_H
 # include <sys/resource.h>
 #endif
@@ -661,6 +662,7 @@ typedef struct mark_stack {
 
 #define SIZE_POOL_EDEN_HEAP(size_pool) (&(size_pool)->eden_heap)
 #define SIZE_POOL_TOMB_HEAP(size_pool) (&(size_pool)->tomb_heap)
+struct rb_size_pool_struct;
 
 typedef struct rb_heap_struct {
     struct heap_page *free_pages;
@@ -673,6 +675,8 @@ typedef struct rb_heap_struct {
 #endif
     size_t total_pages;      /* total page count in a heap */
     size_t total_slots;      /* total slot count (about total_pages * HEAP_PAGE_OBJ_LIMIT) */
+
+    struct rb_size_pool_struct *pool;
 } rb_heap_t;
 
 typedef struct rb_size_pool_struct {
@@ -691,6 +695,8 @@ typedef struct rb_size_pool_struct {
 
     rb_heap_t eden_heap;
     rb_heap_t tomb_heap;
+
+    unsigned int during_compacting : 1;
 } rb_size_pool_t;
 
 enum gc_mode {
@@ -829,6 +835,7 @@ typedef struct rb_objspace {
         size_t considered_count_table[T_MASK];
         size_t moved_count_table[T_MASK];
         size_t total_moved;
+        short sweeping_pool;
     } rcompactor;
 
 #if GC_ENABLE_INCREMENTAL_MARK
@@ -994,6 +1001,7 @@ has_sweeping_pages(rb_objspace_t *objspace)
 {
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         if (SIZE_POOL_EDEN_HEAP(&size_pools[i])->sweeping_page) {
+            fprintf(stderr, "size pool %i has sweeping pages \n", i);
             return TRUE;
         }
     }
@@ -3444,11 +3452,15 @@ Init_heap(void)
 
     heap_add_pages(objspace, &size_pools[0], SIZE_POOL_EDEN_HEAP(&size_pools[0]), gc_params.heap_init_slots / HEAP_PAGE_OBJ_LIMIT);
 
+    SIZE_POOL_EDEN_HEAP(&size_pools[0])->pool = &size_pools[0];
+
     /* Give other size pools allocatable pages. */
     for (int i = 1; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
         int multiple = size_pool->slot_size / sizeof(RVALUE);
         size_pool->allocatable_pages = gc_params.heap_init_slots * multiple / HEAP_PAGE_OBJ_LIMIT;
+        size_pool->eden_heap.pool = size_pool;
+        size_pool->tomb_heap.pool = size_pool;
     }
     heap_pages_expand_sorted(objspace);
 
@@ -5008,6 +5020,7 @@ read_barrier_handler(uintptr_t address)
         unlock_page_body(objspace, GET_PAGE_BODY(obj));
 
         objspace->profile.read_barrier_faults++;
+        fprintf(stderr, "invalidating moved page: %p\n", GET_HEAP_PAGE(obj));
 
         invalidate_moved_page(objspace, GET_HEAP_PAGE(obj));
     }
@@ -5139,11 +5152,30 @@ check_stack_for_moved(rb_objspace_t *objspace)
 }
 
 static void
+gc_compact_reset_compact_cursor(rb_heap_t *heap)
+{
+    heap->compact_cursor = NULL;
+    heap->compact_cursor_index = 0;
+}
+
+static void
+gc_compact_finish_pool(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
+{
+    gc_unprotect_pages(objspace, heap);
+    gc_compact_reset_compact_cursor(heap);
+}
+static void print_compacting_pools(rb_objspace_t *objspace);
+
+static void
 gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
 {
-    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+    for (int i = 0; i <= SIZE_POOL_COUNT; i++) {
+        fprintf(stderr, "%i\n", i);
+        print_compacting_pools(objspace);
         rb_size_pool_t *size_pool = &size_pools[i];
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
+
+        size_pool->during_compacting = 0;
         gc_unprotect_pages(objspace, heap);
     }
 
@@ -5164,6 +5196,7 @@ gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
         heap->compact_cursor = NULL;
         heap->compact_cursor_index = 0;
+        size_pool->during_compacting = FALSE;
     }
 
     if (gc_prof_enabled(objspace)) {
@@ -5213,6 +5246,7 @@ gc_fill_swept_page_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, 
                      * their memory until they have their finalizers run.*/
                     if (BUILTIN_TYPE(dest) != T_ZOMBIE) {
                         if (!try_move(objspace, heap, sweep_page, dest)) {
+                            fprintf(stderr, "can't find an object to move - finishing compacting\n");
                             *finished_compacting = true;
                             (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, sizeof(RVALUE));
                             gc_report(5, objspace, "Quit compacting, couldn't find an object to move\n");
@@ -5314,13 +5348,27 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                     break;
 
                 case T_MOVED:
-                    if (objspace->flags.during_compacting) {
-                        /* The sweep cursor shouldn't have made it to any
-                         * T_MOVED slots while the compact flag is enabled.
-                         * The sweep cursor and compact cursor move in
-                         * opposite directions, and when they meet references will
-                         * get updated and "during_compacting" should get disabled */
-                        rb_bug("T_MOVED shouldn't be seen until compaction is finished\n");
+                    if (heap->pool->during_compacting) {
+                        /* If the sweep cursor made it to a T_MOVED
+                         * slot while compaction is enabled for this
+                         * heap it's because we attempted to fill a
+                         * slot, and there was nothing left to fill it
+                         * with, so we reset the cursors and continued
+                         * to fill the page. In this case we know
+                         * about these T_MOVED slots, so we need to
+                         * make sure these slots don't get freed. */
+                        rb_heap_t *h = NULL;
+                        int c = 0;
+                        while (c < SIZE_POOL_COUNT){
+                            rb_size_pool_t *p = &size_pools[c];
+                            if(p->during_compacting) {
+                                h = SIZE_POOL_EDEN_HEAP(p);
+                            }
+                            c++;
+                          }
+                        fprintf(stderr, "freeing T_MOVED %p (page: %p, heap: %p) -> currently compacting heap %p\n", (void *)vp, GET_HEAP_PAGE(vp), heap, h);
+                        //rb_bug("T_MOVED shouldn't be seen until compaction is finished\n");
+                        break;
                     }
                     gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
                     if (FL_TEST(vp, FL_FROM_FREELIST)) {
@@ -5350,11 +5398,40 @@ gc_plane_sweep(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
     } while (bitset);
 }
 
+static void gc_sweep_pool(rb_objspace_t *objspace, rb_size_pool_t *size_pool);
+
+static void
+gc_compact_next_pool_or_finish(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap)
+{
+    // if we've already finished then we can ignore this
+    if (!objspace->flags.during_compacting) {
+        return;
+    }
+
+    // if we're sweeping the last pool, then finish compacting.
+    if (objspace->rcompactor.sweeping_pool == (SIZE_POOL_COUNT - 1))
+    {
+        fprintf(stderr, "finishing compacting during sweep of pool %i (%p)\n", objspace->rcompactor.sweeping_pool, size_pool);
+        gc_compact_finish(objspace, size_pool, heap);
+    }
+    else
+    {
+        // otherwise, move on and sweep the next pool;
+        GC_ASSERT(objspace->rcompactor.sweeping_pool <= SIZE_POOL_COUNT);
+
+        objspace->rcompactor.sweeping_pool++;
+        rb_size_pool_t *size_pool = &size_pools[objspace->rcompactor.sweeping_pool];
+        size_pool->during_compacting = TRUE;
+        gc_sweep_pool(objspace, size_pool);
+    }
+}
+
 static inline void
 gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, struct gc_sweep_context *ctx)
 {
     struct heap_page *sweep_page = ctx->page;
 
+    fprintf(stderr, "heap: %p, page: %p, compact_cursor: %p\n", heap, sweep_page, heap->compact_cursor);
     int i;
 
     RVALUE *p;
@@ -5364,9 +5441,11 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     if (heap->compact_cursor) {
         if (sweep_page == heap->compact_cursor) {
+            fprintf(stderr, "cursors met during sweep of pool %i (%p)\n", objspace->rcompactor.sweeping_pool, size_pool);
             /* The compaction cursor and sweep page met, so we need to quit compacting */
             gc_report(5, objspace, "Quit compacting, mark and compact cursor met\n");
-            gc_compact_finish(objspace, size_pool, heap);
+            gc_compact_finish_pool(objspace, size_pool, heap);
+            gc_compact_next_pool_or_finish(objspace, size_pool, heap);
         }
         else {
             /* We anticipate filling the page, so NULL out the freelist. */
@@ -5406,7 +5485,8 @@ gc_page_sweep(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     if (heap->compact_cursor) {
         if (gc_fill_swept_page(objspace, heap, sweep_page, ctx)) {
-            gc_compact_finish(objspace, size_pool, heap);
+            fprintf(stderr, "finishing pool compaction %i (%p)\n", objspace->rcompactor.sweeping_pool, size_pool);
+            gc_compact_finish_pool(objspace, size_pool, heap);
         }
     }
 
@@ -5718,6 +5798,11 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
     } while ((sweep_page = heap->sweeping_page));
 
     if (!heap->sweeping_page) {
+        fprintf(stderr, "no sweeping page, finishing sweep of heap %p\n", heap);
+
+        // if any other heaps still need compacting then we need to go and do them.
+        // pause here and sweep/compact the other size pools
+        gc_compact_next_pool_or_finish(objspace, size_pool, heap);
 #if USE_RVARGC
         gc_sweep_finish_size_pool(objspace, size_pool);
 #endif
@@ -5735,15 +5820,55 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 }
 
 static void
-gc_sweep_rest(rb_objspace_t *objspace)
+print_compacting_pools(rb_objspace_t *objspace)
 {
+    fprintf(stderr, "pools compacting: ");
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
-
-        while (SIZE_POOL_EDEN_HEAP(size_pool)->sweeping_page) {
-            gc_sweep_step(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
-        }
+        fprintf(stderr, "%i, ", size_pool->during_compacting);
     }
+    fprintf(stderr, "\n");
+}
+
+static void
+gc_sweep_pool(rb_objspace_t *objspace, rb_size_pool_t *size_pool)
+{
+
+    fprintf(stderr, "Sweeping pool: %i (%p), heap: %p\n", objspace->rcompactor.sweeping_pool, (void *)size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
+
+    print_compacting_pools(objspace);
+    gc_sweep_step(objspace, size_pool, SIZE_POOL_EDEN_HEAP(size_pool));
+}
+
+static void
+gc_sweep_rest(rb_objspace_t *objspace)
+{
+    rb_size_pool_t *size_pool = &size_pools[objspace->rcompactor.sweeping_pool];
+    /* TODO: The plan is to sweep all the size pools, but do them
+     * starting at the first one.  We'll compact and sweep the first
+     * size pool and when we've finished compacting (ie the cursors
+     * have met). We'll "pause" it, and move on to compacting the next
+     * heap in the size pool index.
+
+     * Once all the heaps have been compacted, we'll properly finalise
+     * compaction, which means uninstalling the handler, checking the
+     * stack, updating references and then finalising all the
+     * counters.
+
+     * We're going to iterate through the size pools so we need to
+     * have a more fine grained way of determining what is being
+     * compacted, at the moment we're just checking
+     * objspace->during_compaction. but this is no longer fine grained
+     * enough.
+
+     * one approach is to move during_compaction to the size pool, but
+     * then each heap needs to know how to get to it's size
+     * pool. Maybe we can make some macros that make this easier. If
+     * we couple this with a compacted flag on each pool (or each
+     * heap?)
+     */
+
+    gc_sweep_pool(objspace, size_pool);
 }
 
 static void
@@ -5852,12 +5977,20 @@ gc_compact_start(rb_objspace_t *objspace)
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(&size_pools[i]);
+        rb_size_pool_t *pool = &size_pools[i];
         list_for_each(&heap->pages, page, page_node) {
             page->flags.before_sweep = TRUE;
         }
 
         heap->compact_cursor = list_tail(&heap->pages, struct heap_page, page_node);
         heap->compact_cursor_index = 0;
+
+        if (i == 0) {
+            pool->during_compacting = TRUE;
+        }
+        else {
+            pool->during_compacting = FALSE;
+        }
     }
 
     if (gc_prof_enabled(objspace)) {
@@ -5867,6 +6000,7 @@ gc_compact_start(rb_objspace_t *objspace)
 
     memset(objspace->rcompactor.considered_count_table, 0, T_MASK * sizeof(size_t));
     memset(objspace->rcompactor.moved_count_table, 0, T_MASK * sizeof(size_t));
+    objspace->rcompactor.sweeping_pool = 0;
 
     /* Set up read barrier for pages containing MOVED objects */
     install_handlers();
@@ -10247,6 +10381,8 @@ gc_compact(rb_execution_context_t *ec, VALUE self)
 {
     /* Run GC with compaction enabled */
     gc_start_internal(ec, self, Qtrue, Qtrue, Qtrue, Qtrue);
+
+    fprintf(stderr, "FINISHING WOOHOO\n");
 
     return gc_compact_stats(ec, self);
 }
