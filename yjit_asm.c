@@ -61,6 +61,7 @@ x86opnd_t mem_opnd(uint32_t num_bits, x86opnd_t base_reg, int32_t disp)
     return opnd;
 }
 
+#if 0
 x86opnd_t mem_opnd_sib(uint32_t num_bits, x86opnd_t base_reg, x86opnd_t index_reg, int32_t scale, int32_t disp)
 {
     uint8_t scale_exp;
@@ -99,6 +100,7 @@ x86opnd_t mem_opnd_sib(uint32_t num_bits, x86opnd_t base_reg, x86opnd_t index_re
 
     return opnd;
 }
+#endif
 
 static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 {
@@ -1027,35 +1029,35 @@ void call(codeblock_t *cb, x86opnd_t opnd)
 }
 
 /// cmovcc - Conditional move
-void cmova(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmova", 0x47, dst, src); }
-void cmovae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovae", 0x43, dst, src); }
-void cmovb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovb", 0x42, dst, src); }
-void cmovbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovbe", 0x46, dst, src); }
-void cmovc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovc", 0x42, dst, src); }
+//void cmova(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmova", 0x47, dst, src); }
+//void cmovae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovae", 0x43, dst, src); }
+//void cmovb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovb", 0x42, dst, src); }
+//void cmovbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovbe", 0x46, dst, src); }
+//void cmovc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovc", 0x42, dst, src); }
 void cmove(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmove", 0x44, dst, src); }
 void cmovg(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovg", 0x4F, dst, src); }
 void cmovge(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovge", 0x4D, dst, src); }
 void cmovl(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovl", 0x4C, dst, src); }
 void cmovle(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovle", 0x4E, dst, src); }
-void cmovna(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovna", 0x46, dst, src); }
-void cmovnae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnae", 0x42, dst, src); }
-void cmovnb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnb", 0x43, dst, src); }
-void cmovnbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnbe", 0x47, dst, src); }
-void cmovnc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnc", 0x43, dst, src); }
+//void cmovna(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovna", 0x46, dst, src); }
+//void cmovnae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnae", 0x42, dst, src); }
+//void cmovnb(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnb", 0x43, dst, src); }
+//void cmovnbe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnbe", 0x47, dst, src); }
+//void cmovnc(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnc", 0x43, dst, src); }
 void cmovne(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovne", 0x45, dst, src); }
-void cmovng(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovng", 0x4E, dst, src); }
-void cmovnge(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnge", 0x4C, dst, src); }
-void cmovnl(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnl" , 0x4D, dst, src); }
-void cmovnle(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnle", 0x4F, dst, src); }
-void cmovno(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovno", 0x41, dst, src); }
-void cmovnp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnp", 0x4B, dst, src); }
-void cmovns(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovns", 0x49, dst, src); }
+//void cmovng(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovng", 0x4E, dst, src); }
+//void cmovnge(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnge", 0x4C, dst, src); }
+//void cmovnl(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnl" , 0x4D, dst, src); }
+//void cmovnle(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnle", 0x4F, dst, src); }
+//void cmovno(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovno", 0x41, dst, src); }
+//void cmovnp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnp", 0x4B, dst, src); }
+//void cmovns(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovns", 0x49, dst, src); }
 void cmovnz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovnz", 0x45, dst, src); }
-void cmovo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovo", 0x40, dst, src); }
-void cmovp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovp", 0x4A, dst, src); }
-void cmovpe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpe", 0x4A, dst, src); }
-void cmovpo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpo", 0x4B, dst, src); }
-void cmovs(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovs", 0x48, dst, src); }
+//void cmovo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovo", 0x40, dst, src); }
+//void cmovp(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovp", 0x4A, dst, src); }
+//void cmovpe(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpe", 0x4A, dst, src); }
+//void cmovpo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpo", 0x4B, dst, src); }
+//void cmovs(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovs", 0x48, dst, src); }
 void cmovz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovz", 0x44, dst, src); }
 
 /// cmp - Compare and set flags
@@ -1077,26 +1079,32 @@ void cmp(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
     );
 }
 
+#if 0
 /// cdq - Convert doubleword to quadword
 void cdq(codeblock_t *cb)
 {
     //cb.writeASM("cdq");
     cb_write_byte(cb, 0x99);
 }
+#endif
 
+#if 0
 /// cqo - Convert quadword to octaword
 void cqo(codeblock_t *cb)
 {
     //cb.writeASM("cqo");
     cb_write_bytes(cb, 2, 0x48, 0x99);
 }
+#endif
 
+#if 0
 /// Interrupt 3 - trap to debugger
 void int3(codeblock_t *cb)
 {
     //cb.writeASM("INT 3");
     cb_write_byte(cb, 0xCC);
 }
+#endif
 
 /*
 // div - Unsigned integer division
@@ -1197,68 +1205,68 @@ void imul(CodeBlock cb, X86Opnd opnd0, X86Opnd opnd1, X86Opnd opnd2)
 */
 
 /// jcc - relative jumps to a label
-void ja_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "ja"  , 0x0F, 0x87, label_idx); }
-void jae_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jae" , 0x0F, 0x83, label_idx); }
-void jb_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jb"  , 0x0F, 0x82, label_idx); }
+//void ja_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "ja"  , 0x0F, 0x87, label_idx); }
+//void jae_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jae" , 0x0F, 0x83, label_idx); }
+//void jb_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jb"  , 0x0F, 0x82, label_idx); }
 void jbe_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jbe" , 0x0F, 0x86, label_idx); }
-void jc_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jc"  , 0x0F, 0x82, label_idx); }
+//void jc_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jc"  , 0x0F, 0x82, label_idx); }
 void je_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "je"  , 0x0F, 0x84, label_idx); }
-void jg_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jg"  , 0x0F, 0x8F, label_idx); }
-void jge_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jge" , 0x0F, 0x8D, label_idx); }
-void jl_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jl"  , 0x0F, 0x8C, label_idx); }
-void jle_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jle" , 0x0F, 0x8E, label_idx); }
-void jna_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jna" , 0x0F, 0x86, label_idx); }
-void jnae_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnae", 0x0F, 0x82, label_idx); }
-void jnb_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnb" , 0x0F, 0x83, label_idx); }
-void jnbe_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnbe", 0x0F, 0x87, label_idx); }
-void jnc_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnc" , 0x0F, 0x83, label_idx); }
-void jne_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jne" , 0x0F, 0x85, label_idx); }
-void jng_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jng" , 0x0F, 0x8E, label_idx); }
-void jnge_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnge", 0x0F, 0x8C, label_idx); }
-void jnl_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnl" , 0x0F, 0x8D, label_idx); }
-void jnle_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnle", 0x0F, 0x8F, label_idx); }
-void jno_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jno" , 0x0F, 0x81, label_idx); }
-void jnp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnp" , 0x0F, 0x8b, label_idx); }
-void jns_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jns" , 0x0F, 0x89, label_idx); }
+//void jg_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jg"  , 0x0F, 0x8F, label_idx); }
+//void jge_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jge" , 0x0F, 0x8D, label_idx); }
+//void jl_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jl"  , 0x0F, 0x8C, label_idx); }
+//void jle_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jle" , 0x0F, 0x8E, label_idx); }
+//void jna_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jna" , 0x0F, 0x86, label_idx); }
+//void jnae_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnae", 0x0F, 0x82, label_idx); }
+//void jnb_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnb" , 0x0F, 0x83, label_idx); }
+//void jnbe_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnbe", 0x0F, 0x87, label_idx); }
+//void jnc_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnc" , 0x0F, 0x83, label_idx); }
+//void jne_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jne" , 0x0F, 0x85, label_idx); }
+//void jng_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jng" , 0x0F, 0x8E, label_idx); }
+//void jnge_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnge", 0x0F, 0x8C, label_idx); }
+//void jnl_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnl" , 0x0F, 0x8D, label_idx); }
+//void jnle_label(codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnle", 0x0F, 0x8F, label_idx); }
+//void jno_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jno" , 0x0F, 0x81, label_idx); }
+//void jnp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnp" , 0x0F, 0x8b, label_idx); }
+//void jns_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jns" , 0x0F, 0x89, label_idx); }
 void jnz_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jnz" , 0x0F, 0x85, label_idx); }
-void jo_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jo"  , 0x0F, 0x80, label_idx); }
-void jp_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jp"  , 0x0F, 0x8A, label_idx); }
-void jpe_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpe" , 0x0F, 0x8A, label_idx); }
-void jpo_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpo" , 0x0F, 0x8B, label_idx); }
-void js_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "js"  , 0x0F, 0x88, label_idx); }
+//void jo_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jo"  , 0x0F, 0x80, label_idx); }
+//void jp_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jp"  , 0x0F, 0x8A, label_idx); }
+//void jpe_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpe" , 0x0F, 0x8A, label_idx); }
+//void jpo_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jpo" , 0x0F, 0x8B, label_idx); }
+//void js_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "js"  , 0x0F, 0x88, label_idx); }
 void jz_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jz"  , 0x0F, 0x84, label_idx); }
-void jmp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jmp" , 0xFF, 0xE9, label_idx); }
+//void jmp_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jmp" , 0xFF, 0xE9, label_idx); }
 
 /// jcc - relative jumps to a pointer (32-bit offset)
-void ja_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "ja"  , 0x0F, 0x87, ptr); }
-void jae_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jae" , 0x0F, 0x83, ptr); }
-void jb_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jb"  , 0x0F, 0x82, ptr); }
+//void ja_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "ja"  , 0x0F, 0x87, ptr); }
+//void jae_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jae" , 0x0F, 0x83, ptr); }
+//void jb_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jb"  , 0x0F, 0x82, ptr); }
 void jbe_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jbe" , 0x0F, 0x86, ptr); }
-void jc_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jc"  , 0x0F, 0x82, ptr); }
+//void jc_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jc"  , 0x0F, 0x82, ptr); }
 void je_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "je"  , 0x0F, 0x84, ptr); }
-void jg_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jg"  , 0x0F, 0x8F, ptr); }
-void jge_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jge" , 0x0F, 0x8D, ptr); }
+//void jg_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jg"  , 0x0F, 0x8F, ptr); }
+//void jge_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jge" , 0x0F, 0x8D, ptr); }
 void jl_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jl"  , 0x0F, 0x8C, ptr); }
 void jle_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jle" , 0x0F, 0x8E, ptr); }
-void jna_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jna" , 0x0F, 0x86, ptr); }
-void jnae_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnae", 0x0F, 0x82, ptr); }
-void jnb_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnb" , 0x0F, 0x83, ptr); }
-void jnbe_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnbe", 0x0F, 0x87, ptr); }
-void jnc_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnc" , 0x0F, 0x83, ptr); }
+//void jna_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jna" , 0x0F, 0x86, ptr); }
+//void jnae_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnae", 0x0F, 0x82, ptr); }
+//void jnb_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnb" , 0x0F, 0x83, ptr); }
+//void jnbe_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnbe", 0x0F, 0x87, ptr); }
+//void jnc_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnc" , 0x0F, 0x83, ptr); }
 void jne_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jne" , 0x0F, 0x85, ptr); }
-void jng_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jng" , 0x0F, 0x8E, ptr); }
-void jnge_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnge", 0x0F, 0x8C, ptr); }
-void jnl_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnl" , 0x0F, 0x8D, ptr); }
-void jnle_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnle", 0x0F, 0x8F, ptr); }
-void jno_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jno" , 0x0F, 0x81, ptr); }
-void jnp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnp" , 0x0F, 0x8b, ptr); }
-void jns_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jns" , 0x0F, 0x89, ptr); }
+//void jng_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jng" , 0x0F, 0x8E, ptr); }
+//void jnge_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnge", 0x0F, 0x8C, ptr); }
+//void jnl_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnl" , 0x0F, 0x8D, ptr); }
+//void jnle_ptr(codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnle", 0x0F, 0x8F, ptr); }
+//void jno_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jno" , 0x0F, 0x81, ptr); }
+//void jnp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnp" , 0x0F, 0x8b, ptr); }
+//void jns_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jns" , 0x0F, 0x89, ptr); }
 void jnz_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jnz" , 0x0F, 0x85, ptr); }
 void jo_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jo"  , 0x0F, 0x80, ptr); }
-void jp_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jp"  , 0x0F, 0x8A, ptr); }
-void jpe_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpe" , 0x0F, 0x8A, ptr); }
-void jpo_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpo" , 0x0F, 0x8B, ptr); }
-void js_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "js"  , 0x0F, 0x88, ptr); }
+//void jp_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jp"  , 0x0F, 0x8A, ptr); }
+//void jpe_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpe" , 0x0F, 0x8A, ptr); }
+//void jpo_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jpo" , 0x0F, 0x8B, ptr); }
+//void js_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "js"  , 0x0F, 0x88, ptr); }
 void jz_ptr  (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jz"  , 0x0F, 0x84, ptr); }
 void jmp_ptr (codeblock_t *cb, uint8_t *ptr) { cb_write_jcc_ptr(cb, "jmp" , 0xFF, 0xE9, ptr); }
 
@@ -1437,6 +1445,7 @@ void movzx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
 }
 */
 
+#if 0
 // neg - Integer negation (multiplication by -1)
 void neg(codeblock_t *cb, x86opnd_t opnd)
 {
@@ -1449,6 +1458,7 @@ void neg(codeblock_t *cb, x86opnd_t opnd)
         opnd
     );
 }
+#endif
 
 // nop - Noop, one or multiple bytes long
 void nop(codeblock_t *cb, uint32_t length)
@@ -1611,6 +1621,7 @@ void ret(codeblock_t *cb)
     cb_write_byte(cb, 0xC3);
 }
 
+#if 0
 // sal - Shift arithmetic left
 void sal(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
 {
@@ -1625,6 +1636,7 @@ void sal(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd1
     );
 }
+#endif
 
 /// sar - Shift arithmetic right (signed)
 void sar(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
@@ -1640,6 +1652,8 @@ void sar(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd1
     );
 }
+
+#if 0
 // shl - Shift logical left
 void shl(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
 {
@@ -1654,6 +1668,7 @@ void shl(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd1
     );
 }
+#endif
 
 /// shr - Shift logical right (unsigned)
 void shr(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
@@ -1744,12 +1759,15 @@ void test(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t test_opnd)
     }
 }
 
+#if 0
 /// Undefined opcode
 void ud2(codeblock_t *cb)
 {
     cb_write_bytes(cb, 2, 0x0F, 0x0B);
 }
+#endif
 
+#if 0
 /// xchg - Exchange Register/Memory with Register
 void xchg(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t r_opnd)
 {
@@ -1772,6 +1790,7 @@ void xchg(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t r_opnd)
         cb_write_rm(cb, rm_opnd.num_bits == 16, rm_opnd.num_bits == 64, r_opnd, rm_opnd, 0xFF, 1, 0x87);
     }
 }
+#endif
 
 /// xor - Exclusive bitwise OR
 void xor(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
