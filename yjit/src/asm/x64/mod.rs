@@ -78,10 +78,32 @@ impl From<Register> for Operand {
     }
 }
 
+/// Allows for usages such as mov(RAX.into(), 1.into())
+impl From<i32> for Operand {
+    fn from(i: i32) -> Self {
+        Operand::Immediate(RegWidthInteger::I32(i))
+    }
+}
+
+#[derive(Debug)]
+pub enum RegWidthInteger {
+    I8(i8),
+    I16(i16),
+    I32(i32),
+    I64(i64),
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
+}
+
+use RegWidthInteger::*;
+
 /// Operand for x64 instructions
 #[derive(Debug)]
 pub enum Operand {
     Register(Register),
+    Immediate(RegWidthInteger),
     //AddressingForm,
     //Label,
     //Address(usize),
@@ -101,8 +123,57 @@ impl Assembler {
     pub fn encoded(&self) -> &Vec<u8> {
         &self.encoded
     }
+
+    /// Right arithmetic shift
+    /// TODO: what I want for rhs is really a RegOrImm type. Probably reusable.
+    /// Maybe a RegOrMem type for lhs too? Look for asserts at the top of test(cb) for example.
+    pub fn sar(&mut self, lhs: Operand, rhs: Operand) {
+        match (lhs, rhs) {
+            (Operand::Register(lhs_reg), Operand::Immediate(I32(1))) => {
+                // SAR r/m, 1
+                let opcode = 0xD1;
+
+                // Decide on the REX byte
+                let rex = {
+                    let rex_w = (lhs_reg.width == B64) as u8;
+                    let rex_r = 0;
+                    let rex_x = 0;
+                    let rex_b = (lhs_reg.vintage == Extended) as u8;
+                    if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
+                        // <- most significant bit
+                        // 0 1 0 0 W R X B
+                        let rex = 0b0100_0000
+                            + 0b1000 * rex_w
+                            + 0b0100 * rex_r
+                            + 0b0010 * rex_x
+                            + 0b0001 * rex_b;
+                        Some(rex)
+                    } else {
+                        None
+                    }
+                };
+
+                // NOTE: think about selecting mod based on input.
+                // Have not studied enough usages as of yet.
+                // modrm.mod=0b11 since lhs is a register
+                let modrm = 0b11000000 +
+                            0b00111000 + // modrm.reg=7 opcode extension
+                            lhs_reg.id;
+
+                // Write the bytes
+                if let Some(byte) = rex {
+                    self.encoded.push(byte);
+                }
+                self.encoded.push(opcode);
+                self.encoded.push(modrm);
+            }
+            (_, _) => {
+                panic!("unknown addressing form");
+            }
+        }
+    }
+
     pub fn mov(&mut self, dst: Operand, src: Operand) {
-        use RegisterWidth::*;
         match (dst, src) {
             (Operand::Register(dst), Operand::Register(src))
                 if dst.width == src.width
@@ -155,5 +226,63 @@ impl Assembler {
                 panic!("Unsupported addressing form dst:{:?} src:{:?}", dst, src);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::asm::x64::*;
+
+    impl Assembler {
+        fn byte_string(&self) -> String {
+            self.encoded()
+                .into_iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<Vec<String>>()
+                .join(" ")
+        }
+    }
+
+    #[test]
+    fn reg_to_reg_movs() {
+        let mut asm = Assembler::new();
+
+        // 64b
+        asm.mov(RAX.into(), RBX.into());
+        asm.mov(R8.into(), RBX.into());
+        asm.mov(RDI.into(), R14.into());
+        asm.mov(R13.into(), R15.into());
+
+        // 32b
+        asm.mov(EBP.into(), EDI.into());
+        asm.mov(R8D.into(), EBX.into());
+        asm.mov(EBP.into(), R9D.into());
+        asm.mov(R8D.into(), R11D.into());
+
+        // 16b (panics at the moment)
+        // asm.mov(AX.into(), CX.into());
+
+        let bytes = asm.byte_string();
+        assert_eq!(
+            "48 8b c3 4c 8b c3 49 8b fe 4d 8b ef 8b ef 44 8b c3 41 8b e9 45 8b c3",
+            bytes
+        );
+    }
+
+    #[test]
+    fn sar() {
+        let mut asm = Assembler::new();
+
+        // 64b
+        asm.sar(RAX.into(), 1.into());
+        asm.sar(R9.into(), 1.into());
+
+        // 32b
+        asm.sar(RDI.into(), 1.into());
+        asm.sar(R10D.into(), 1.into());
+
+        // TODO: write panic tests
+
+        assert_eq!("48 d1 f8 49 d1 f9 48 d1 ff 41 d1 fa", asm.byte_string());
     }
 }
