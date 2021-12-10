@@ -25,7 +25,6 @@ mod tests {
         // 16b (panics at the moment)
         // asm.mov(AX.into(), CX.into());
 
-
         for byte in asm.encoded().iter() {
             print!("{:02x} ", byte);
         }
