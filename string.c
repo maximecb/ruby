@@ -219,24 +219,27 @@ STR_EMBEDDABLE_P(long len, long termlen)
 #endif
 }
 
+static inline VALUE str_alloc_embed(VALUE klass, size_t capa);
+
 static inline void
-RESIZE_CAPA_TERM(VALUE str, long capacity, long termlen)
+RESIZE_CAPA_TERM(VALUE str, size_t capacity, long termlen)
 {
     if (STR_EMBED_P(str)) {
-        if (str_embed_capa(str) < capacity + termlen) {
-            char *const tmp = ALLOC_N(char, (size_t)(capacity) + (termlen));
+        if (str_embed_capa(str) < (long)capacity + termlen) {
+            VALUE tmp = str_alloc_embed(RBASIC(str)->klass, capacity);
+
             const long tlen = RSTRING_LEN(str);
-            memcpy(tmp, RSTRING_PTR(str), tlen);
-            RSTRING(str)->as.heap.ptr = tmp;
+            memcpy(RSTRING_PTR(tmp), RSTRING_PTR(str), tlen);
+            RSTRING(str)->as.heap.ptr = RSTRING_PTR(tmp);
             RSTRING(str)->as.heap.len = tlen;
             STR_SET_NOEMBED(str);
             RSTRING(str)->as.heap.aux.capa = (capacity);
         }
     }
     else {
-        assert(!FL_TEST((str), STR_SHARED));
-        SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char,
-                (size_t)(capacity) + (termlen), STR_HEAP_SIZE(str));
+        assert(!FL_TEST((str), STR_SHARED)); 
+        SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char, 
+                (size_t)(capacity) + (termlen), STR_HEAP_SIZE(str)); 
         RSTRING(str)->as.heap.aux.capa = (capacity);
     }
 }
@@ -1569,7 +1572,8 @@ rb_str_free(VALUE str)
     }
     else {
 	RB_DEBUG_COUNTER_INC(obj_str_ptr);
-	ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
+        // introducing a memory leak for now
+        //ruby_sized_xfree(STR_HEAP_PTR(str), STR_HEAP_SIZE(str));
     }
 }
 
@@ -3146,6 +3150,7 @@ str_buf_cat(VALUE str, const char *ptr, long len)
 	while (total > capa) {
 	    capa = 2 * capa + termlen; /* == 2*(capa+termlen)-termlen */
 	}
+        // this is where the alloc happens
 	RESIZE_CAPA_TERM(str, capa, termlen);
 	sptr = RSTRING_PTR(str);
     }
