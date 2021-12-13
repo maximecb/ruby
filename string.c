@@ -164,25 +164,6 @@ VALUE rb_cSymbol;
     const int termlen = TERM_LEN(str);\
     RESIZE_CAPA_TERM(str,capacity,termlen);\
 } while (0)
-#define RESIZE_CAPA_TERM(str,capacity,termlen) do {\
-    if (STR_EMBED_P(str)) {\
-	if (str_embed_capa(str) < capacity + termlen) {\
-	    char *const tmp = ALLOC_N(char, (size_t)(capacity) + (termlen));\
-	    const long tlen = RSTRING_LEN(str);\
-	    memcpy(tmp, RSTRING_PTR(str), tlen);\
-	    RSTRING(str)->as.heap.ptr = tmp;\
-	    RSTRING(str)->as.heap.len = tlen;\
-            STR_SET_NOEMBED(str);\
-	    RSTRING(str)->as.heap.aux.capa = (capacity);\
-	}\
-    }\
-    else {\
-	assert(!FL_TEST((str), STR_SHARED)); \
-	SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char, \
-			(size_t)(capacity) + (termlen), STR_HEAP_SIZE(str)); \
-	RSTRING(str)->as.heap.aux.capa = (capacity);\
-    }\
-} while (0)
 
 #define STR_SET_SHARED(str, shared_str) do { \
     if (!FL_TEST(str, STR_FAKESTR)) { \
@@ -237,6 +218,29 @@ STR_EMBEDDABLE_P(long len, long termlen)
     return len <= RSTRING_EMBED_LEN_MAX + 1 - termlen;
 #endif
 }
+
+static inline void
+RESIZE_CAPA_TERM(VALUE str, long capacity, long termlen)
+{
+    if (STR_EMBED_P(str)) {
+        if (str_embed_capa(str) < capacity + termlen) {
+            char *const tmp = ALLOC_N(char, (size_t)(capacity) + (termlen));
+            const long tlen = RSTRING_LEN(str);
+            memcpy(tmp, RSTRING_PTR(str), tlen);
+            RSTRING(str)->as.heap.ptr = tmp;
+            RSTRING(str)->as.heap.len = tlen;
+            STR_SET_NOEMBED(str);
+            RSTRING(str)->as.heap.aux.capa = (capacity);
+        }
+    }
+    else {
+        assert(!FL_TEST((str), STR_SHARED));
+        SIZED_REALLOC_N(RSTRING(str)->as.heap.ptr, char,
+                (size_t)(capacity) + (termlen), STR_HEAP_SIZE(str));
+        RSTRING(str)->as.heap.aux.capa = (capacity);
+    }
+}
+
 
 static VALUE str_replace_shared_without_enc(VALUE str2, VALUE str);
 static VALUE str_new_frozen(VALUE klass, VALUE orig);
