@@ -116,6 +116,52 @@ pub struct Assembler {
     encoded: Vec<u8>,
 }
 
+/// Temporary
+struct Encoding {
+    rex: Option<u8>,
+    opcode: u8,
+    modrm: u8,
+    imm32: i32,
+}
+
+mod InstructionForms {
+    use crate::asm::x64::Encoding;
+    pub trait Test {
+        fn encode(&self) -> Encoding;
+    }
+}
+
+impl InstructionForms::Test for (Register, i32) {
+    fn encode(&self) -> Encoding {
+        let rex = {
+            //TODO comment
+            let rex_w = (self.0.width == B64) as u8;
+            let rex_r = 0;
+            let rex_x = 0;
+            let rex_b = (self.0.vintage == Extended) as u8;
+            if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
+                // <- most significant bit
+                // 0 1 0 0 W R X B
+                let rex = 0b0100_0000
+                    + 0b1000 * rex_w
+                    + 0b0100 * rex_r
+                    + 0b0010 * rex_x
+                    + 0b0001 * rex_b;
+                Some(rex)
+            } else {
+                None
+            }
+        };
+
+        Encoding {
+            rex: rex,
+            opcode: 0xf7,
+            modrm: 0b11000000 + self.0.id,
+            imm32: self.1,
+        }
+    }
+}
+
 impl Assembler {
     pub fn new() -> Self {
         Assembler { encoded: vec![] }
@@ -171,6 +217,19 @@ impl Assembler {
                 panic!("unknown addressing form");
             }
         }
+    }
+
+    pub fn test<T: InstructionForms::Test>(&mut self, operands: T) {
+        let encoding = operands.encode();
+        if let Some(rex) = encoding.rex {
+            self.encoded.push(rex);
+        }
+        self.encoded.push(encoding.opcode);
+        self.encoded.push(encoding.modrm);
+        self.encoded.push(encoding.imm32 & 0xFF);
+        self.encoded.push((encoding.imm32 & 0xFF00) >> 8);
+        self.encoded.push((encoding.imm32 & 0xFF0000) >> 16);
+        self.encoded.push((encoding.imm32 & 0xFF000000) >> 24);
     }
 
     pub fn mov(&mut self, dst: Operand, src: Operand) {
@@ -280,6 +339,18 @@ mod tests {
         // 32b
         asm.sar(RDI.into(), 1.into());
         asm.sar(R10D.into(), 1.into());
+
+        // TODO: write panic tests
+
+        assert_eq!("48 d1 f8 49 d1 f9 48 d1 ff 41 d1 fa", asm.byte_string());
+    }
+
+    #[test]
+    fn test() {
+        let mut asm = Assembler::new();
+
+        // 64b
+        asm.test((RAX, 0b111));
 
         // TODO: write panic tests
 
