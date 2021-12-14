@@ -166,6 +166,7 @@ VALUE rb_cSymbol;
 #define RESIZE_CAPA_TERM(str,capacity,termlen) do {\
     if (STR_EMBED_P(str)) {\
 	if (str_embed_capa(str) < capacity + termlen) {\
+            size_t new_min_slot_len = capacity + termlen + sizeof(struct RString);\
 	    char *const tmp = ALLOC_N(char, (size_t)(capacity) + (termlen));\
 	    const long tlen = RSTRING_LEN(str);\
 	    memcpy(tmp, RSTRING_PTR(str), tlen);\
@@ -173,6 +174,10 @@ VALUE rb_cSymbol;
 	    RSTRING(str)->as.heap.len = tlen;\
             STR_SET_NOEMBED(str);\
 	    RSTRING(str)->as.heap.aux.capa = (capacity);\
+            /* This embedded string has been resized up, push it into the inbox 
+             * for a more appropriate size pool so we can re-embed it during compaction
+             */\
+            gc_new_size_pool_inbox_add(str, new_min_slot_len);\
 	}\
     }\
     else {\

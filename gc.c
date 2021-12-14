@@ -662,6 +662,8 @@ typedef struct mark_stack {
 #define SIZE_POOL_EDEN_HEAP(size_pool) (&(size_pool)->eden_heap)
 #define SIZE_POOL_TOMB_HEAP(size_pool) (&(size_pool)->tomb_heap)
 
+#define SIZE_POOL_INIT_INBOX_CAPA 50
+
 typedef struct rb_heap_struct {
     struct heap_page *free_pages;
     struct list_head pages;
@@ -674,6 +676,16 @@ typedef struct rb_heap_struct {
     size_t total_pages;      /* total page count in a heap */
     size_t total_slots;      /* total slot count (about total_pages * HEAP_PAGE_OBJ_LIMIT) */
 } rb_heap_t;
+
+/* Some space that we can place objects that want to move into this size pool
+ * During compaction, we'll empty each pools inbox before moving the compact
+ * cursor
+ */
+struct rb_size_pool_inbox {
+    int capa;
+    int pos;
+    VALUE *items;
+};
 
 typedef struct rb_size_pool_struct {
     short slot_size;
@@ -693,6 +705,8 @@ typedef struct rb_size_pool_struct {
     rb_heap_t tomb_heap;
 
     struct rb_size_pool_struct *next;
+    struct rb_size_pool_inbox *inbox;
+
 } rb_size_pool_t;
 
 enum gc_mode {
@@ -1369,6 +1383,75 @@ static inline int
 RVALUE_FLAGS_AGE(VALUE flags)
 {
     return (int)((flags & (FL_PROMOTED0 | FL_PROMOTED1)) >> RVALUE_AGE_SHIFT);
+}
+
+static void
+gc_pool_inbox_init(rb_size_pool_t *size_pool)
+{
+    struct rb_size_pool_inbox *inbox = malloc(sizeof(struct rb_size_pool_inbox));
+    size_pool->inbox = inbox;
+
+    size_pool->inbox->items = calloc(SIZE_POOL_INIT_INBOX_CAPA, sizeof(VALUE));
+    size_pool->inbox->capa = SIZE_POOL_INIT_INBOX_CAPA;
+    size_pool->inbox->pos = 0;
+}
+
+void
+gc_pool_inbox_resize(rb_size_pool_t *size_pool)
+{
+    struct rb_size_pool_inbox *inbox = size_pool->inbox;
+    GC_ASSERT(inbox->pos > inbox->capa);
+    VALUE *items = realloc(inbox->items, inbox->capa * 2);
+    if (items) {
+        inbox->items = items;
+        inbox->capa = inbox->capa * 2;
+    }
+}
+
+static bool
+gc_pool_inbox_empty_p(rb_size_pool_t *size_pool)
+{
+    if(size_pool->inbox->pos > 0) {
+        return FALSE;
+    }
+    else {
+        return TRUE;
+    }
+}
+
+static void
+gc_pool_inbox_add(rb_size_pool_t *size_pool, VALUE obj)
+{
+    if (size_pool->inbox->pos > size_pool->inbox->capa) {
+        gc_pool_inbox_resize(size_pool);
+    }
+
+    size_pool->inbox->items[size_pool->inbox->pos] = obj;
+    size_pool->inbox->pos++;
+}
+
+static VALUE
+gc_pool_inbox_remove(rb_size_pool_t *size_pool)
+{
+    if (gc_pool_inbox_empty_p(size_pool)) {
+        return Qnil;
+    }
+    else {
+        size_pool->inbox->pos--;
+        return size_pool->inbox->items[size_pool->inbox->pos];
+    }
+}
+
+static inline size_t
+size_pool_idx_for_size(size_t size);
+
+void
+gc_new_size_pool_inbox_add(VALUE obj, size_t size)
+{
+    rb_objspace_t *objspace = &rb_objspace;
+    int pool_index = size_pool_idx_for_size(size);
+
+    gc_pool_inbox_add(&size_pools[pool_index], obj);
 }
 
 static int
@@ -3450,11 +3533,13 @@ Init_heap(void)
 
     if (SIZE_POOL_COUNT > 1) {
         size_pools[0].next = &size_pools[1];
+        gc_pool_inbox_init(&size_pools[0]);
 
         for (int i = 1; i < SIZE_POOL_COUNT; i++) {
             int next_idx = i + 1;
             rb_size_pool_t *size_pool = &size_pools[i];
             int multiple = size_pool->slot_size / sizeof(RVALUE);
+            gc_pool_inbox_init(size_pool);
             size_pool->allocatable_pages = gc_params.heap_init_slots * multiple / HEAP_PAGE_OBJ_LIMIT;
             /* set up the links between pools */
             if (i == (SIZE_POOL_COUNT - 1)) {

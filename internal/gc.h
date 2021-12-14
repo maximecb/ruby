@@ -110,6 +110,7 @@ void rb_gc_ractor_newobj_cache_clear(rb_ractor_newobj_cache_t *newobj_cache);
 size_t rb_gc_obj_slot_size(VALUE obj);
 bool rb_gc_size_allocatable_p(size_t size);
 int rb_objspace_garbage_object_p(VALUE obj);
+void gc_new_size_pool_inbox_add(VALUE obj, size_t size);
 
 RUBY_SYMBOL_EXPORT_BEGIN
 /* gc.c (export) */
