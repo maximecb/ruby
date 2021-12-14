@@ -1443,15 +1443,18 @@ gc_pool_inbox_remove(rb_size_pool_t *size_pool)
 }
 
 static inline size_t
-size_pool_idx_for_size(size_t size);
+size_pool_idx_for_size(size_t size, size_t *pool_idx);
 
 void
 gc_new_size_pool_inbox_add(VALUE obj, size_t size)
 {
     rb_objspace_t *objspace = &rb_objspace;
-    int pool_index = size_pool_idx_for_size(size);
 
-    gc_pool_inbox_add(&size_pools[pool_index], obj);
+    size_t pool_index;
+    if (size_pool_idx_for_size(size, &pool_index) != 1)
+    {
+        gc_pool_inbox_add(&size_pools[pool_index], obj);
+    }
 }
 
 static int
@@ -2525,7 +2528,7 @@ newobj_fill(VALUE obj, VALUE v1, VALUE v2, VALUE v3)
 }
 
 static inline size_t
-size_pool_idx_for_size(size_t size)
+size_pool_idx_for_size(size_t size, size_t *pool)
 {
 #if USE_RVARGC
     size_t slot_count = CEILDIV(size, sizeof(RVALUE));
@@ -2533,12 +2536,15 @@ size_pool_idx_for_size(size_t size)
     /* size_pool_idx is ceil(log2(slot_count)) */
     size_t size_pool_idx = 64 - nlz_int64(slot_count - 1);
     if (size_pool_idx >= SIZE_POOL_COUNT) {
-        rb_bug("size_pool_idx_for_size: allocation size too large");
+        // return 1 on error
+        return 1;
     }
 
-    return size_pool_idx;
+    *pool = size_pool_idx;
+    return 0;
 #else
     GC_ASSERT(size <= sizeof(RVALUE));
+    *pool = 0
     return 0;
 #endif
 }
@@ -2616,7 +2622,8 @@ newobj_of0(VALUE klass, VALUE flags, int wb_protected, rb_ractor_t *cr, size_t a
     }
 #endif
 
-    size_t size_pool_idx = size_pool_idx_for_size(alloc_size);
+    size_t size_pool_idx;
+    size_pool_idx_for_size(alloc_size, &size_pool_idx);
 
     if ((!UNLIKELY(during_gc ||
                    ruby_gc_stressful ||
