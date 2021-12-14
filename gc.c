@@ -1394,7 +1394,7 @@ gc_pool_inbox_init(rb_size_pool_t *size_pool)
 
     size_pool->inbox->items = calloc(SIZE_POOL_INIT_INBOX_CAPA, sizeof(VALUE));
     size_pool->inbox->capa = SIZE_POOL_INIT_INBOX_CAPA;
-    size_pool->inbox->pos = 0;
+    size_pool->inbox->pos = -1;
 }
 
 void
@@ -1418,7 +1418,7 @@ gc_pool_inbox_resize(rb_size_pool_t *size_pool)
 static bool
 gc_pool_inbox_empty_p(rb_size_pool_t *size_pool)
 {
-    if(size_pool->inbox->pos > 0) {
+    if(size_pool->inbox->pos >= 0) {
         return FALSE;
     }
     else {
@@ -1433,8 +1433,14 @@ gc_pool_inbox_add(rb_size_pool_t *size_pool, VALUE obj)
         gc_pool_inbox_resize(size_pool);
     }
 
-    size_pool->inbox->items[size_pool->inbox->pos] = obj;
-    size_pool->inbox->pos++;
+    if (gc_pool_inbox_empty_p(size_pool)) {
+        size_pool->inbox->items[0] = obj;
+        size_pool->inbox->pos = 0;
+    }
+    else {
+        size_pool->inbox->items[size_pool->inbox->pos] = obj;
+        size_pool->inbox->pos++;
+    }
 }
 
 static VALUE
@@ -5010,7 +5016,8 @@ try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page,
 }
 
 static short
-try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page, VALUE dest)
+try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
+        VALUE dest, rb_size_pool_t *size_pool)
 {
     struct heap_page * cursor = heap->compact_cursor;
 
@@ -5027,7 +5034,11 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
         bits_t *pin_bits = cursor->pinned_bits;
         RVALUE * p;
 
-        if (heap->compact_cursor_index) {
+        // find space for values moved from other pools first
+        if (!gc_pool_inbox_empty_p(size_pool)) {
+            p = (RVALUE *)gc_pool_inbox_remove(size_pool);
+        }
+        else if (heap->compact_cursor_index) {
             index = BITMAP_INDEX(heap->compact_cursor_index);
             p = heap->compact_cursor_index;
             GC_ASSERT(cursor == GET_HEAP_PAGE(p));
@@ -5282,6 +5293,7 @@ struct gc_sweep_context {
     int final_slots;
     int freed_slots;
     int empty_slots;
+    rb_size_pool_t * size_pool;
 };
 
 static inline void
@@ -5316,7 +5328,7 @@ gc_fill_swept_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_
                     /* Zombie slots don't get marked, but we can't reuse
                      * their memory until they have their finalizers run.*/
                     if (BUILTIN_TYPE(dest) != T_ZOMBIE) {
-                        if (!try_move(objspace, heap, sweep_page, dest)) {
+                        if (!try_move(objspace, heap, sweep_page, dest, ctx->size_pool)) {
                             *finished_compacting = true;
                             (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, sizeof(RVALUE));
                             gc_report(5, objspace, "Quit compacting, couldn't find an object to move\n");
@@ -5796,6 +5808,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
             .final_slots = 0,
             .freed_slots = 0,
             .empty_slots = 0,
+            .size_pool = size_pool,
         };
         gc_sweep_page(objspace, size_pool, heap, &ctx);
         int free_slots = ctx.freed_slots + ctx.empty_slots;
