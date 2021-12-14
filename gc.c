@@ -24,6 +24,7 @@
 #define sighandler_t ruby_sighandler_t
 
 #ifndef _WIN32
+
 #include <unistd.h>
 #include <sys/mman.h>
 #endif
@@ -1401,11 +1402,13 @@ gc_pool_inbox_resize(rb_size_pool_t *size_pool)
 {
     struct rb_size_pool_inbox *inbox = size_pool->inbox;
     GC_ASSERT(inbox->pos > inbox->capa);
-    VALUE *items = realloc(inbox->items, 
-            (inbox->capa + SIZE_POOL_INIT_INBOX_CAPA) * sizeof(VALUE));
+
+    size_t new_capa = inbox->capa + SIZE_POOL_INIT_INBOX_CAPA;
+    VALUE *items = ruby_xrealloc(inbox->items, new_capa * sizeof(VALUE));
+
     if (items) {
         inbox->items = items;
-        inbox->capa = inbox->capa * 2;
+        inbox->capa = new_capa;
     }
     else {
         rb_bug("something happened with realloc");
