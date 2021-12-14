@@ -1401,10 +1401,14 @@ gc_pool_inbox_resize(rb_size_pool_t *size_pool)
 {
     struct rb_size_pool_inbox *inbox = size_pool->inbox;
     GC_ASSERT(inbox->pos > inbox->capa);
-    VALUE *items = realloc(inbox->items, inbox->capa * 2);
+    VALUE *items = realloc(inbox->items, 
+            (inbox->capa + SIZE_POOL_INIT_INBOX_CAPA) * sizeof(VALUE));
     if (items) {
         inbox->items = items;
         inbox->capa = inbox->capa * 2;
+    }
+    else {
+        rb_bug("something happened with realloc");
     }
 }
 
