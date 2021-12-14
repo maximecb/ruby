@@ -417,8 +417,8 @@ mod tests {
         // reg32, imm32
         asm.test((EDI, i32::MAX));
         asm.test((R9D, 0x0FABCAFE));
-        asm.test((EDI, -0xFABCAFE));
-        asm.test((R9W, -1));
+        asm.test((EDI, i32::MIN));
+        asm.test((R9D, -1));
 
         // reg64, reg64
         asm.test((RAX, RDX));
@@ -434,6 +434,6 @@ mod tests {
 
         // TODO: write panic tests
 
-        assert_eq!("48 f7 c0 07 00 00 00", asm.byte_string());
+        assert_eq!("48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff 48 85 d0 4c 85 d9 49 85 dc 4d 85 f7 85 d0 44 85 d9 41 85 dc 45 85 f7", asm.byte_string());
     }
 }
