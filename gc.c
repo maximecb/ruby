@@ -5005,6 +5005,9 @@ gc_do_move(rb_objspace_t *objspace, struct heap_page *page, VALUE dest, VALUE p)
     return false;
 }
 
+/*
+ * This function tries to move values from the bitplane into dest
+ */
 static inline bool
 try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, uintptr_t p, bits_t bits, VALUE dest)
 {
@@ -5027,6 +5030,7 @@ try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page,
     return false;
 }
 
+/* try_move: attempts to move objects starting at the compact cursor into a destination slot */
 static short
 try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
         VALUE dest, rb_size_pool_t *size_pool)
@@ -5034,11 +5038,16 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
     struct heap_page * cursor = heap->compact_cursor;
 
     GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(dest), dest));
+    GC_ASSERT(sweep_page == GET_HEAP_PAGE(dest));
 
-    /* T_NONE objects came from the free list.  If the object is *not* a
-     * T_NONE, it is an object that just got freed but hasn't been
-     * added to the freelist yet */
+    struct rb_size_pool_inbox *inbox = size_pool->inbox;
+    VALUE p = gc_pool_inbox_remove(size_pool);
 
+    while(p != Qnil) {
+        fprintf(stderr, "inbox: %p, idx: %i, obj: %s\n", inbox, inbox->pos, obj_info(p));
+        p = gc_pool_inbox_remove(size_pool);
+    }
+    
     while (1) {
         size_t index;
 
@@ -5046,11 +5055,7 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
         bits_t *pin_bits = cursor->pinned_bits;
         RVALUE * p;
 
-        // find space for values moved from other pools first
-        if (!gc_pool_inbox_empty_p(size_pool)) {
-            p = (RVALUE *)gc_pool_inbox_remove(size_pool);
-        }
-        else if (heap->compact_cursor_index) {
+        if (heap->compact_cursor_index) {
             index = BITMAP_INDEX(heap->compact_cursor_index);
             p = heap->compact_cursor_index;
             GC_ASSERT(cursor == GET_HEAP_PAGE(p));
