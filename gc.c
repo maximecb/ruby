@@ -4977,6 +4977,34 @@ unlock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
     }
 }
 
+static bool
+gc_do_move(rb_objspace_t *objspace, struct heap_page *page, VALUE dest, VALUE p)
+{
+    /* We're trying to move "p" */
+    objspace->rcompactor.considered_count_table[BUILTIN_TYPE((VALUE)p)]++;
+
+    if (gc_is_moveable_obj(objspace, (VALUE)p)) {
+        /* We were able to move "p" */
+        objspace->rcompactor.moved_count_table[BUILTIN_TYPE((VALUE)p)]++;
+        objspace->rcompactor.total_moved++;
+
+        bool from_freelist = false;
+
+        if (BUILTIN_TYPE(dest) == T_NONE) {
+            from_freelist = true;
+        }
+
+        gc_move(objspace, (VALUE)p, dest, page->slot_size);
+        gc_pin(objspace, (VALUE)p);
+        if (from_freelist) {
+            FL_SET((VALUE)p, FL_FROM_FREELIST);
+        }
+
+        return true;
+    }
+    return false;
+}
+
 static inline bool
 try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page, uintptr_t p, bits_t bits, VALUE dest)
 {
@@ -4986,24 +5014,8 @@ try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page,
                 /* We're trying to move "p" */
                 objspace->rcompactor.considered_count_table[BUILTIN_TYPE((VALUE)p)]++;
 
-                if (gc_is_moveable_obj(objspace, (VALUE)p)) {
-                    /* We were able to move "p" */
-                    objspace->rcompactor.moved_count_table[BUILTIN_TYPE((VALUE)p)]++;
-                    objspace->rcompactor.total_moved++;
-
-                    bool from_freelist = false;
-
-                    if (BUILTIN_TYPE(dest) == T_NONE) {
-                        from_freelist = true;
-                    }
-
-                    gc_move(objspace, (VALUE)p, dest, page->slot_size);
-                    gc_pin(objspace, (VALUE)p);
+                if (gc_do_move(objspace, page, dest, (VALUE)p)) {
                     heap->compact_cursor_index = (RVALUE *)p;
-                    if (from_freelist) {
-                        FL_SET((VALUE)p, FL_FROM_FREELIST);
-                    }
-
                     return true;
                 }
             }
