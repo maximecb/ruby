@@ -138,9 +138,9 @@ pub struct Encoding {
     opcode: u8,
     modrm: u8,
     disp8: Option<i8>, // We haven't found a use for more than 8 bits of displacement
-    sib: Option<u8>, // Sometimes to do 8 bit displacement you need an SIB byte. We
-                     // don't have support for the more complex addressing forms such as
-                     // `base + index * scale + disp` for now.
+    sib: Option<u8>,   // Sometimes to do 8 bit displacement you need an SIB byte. We
+    // don't have support for the more complex addressing forms such as
+    // `base + index * scale + disp` for now.
     imm32: Option<i32>, // Tmporary. Maybe a enum with different imm sizes
 }
 
@@ -258,14 +258,19 @@ impl mnemonic_forms::Test for (AddressingForm, i32) {
                     let rex_x = 0;
                     let rex_b = dest.reg.id_rex_bit();
                     if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                        Some(0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b)
+                        Some(
+                            0b0100_0000
+                                + 0b1000 * rex_w
+                                + 0b0100 * rex_r
+                                + 0b0010 * rex_x
+                                + 0b0001 * rex_b,
+                        )
                     } else {
                         None
                     }
-
                 };
                 let id_rm = dest.reg.id_rm();
-                const RM_SIB_ESCAPE:u8 = 0b100;
+                const RM_SIB_ESCAPE: u8 = 0b100;
                 let sib = if id_rm == RM_SIB_ESCAPE {
                     // | scale |   index   |    base   |
                     // +---+---+---+---+---+---+---+---+
@@ -284,7 +289,6 @@ impl mnemonic_forms::Test for (AddressingForm, i32) {
                     sib: sib,
                     imm32: Some(self.1),
                 }
-
             }
         }
     }
@@ -525,7 +529,6 @@ mod tests {
         assert_eq!("48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff 48 85 d0 4c 85 d9 49 85 dc 4d 85 f7 85 d0 44 85 d9 41 85 dc 45 85 f7", asm.byte_string());
     }
 
-
     #[test]
     fn test_with_memory() {
         use AddressingForm::RegPlus8BOffset as Mem;
@@ -533,14 +536,42 @@ mod tests {
 
         let mut asm = Assembler::new();
 
-        asm.test((Mem(RegPlus8BOffset{reg: RAX, offset: i8::MIN, pointee: B64}), i32::MAX));
-        asm.test((Mem(RegPlus8BOffset{reg: R13, offset: i8::MAX, pointee: B64}), i32::MAX));
+        asm.test((
+            Mem(RegPlus8BOffset {
+                reg: RAX,
+                offset: i8::MIN,
+                pointee: B64,
+            }),
+            i32::MAX,
+        ));
+        asm.test((
+            Mem(RegPlus8BOffset {
+                reg: R13,
+                offset: i8::MAX,
+                pointee: B64,
+            }),
+            i32::MAX,
+        ));
 
-        asm.test((Mem(RegPlus8BOffset{reg: RSP, offset: i8::MIN, pointee: B64}), i32::MIN));
+        asm.test((
+            Mem(RegPlus8BOffset {
+                reg: RSP,
+                offset: i8::MIN,
+                pointee: B64,
+            }),
+            i32::MIN,
+        ));
         // Note: with offset == 0, there is a shorter encoding possible that does *not*
         // use an SIB byte. Expect this test to fail down the line when we select that.
         // encoding.
-        asm.test((Mem(RegPlus8BOffset{reg: R12, offset: 0, pointee: B64}), 0xfabcafe));
+        asm.test((
+            Mem(RegPlus8BOffset {
+                reg: R12,
+                offset: 0,
+                pointee: B64,
+            }),
+            0xfabcafe,
+        ));
 
         assert_eq!("48 f7 40 80 ff ff ff 7f 49 f7 45 7f ff ff ff 7f 48 f7 44 24 80 00 00 00 80 49 f7 44 24 00 fe ca ab 0f", asm.byte_string());
     }
