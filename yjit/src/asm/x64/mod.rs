@@ -553,6 +553,7 @@ mod tests {
             i32::MAX,
         ));
 
+        // TODO: make shorthand for reg + 8
         asm.test((
             Mem(RegPlus8BOffset {
                 reg: RSP,
