@@ -1429,7 +1429,7 @@ gc_pool_inbox_empty_p(rb_size_pool_t *size_pool)
 static void
 gc_pool_inbox_add(rb_size_pool_t *size_pool, VALUE obj)
 {
-    if (size_pool->inbox->pos > size_pool->inbox->capa) {
+    if (size_pool->inbox->pos == size_pool->inbox->capa) {
         gc_pool_inbox_resize(size_pool);
     }
 
