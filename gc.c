@@ -2555,7 +2555,7 @@ size_pool_idx_for_size(size_t size, size_t *pool)
     return 0;
 #else
     GC_ASSERT(size <= sizeof(RVALUE));
-    *pool = 0
+    *pool = 0;
     return 0;
 #endif
 }
