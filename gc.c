@@ -3145,6 +3145,20 @@ obj_free(rb_objspace_t *objspace, VALUE obj)
     // RUBY_DEBUG_LOG("obj:%p (%s)", (void *)obj, obj_type_name(obj));
 
     gc_event_hook(objspace, RUBY_INTERNAL_EVENT_FREEOBJ, obj);
+    // remove obj from all the size pool inboxes
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t *size_pool = &size_pools[i];
+        struct rb_size_pool_inbox *inbox = size_pool->inbox;
+
+        if (!gc_pool_inbox_empty_p(size_pool)) {
+            for (int j = 0; j < inbox->pos; j++) {
+                VALUE inbox_obj = inbox->items[j];
+                if (inbox_obj == obj) {
+                    inbox->items[j] = Qnil;
+                }
+            }
+        }
+    }
 
     switch (BUILTIN_TYPE(obj)) {
       case T_NIL:
