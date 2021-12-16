@@ -1418,11 +1418,11 @@ gc_pool_inbox_resize(rb_size_pool_t *size_pool)
 static bool
 gc_pool_inbox_empty_p(rb_size_pool_t *size_pool)
 {
-    if(size_pool->inbox->pos >= 0) {
-        return FALSE;
+    if(size_pool->inbox->pos < 0) {
+        return TRUE;
     }
     else {
-        return TRUE;
+        return FALSE;
     }
 }
 
@@ -1433,26 +1433,24 @@ gc_pool_inbox_add(rb_size_pool_t *size_pool, VALUE obj)
         gc_pool_inbox_resize(size_pool);
     }
 
-    if (gc_pool_inbox_empty_p(size_pool)) {
-        size_pool->inbox->items[0] = obj;
-        size_pool->inbox->pos = 0;
-    }
-    else {
-        size_pool->inbox->items[size_pool->inbox->pos] = obj;
-        size_pool->inbox->pos++;
-    }
+    size_pool->inbox->pos++;
+    size_pool->inbox->items[size_pool->inbox->pos] = obj;
 }
 
 static VALUE
 gc_pool_inbox_remove(rb_size_pool_t *size_pool)
 {
+    VALUE obj;
+
     if (gc_pool_inbox_empty_p(size_pool)) {
-        return Qnil;
+        obj = Qnil;
     }
     else {
+        obj = size_pool->inbox->items[size_pool->inbox->pos];
         size_pool->inbox->pos--;
-        return size_pool->inbox->items[size_pool->inbox->pos];
     }
+
+    return obj;
 }
 
 static inline size_t
