@@ -1403,7 +1403,7 @@ gc_pool_inbox_resize(rb_size_pool_t *size_pool)
     struct rb_size_pool_inbox *inbox = size_pool->inbox;
     GC_ASSERT(inbox->pos > inbox->capa);
 
-    size_t new_capa = inbox->capa + SIZE_POOL_INIT_INBOX_CAPA;
+    int new_capa = inbox->capa + SIZE_POOL_INIT_INBOX_CAPA;
     VALUE *items = ruby_xrealloc(inbox->items, new_capa * sizeof(VALUE));
 
     if (items) {
