@@ -5052,13 +5052,10 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
     GC_ASSERT(!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(dest), dest));
     GC_ASSERT(sweep_page == GET_HEAP_PAGE(dest));
 
-    struct rb_size_pool_inbox *inbox = size_pool->inbox;
     VALUE p;
-
     do{
         p = gc_pool_inbox_remove(size_pool);
         if (p != Qnil) {
-            fprintf(stderr, "inbox: %p, idx: %i, obj: %s\n", inbox, inbox->pos +1, obj_info(p));
             break;
         }
     } while (!gc_pool_inbox_empty_p(size_pool));
@@ -5066,13 +5063,11 @@ try_move(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *sweep_page,
     if (p != Qnil) {
         GC_ASSERT(RB_TYPE_P(p, T_STRING));
         if (gc_do_move(objspace, sweep_page, dest, p)){
-            fprintf(stderr, "moving %p -> %p, from inbox: %p (%i)\n", p, dest, size_pool->inbox, size_pool->inbox->pos);
             return 1;
         }
     }
     
     while (1) {
-        fprintf(stderr, "inbox empty: continuing move from compact cursor\n");
         size_t index;
 
         bits_t *mark_bits = cursor->mark_bits;
