@@ -137,12 +137,40 @@ pub struct Encoding {
     rex: Option<u8>,
     opcode: u8,
     modrm: u8,
+    disp8: Option<i8>, // We haven't found a use for more than 8 bits of displacement
+    sib: Option<u8>, // Sometimes to do 8 bit displacement you need an SIB byte. We
+                     // don't have support for the more complex addressing forms such as
+                     // `base + index * scale + disp` for now.
     imm32: Option<i32>, // Tmporary. Maybe a enum with different imm sizes
+}
+
+/// Represent an addressing form encodable through a configuration of the modr/m byte.
+/// No scale, index, base (SIB) form support at the moment as we haven't found the need.
+/// 64 bit addressing only, meaning the produced addresses are 64 bits.
+pub enum AddressingForm {
+    RegPlus8BOffset(RegPlus8BOffset),
+}
+
+/// An addressing form. See the AddressingForm enum.
+pub struct RegPlus8BOffset {
+    /// Base register
+    reg: Reg64,
+    /// 8 bit offset
+    offset: i8,
+    /// Bit width of the data that resides at the produced address
+    pointee: RegisterWidth,
 }
 
 mod mnemonic_forms {
     use crate::asm::x64::Encoding;
     pub trait Test {
+        // This is a hack to allow use of generic parameter at build time.
+        // See https://github.com/rust-lang/rust/issues/91877
+        // If I try to use the generic arg in const context inside a function, I get
+        // "use of generic parameter from outer function".
+        // It gives a more obvious error message if I switch into const context using
+        // the size part of an array type:
+        // "error: generic parameters may not be used in const operations"
         const ACCEPTABLE: ();
         fn encode(self) -> Encoding;
     }
@@ -154,9 +182,10 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
         _ => panic!("Only Reg64 and Reg32 for now"),
     };
     fn encode(self) -> Encoding {
-        // NOTE(alan): it's surprising that the associated constant
-        // is not evaluated unless used. Timie to file a bug?
+        // It's surprising that the associated constant
+        // is not evaluated unless used. Bug report https://github.com/rust-lang/rust/issues/91877
         let _: () = Self::ACCEPTABLE;
+
         let rex = {
             //TODO comment
             let rex_w = (Reg::WIDTH == B64) as u8;
@@ -178,6 +207,8 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
             rex: rex,
             opcode: 0xf7,
             modrm: 0b11000000 + self.0.id_rm(),
+            disp8: None,
+            sib: None,
             imm32: Some(self.1),
         }
     }
@@ -209,7 +240,52 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
             rex: rex,
             opcode: 0x85,
             modrm: 0b11_000_000 + (rhs.id_rm() << 3) + (lhs.id_rm() << 0),
+            disp8: None,
+            sib: None,
             imm32: None,
+        }
+    }
+}
+
+impl mnemonic_forms::Test for (AddressingForm, i32) {
+    const ACCEPTABLE: () = ();
+    fn encode(self) -> Encoding {
+        match self.0 {
+            AddressingForm::RegPlus8BOffset(dest) => {
+                let rex = {
+                    let rex_w = (dest.pointee == B64) as u8;
+                    let rex_r = 0;
+                    let rex_x = 0;
+                    let rex_b = dest.reg.id_rex_bit();
+                    if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
+                        Some(0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b)
+                    } else {
+                        None
+                    }
+
+                };
+                let id_rm = dest.reg.id_rm();
+                const RM_SIB_ESCAPE:u8 = 0b100;
+                let sib = if id_rm == RM_SIB_ESCAPE {
+                    // | scale |   index   |    base   |
+                    // +---+---+---+---+---+---+---+---+
+                    // NOTE: huh, this breaks the id_rm naming because we are
+                    // not constructing the rm byte here.
+                    // mod=0b00 with index=0b100 encodes the [reg+disp8] form.
+                    Some(0b00_100_000 + id_rm)
+                } else {
+                    None
+                };
+                Encoding {
+                    rex: rex,
+                    opcode: 0xf7,
+                    modrm: 0b01_000_000 + id_rm,
+                    disp8: Some(dest.offset),
+                    sib: sib,
+                    imm32: Some(self.1),
+                }
+
+            }
         }
     }
 }
@@ -220,6 +296,28 @@ impl Assembler {
     }
     pub fn encoded(&self) -> &Vec<u8> {
         &self.encoded
+    }
+
+    fn push_one_insn(&mut self, encoding: Encoding) {
+        if let Some(rex) = encoding.rex {
+            self.encoded.push(rex);
+        }
+        self.encoded.push(encoding.opcode);
+        self.encoded.push(encoding.modrm);
+        if let Some(sib) = encoding.sib {
+            self.encoded.push(sib);
+        }
+        if let Some(disp8) = encoding.disp8 {
+            // Rust gurantees that integers are two's complement and
+            // casting between i8 and u8 is a no-op. See
+            // https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
+            self.encoded.push(disp8.to_le() as u8);
+        }
+        if let Some(imm32) = encoding.imm32 {
+            for byte in imm32.to_le_bytes() {
+                self.encoded.push(byte);
+            }
+        }
     }
 
     /*
@@ -274,17 +372,7 @@ impl Assembler {
     */
 
     pub fn test<T: mnemonic_forms::Test>(&mut self, operands: T) {
-        let encoding = operands.encode();
-        if let Some(rex) = encoding.rex {
-            self.encoded.push(rex);
-        }
-        self.encoded.push(encoding.opcode);
-        self.encoded.push(encoding.modrm);
-        if let Some(imm32) = encoding.imm32 {
-            for byte in imm32.to_le_bytes() {
-                self.encoded.push(byte);
-            }
-        }
+        self.push_one_insn(operands.encode());
     }
 
     /*
@@ -435,5 +523,25 @@ mod tests {
         // TODO: write panic tests
 
         assert_eq!("48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff 48 85 d0 4c 85 d9 49 85 dc 4d 85 f7 85 d0 44 85 d9 41 85 dc 45 85 f7", asm.byte_string());
+    }
+
+
+    #[test]
+    fn test_with_memory() {
+        use AddressingForm::RegPlus8BOffset as Mem;
+        use RegisterWidth::*;
+
+        let mut asm = Assembler::new();
+
+        asm.test((Mem(RegPlus8BOffset{reg: RAX, offset: i8::MIN, pointee: B64}), i32::MAX));
+        asm.test((Mem(RegPlus8BOffset{reg: R13, offset: i8::MAX, pointee: B64}), i32::MAX));
+
+        asm.test((Mem(RegPlus8BOffset{reg: RSP, offset: i8::MIN, pointee: B64}), i32::MIN));
+        // Note: with offset == 0, there is a shorter encoding possible that does *not*
+        // use an SIB byte. Expect this test to fail down the line when we select that.
+        // encoding.
+        asm.test((Mem(RegPlus8BOffset{reg: R12, offset: 0, pointee: B64}), 0xfabcafe));
+
+        assert_eq!("48 f7 40 80 ff ff ff 7f 49 f7 45 7f ff ff ff 7f 48 f7 44 24 80 00 00 00 80 49 f7 44 24 00 fe ca ab 0f", asm.byte_string());
     }
 }
