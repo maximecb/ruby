@@ -161,6 +161,15 @@ pub struct RegPlus8BOffset {
     pointee: RegisterWidth,
 }
 
+/// Short-hand for making an AddressingForm.
+pub fn mem_opnd(pointee_width: RegisterWidth, reg: Reg64, offset: i8) -> AddressingForm {
+    AddressingForm::RegPlus8BOffset(RegPlus8BOffset {
+        reg: reg,
+        pointee: pointee_width,
+        offset: offset,
+    })
+}
+
 mod mnemonic_forms {
     use crate::asm::x64::Encoding;
     pub trait Test {
@@ -451,6 +460,42 @@ mod tests {
         }
     }
 
+    macro_rules! assert_one {
+        ($disasm:literal, $bytes:literal, $mnemonic:ident $args:expr) => {{
+            let mut asm = Assembler::new();
+            asm.$mnemonic($args);
+
+            assert_eq!(asm.byte_string(), $bytes);
+
+            #[cfg(feature = "disassembly")]
+            {
+                extern crate capstone;
+                use capstone::prelude::*;
+                let cs = Capstone::new()
+                    .x86()
+                    .mode(arch::x86::ArchMode::Mode64)
+                    .syntax(arch::x86::ArchSyntax::Intel)
+                    .build()
+                    .expect("Failed to create Capstone object");
+
+                let insns = cs
+                    .disasm_all(asm.encoded(), 0x1000)
+                    .expect("failed to disassemble");
+
+                match insns.as_ref() {
+                    [insn] => {
+                        let mnemonic = insn.mnemonic().unwrap();
+                        let op_str = insn.op_str().unwrap();
+                        assert_eq!(format!("{} {}", mnemonic, op_str), $disasm);
+                    }
+                    _ => {
+                        panic!("failed to disassemble to exactly one instruction");
+                    }
+                }
+            }
+        }};
+    }
+
     /*
     #[test]
     fn reg_to_reg_movs() {
@@ -536,44 +581,56 @@ mod tests {
 
         let mut asm = Assembler::new();
 
-        asm.test((
-            Mem(RegPlus8BOffset {
-                reg: RAX,
-                offset: i8::MIN,
-                pointee: B64,
-            }),
-            i32::MAX,
-        ));
-        asm.test((
-            Mem(RegPlus8BOffset {
-                reg: R13,
-                offset: i8::MAX,
-                pointee: B64,
-            }),
-            i32::MAX,
-        ));
+        assert_one!(
+            "test qword ptr [rax - 0x80], 0x7fffffff",
+            "48 f7 40 80 ff ff ff 7f",
+            test(mem_opnd(B64, RAX, i8::MIN), i32::MAX)
+        );
 
-        // TODO: make shorthand for reg + 8
-        asm.test((
-            Mem(RegPlus8BOffset {
-                reg: RSP,
-                offset: i8::MIN,
-                pointee: B64,
-            }),
-            i32::MIN,
-        ));
+        assert_one!(
+            "test qword ptr [r13 + 0x7f], 0x7fffffff",
+            "49 f7 45 7f ff ff ff 7f",
+            test(mem_opnd(B64, R13, i8::MAX), i32::MAX)
+        );
+
+        assert_one!(
+            "test qword ptr [rsp - 0x80], -0x80000000",
+            "48 f7 44 24 80 00 00 00 80",
+            test(mem_opnd(B64, RSP, i8::MIN), i32::MIN)
+        );
+
         // Note: with offset == 0, there is a shorter encoding possible that does *not*
         // use an SIB byte. Expect this test to fail down the line when we select that.
         // encoding.
-        asm.test((
-            Mem(RegPlus8BOffset {
-                reg: R12,
-                offset: 0,
-                pointee: B64,
-            }),
-            0xfabcafe,
-        ));
+        assert_one!(
+            "test qword ptr [r12], 0xfabcafe",
+            "49 f7 44 24 00 fe ca ab 0f",
+            test(mem_opnd(B64, R12, 0), 0xfabcafe)
+        );
+    }
 
-        assert_eq!("48 f7 40 80 ff ff ff 7f 49 f7 45 7f ff ff ff 7f 48 f7 44 24 80 00 00 00 80 49 f7 44 24 00 fe ca ab 0f", asm.byte_string());
+    #[test]
+    fn capstone_is_available() -> Result<(), Error> {
+        #[cfg(feature = "disassembly")]
+        {
+            extern crate capstone;
+            use capstone::prelude::*;
+            let cs = Capstone::new()
+                .x86()
+                .mode(arch::x86::ArchMode::Mode64)
+                .syntax(arch::x86::ArchSyntax::Intel)
+                .build()?
+
+            let insns = cs.disasm_all([0xCC], 0x1000)
+
+            return match insns {
+                [insn] => {
+                    assert_eq!(Some("int3"), insn);
+                },
+                _ => Error
+            }
+        }
+
+        Error
     }
 }
