@@ -576,10 +576,7 @@ mod tests {
 
     #[test]
     fn test_with_memory() {
-        use AddressingForm::RegPlus8BOffset as Mem;
         use RegisterWidth::*;
-
-        let mut asm = Assembler::new();
 
         assert_one!(
             "test qword ptr [rax - 0x80], 0x7fffffff",
@@ -610,27 +607,27 @@ mod tests {
     }
 
     #[test]
-    fn capstone_is_available() -> Result<(), Error> {
-        #[cfg(feature = "disassembly")]
-        {
-            extern crate capstone;
-            use capstone::prelude::*;
-            let cs = Capstone::new()
-                .x86()
-                .mode(arch::x86::ArchMode::Mode64)
-                .syntax(arch::x86::ArchSyntax::Intel)
-                .build()?
+    #[cfg(feature = "disassembly")]
+    fn capstone_availability() -> Result<(), capstone::Error> {
+        // Test drive Capstone with simple input
+        extern crate capstone;
+        use capstone::prelude::*;
+        let cs = Capstone::new()
+            .x86()
+            .mode(arch::x86::ArchMode::Mode64)
+            .syntax(arch::x86::ArchSyntax::Intel)
+            .build()?;
 
-            let insns = cs.disasm_all([0xCC], 0x1000)
+        let insns = cs.disasm_all(&[0xCC], 0x1000)?;
 
-            return match insns {
-                [insn] => {
-                    assert_eq!(Some("int3"), insn);
-                },
-                _ => Error
+        match insns.as_ref() {
+            [insn] => {
+                assert_eq!(Some("int3"), insn.mnemonic());
+                Ok(())
             }
+            _ => Err(capstone::Error::CustomError(
+                "expected to disassemble to int3",
+            )),
         }
-
-        Error
     }
 }
