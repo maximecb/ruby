@@ -455,18 +455,20 @@ mod tests {
             self.encoded()
                 .into_iter()
                 .map(|byte| format!("{:02x}", byte))
-                .collect::<Vec<String>>()
+                .collect::<Vec<_>>()
                 .join(" ")
         }
     }
 
-    macro_rules! assert_one {
-        ($disasm:literal, $bytes:literal, $mnemonic:ident $args:expr) => {{
+    macro_rules! test_encoding {
+        ($bytes:literal $($disasm:literal, $mnemonic:ident $args:expr)+) => {{
             let mut asm = Assembler::new();
-            asm.$mnemonic($args);
+
+            $( asm.$mnemonic($args); )*
 
             assert_eq!(asm.byte_string(), $bytes);
 
+            // In case we have a disassembler, compare against a disassembly expectation
             #[cfg(feature = "disassembly")]
             {
                 extern crate capstone;
@@ -480,18 +482,25 @@ mod tests {
 
                 let insns = cs
                     .disasm_all(asm.encoded(), 0x1000)
-                    .expect("failed to disassemble");
+                    .expect("Failed to disassemble");
 
-                match insns.as_ref() {
-                    [insn] => {
-                        let mnemonic = insn.mnemonic().unwrap();
-                        let op_str = insn.op_str().unwrap();
-                        assert_eq!(format!("{} {}", mnemonic, op_str), $disasm);
-                    }
-                    _ => {
-                        panic!("failed to disassemble to exactly one instruction");
-                    }
-                }
+                let mut insn_idx = 0;
+                $(
+                    match insns.as_ref().get(insn_idx).map(|insn| (insn.mnemonic(), insn.op_str())) {
+                        Some((Some(mnemonic), op_str)) => {
+                            let mut capstone_disasm = mnemonic.to_owned();
+                            if let Some(op_str) = op_str {
+                                capstone_disasm.push_str(" ");
+                                capstone_disasm.push_str(op_str);
+                            }
+                            assert_eq!($disasm, capstone_disasm, "instruction_index={}", insn_idx);
+                        },
+                        _ => panic!("Failed to disassemble to a instruction at instruction_index={}", insn_idx),
+                    };
+                    insn_idx += 1;
+                    let _ = insn_idx; // Address unused warning from the last iteration
+                )*
+
             }
         }};
     }
@@ -543,72 +552,80 @@ mod tests {
 
     #[test]
     fn test() {
-        let mut asm = Assembler::new();
-
         // reg64, imm32
-        asm.test((RAX, i32::MAX));
-        asm.test((R11, 0x0FABCAFE));
-        asm.test((RDI, -0xFABCAFE));
-        asm.test((R8, -1));
+        test_encoding!(
+            "48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff"
+            "test rax, 0x7fffffff",  test(RAX, i32::MAX)
+            "test r11, 0xfabcafe",   test(R11, 0xFABCAFE)
+            "test rdi, -0xfabcafe",  test(RDI, -0xFABCAFE)
+            "test r8, -1",           test(R8, -1)
+        );
 
         // reg32, imm32
-        asm.test((EDI, i32::MAX));
-        asm.test((R9D, 0x0FABCAFE));
-        asm.test((EDI, i32::MIN));
-        asm.test((R9D, -1));
+        test_encoding!(
+            "f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff"
+            "test edi, 0x7fffffff", test(EDI, i32::MAX)
+            "test r9d, 0xfabcafe", test(R9D, 0xFABCAFE)
+            "test edi, 0x80000000", test(EDI, i32::MIN)
+            "test r9d, 0xffffffff", test(R9D, -1)
+        );
 
         // reg64, reg64
-        asm.test((RAX, RDX));
-        asm.test((RCX, R11));
-        asm.test((R12, RBX));
-        asm.test((R15, R14));
+        test_encoding!(
+            "48 85 d0 4c 85 d9 49 85 dc 4d 85 f7"
+            "test rax, rdx", test(RAX, RDX)
+            "test rcx, r11", test(RCX, R11)
+            "test r12, rbx", test(R12, RBX)
+            "test r15, r14", test(R15, R14)
+        );
 
         // reg32, reg32
-        asm.test((EAX, EDX));
-        asm.test((ECX, R11D));
-        asm.test((R12D, EBX));
-        asm.test((R15D, R14D));
+        test_encoding!(
+            "85 d0 44 85 d9 41 85 dc 45 85 f7"
+            "test eax, edx", test(EAX, EDX)
+            "test ecx, r11d", test(ECX, R11D)
+            "test r12d, ebx", test(R12D, EBX)
+            "test r15d, r14d", test(R15D, R14D)
+        )
 
         // TODO: write panic tests
-
-        assert_eq!("48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff 48 85 d0 4c 85 d9 49 85 dc 4d 85 f7 85 d0 44 85 d9 41 85 dc 45 85 f7", asm.byte_string());
     }
 
     #[test]
     fn test_with_memory() {
         use RegisterWidth::*;
 
-        assert_one!(
+        test_encoding!(
+            "48 f7 40 80 ff ff ff 7f"
             "test qword ptr [rax - 0x80], 0x7fffffff",
-            "48 f7 40 80 ff ff ff 7f",
             test(mem_opnd(B64, RAX, i8::MIN), i32::MAX)
         );
 
-        assert_one!(
+        test_encoding!(
+            "49 f7 45 7f ff ff ff 7f"
             "test qword ptr [r13 + 0x7f], 0x7fffffff",
-            "49 f7 45 7f ff ff ff 7f",
             test(mem_opnd(B64, R13, i8::MAX), i32::MAX)
         );
 
-        assert_one!(
+        test_encoding!(
+            "48 f7 44 24 80 00 00 00 80"
             "test qword ptr [rsp - 0x80], -0x80000000",
-            "48 f7 44 24 80 00 00 00 80",
             test(mem_opnd(B64, RSP, i8::MIN), i32::MIN)
         );
 
         // Note: with offset == 0, there is a shorter encoding possible that does *not*
         // use an SIB byte. Expect this test to fail down the line when we select that.
         // encoding.
-        assert_one!(
+        test_encoding!(
+            "49 f7 44 24 00 fe ca ab 0f"
             "test qword ptr [r12], 0xfabcafe",
-            "49 f7 44 24 00 fe ca ab 0f",
             test(mem_opnd(B64, R12, 0), 0xfabcafe)
         );
     }
 
     #[test]
     #[cfg(feature = "disassembly")]
-    fn capstone_availability() -> Result<(), capstone::Error> {
+    fn basic_capstone_usage() -> Result<(), capstone::Error> {
         // Test drive Capstone with simple input
         extern crate capstone;
         use capstone::prelude::*;
