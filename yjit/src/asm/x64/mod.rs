@@ -10,8 +10,9 @@ pub trait Register {
     /// This bit is set for R9-R15, for example.
     fn id_rex_bit(&self) -> u8;
 
-    /// The 3 bit number for identifying the register in the modr/m byte.
-    fn id_rm(&self) -> u8;
+    /// The lower 3 bits of the number identifying the register. Used in the ModR/M byte, for
+    /// example.
+    fn id_lower(&self) -> U3;
 }
 
 pub struct Reg64(RegId);
@@ -21,7 +22,7 @@ pub struct Reg8(RegId);
 
 pub struct RegId {
     id_rex_bit: u8,
-    id_rm: u8,
+    id_lower: U3,
 }
 
 use RegisterWidth::*;
@@ -32,8 +33,8 @@ impl Register for Reg64 {
     fn id_rex_bit(&self) -> u8 {
         self.0.id_rex_bit
     }
-    fn id_rm(&self) -> u8 {
-        self.0.id_rm
+    fn id_lower(&self) -> U3 {
+        self.0.id_lower
     }
 }
 
@@ -43,8 +44,8 @@ impl Register for Reg32 {
     fn id_rex_bit(&self) -> u8 {
         self.0.id_rex_bit
     }
-    fn id_rm(&self) -> u8 {
-        self.0.id_rm
+    fn id_lower(&self) -> U3 {
+        self.0.id_lower
     }
 }
 
@@ -54,8 +55,8 @@ impl Register for Reg16 {
     fn id_rex_bit(&self) -> u8 {
         self.0.id_rex_bit
     }
-    fn id_rm(&self) -> u8 {
-        self.0.id_rm
+    fn id_lower(&self) -> U3 {
+        self.0.id_lower
     }
 }
 
@@ -65,8 +66,8 @@ impl Register for Reg8 {
     fn id_rex_bit(&self) -> u8 {
         self.0.id_rex_bit
     }
-    fn id_rm(&self) -> u8 {
-        self.0.id_rm
+    fn id_lower(&self) -> U3 {
+        self.0.id_lower
     }
 }
 
@@ -79,41 +80,55 @@ pub enum RegisterWidth {
     B64,
 }
 
+/// A 3-bit unsigned integer. Some fields of the ModR/M and SIB byte use exactly three bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum U3 {
+    Dec0 = 0b000,
+    Dec1 = 0b001,
+    Dec2 = 0b010,
+    Dec3 = 0b011,
+    Dec4 = 0b100,
+    Dec5 = 0b101,
+    Dec6 = 0b110,
+    Dec7 = 0b111,
+}
+
 /// Make constants for general purpose registers.
 /// For simplificty, high byte registers such as AH are excluded on purpose.
 macro_rules! general_purpose_registers {
     (
-        $(rex:$vintage:literal $id:literal $b8_name:ident $b16_name:ident $b32_name:ident $b64_name:ident)*
+        $(rex:$vintage:literal $id:ident $b8_name:ident $b16_name:ident $b32_name:ident $b64_name:ident)*
     ) => {
         $(
-            pub const $b64_name: Reg64 = Reg64(RegId{ id_rex_bit: $vintage, id_rm: $id });
-            pub const $b32_name: Reg32 = Reg32(RegId { id_rex_bit: $vintage, id_rm: $id });
-            pub const $b16_name: Reg16 = Reg16(RegId { id_rex_bit: $vintage, id_rm: $id });
-            pub const $b8_name: Reg8 = Reg8(RegId { id_rex_bit: $vintage, id_rm: $id });
+            pub const $b64_name: Reg64 = Reg64(RegId{ id_rex_bit: $vintage, id_lower: U3::$id });
+            pub const $b32_name: Reg32 = Reg32(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
+            pub const $b16_name: Reg16 = Reg16(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
+            pub const $b8_name: Reg8 = Reg8(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
         )*
     }
 }
 
 // x64 general purpose register
 general_purpose_registers! {
-    rex:0 0 AL   AX   EAX  RAX
-    rex:0 1 CL   CX   ECX  RCX
-    rex:0 2 DL   DX   EDX  RDX
-    rex:0 3 BL   BX   EBX  RBX
-    rex:0 4 SPL  SP   ESP  RSP
-    rex:0 5 BPL  BP   EBP  RBP
-    rex:0 6 SIL  SI   ESI  RSI
-    rex:0 7 DIL  DI   EDI  RDI
-    rex:1 0 R8L  R8W  R8D  R8
-    rex:1 1 R9L  R9W  R9D  R9
-    rex:1 2 R10L R10W R10D R10
-    rex:1 3 R11L R11W R11D R11
-    rex:1 4 R12L R12W R12D R12
-    rex:1 5 R13L R13W R13D R13
-    rex:1 6 R14L R14W R14D R14
-    rex:1 7 R15L R15W R15D R15
+    rex:0 Dec0 AL   AX   EAX  RAX
+    rex:0 Dec1 CL   CX   ECX  RCX
+    rex:0 Dec2 DL   DX   EDX  RDX
+    rex:0 Dec3 BL   BX   EBX  RBX
+    rex:0 Dec4 SPL  SP   ESP  RSP
+    rex:0 Dec5 BPL  BP   EBP  RBP
+    rex:0 Dec6 SIL  SI   ESI  RSI
+    rex:0 Dec7 DIL  DI   EDI  RDI
+    rex:1 Dec0 R8L  R8W  R8D  R8
+    rex:1 Dec1 R9L  R9W  R9D  R9
+    rex:1 Dec2 R10L R10W R10D R10
+    rex:1 Dec3 R11L R11W R11D R11
+    rex:1 Dec4 R12L R12W R12D R12
+    rex:1 Dec5 R13L R13W R13D R13
+    rex:1 Dec6 R14L R14W R14D R14
+    rex:1 Dec7 R15L R15W R15D R15
 }
 
+/*
 #[derive(Debug)]
 pub enum RegWidthInteger {
     I8(i8),
@@ -125,6 +140,7 @@ pub enum RegWidthInteger {
     U32(u32),
     U64(u64),
 }
+*/
 
 /// x64 assembler
 pub struct Assembler {
@@ -132,42 +148,57 @@ pub struct Assembler {
     encoded: Vec<u8>,
 }
 
-/// Temporary
+/// The encoding of one instruction from the base set. This is sightly more descriptive than
+/// the encoded bytes. Beware that some instances of this struct do not encode valid
+/// instructions. For example, nothing stops you from encoding an immediate for an opcode that
+/// does not precede any immediates.
 pub struct Encoding {
     rex: Option<u8>,
-    opcode: u8,
-    modrm: u8,
-    disp8: Option<i8>, // We haven't found a use for more than 8 bits of displacement
-    sib: Option<u8>,   // Sometimes to do 8 bit displacement you need an SIB byte. We
-    // don't have support for the more complex addressing forms such as
-    // `base + index * scale + disp` for now.
+    form: InstructionForm,
     imm32: Option<i32>, // Tmporary. Maybe a enum with different imm sizes
 }
 
-/// Represent an addressing form encodable through a configuration of the modr/m byte.
-/// No scale, index, base (SIB) form support at the moment as we haven't found the need.
-/// 64 bit addressing only, meaning the produced addresses are 64 bits.
-pub enum AddressingForm {
-    RegPlus8BOffset(RegPlus8BOffset),
+/// Different opcodes work with the bytes that follow differently. Each variant represent
+/// the meaning prescribed to the bytes that follow the opcode.
+pub enum InstructionForm {
+    /// An instruction that doesn't have explicit register or memory operands. For example, `JMP`.
+    OpcodeOnly(u8),
+    /// An instruction with a register operand and another that is a register or a memory location.
+    RegRM { opcode: u8, reg: U3, rm: RMForm },
+    /// An instruction that uses ModR/M.reg as extension to the opcode. Manuals list these
+    /// instructions with the `/n` syntax, where `n` is in the range `[0, 8)`.
+    RMOnly { opcode: (u8, U3), rm: RMForm },
 }
 
-/// An addressing form. See the AddressingForm enum.
-pub struct RegPlus8BOffset {
-    /// Base register
-    reg: Reg64,
-    /// 8 bit offset
-    offset: i8,
-    /// Bit width of the data that resides at the produced address
-    pointee: RegisterWidth,
+/// A register operand or a memory operand. Each variant maps to a configuration
+/// ModR/M.rm and the SIB byte. For memory operands, this produce 64 bit addresses only.
+/// Note that this does not describe how large the memory location is at the encoded
+/// address. Other parts of instruction control that.
+pub enum RMForm {
+    /// Register operand
+    RegDirect(U3),
+    /// Memory operand. The address is in a register
+    RegIndirect(U3),
+    /// Memory operand. The address is a register plus an offset
+    RegPlus8BDisp { reg: U3, disp: i8 },
+    /// Memory operand. The address is a register plus an offset
+    RegPlus32BDisp { reg: U3, disp: i32 },
+    /// Memory operand. The address is relative to the instruction pointer
+    RIPRelative(i32),
+    // NOTE: This includes no base + index * scale + displacement forms as we haven't
+    // used them in the JIT.
 }
 
-/// Short-hand for making an AddressingForm.
-pub fn mem_opnd(pointee_width: RegisterWidth, reg: Reg64, offset: i8) -> AddressingForm {
-    AddressingForm::RegPlus8BOffset(RegPlus8BOffset {
-        reg: reg,
-        pointee: pointee_width,
-        offset: offset,
-    })
+//TODO the lower level encoding structs might go over better in a separate module.
+
+/// A 64 bit memory location operand
+pub enum Mem64 {
+    RegPlusOffset(Reg64, i32),
+}
+
+/// Short-hand for making a Mem64 operand.
+pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
+    Mem64::RegPlusOffset(reg, offset)
 }
 
 mod mnemonic_forms {
@@ -195,12 +226,14 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
         // is not evaluated unless used. Bug report https://github.com/rust-lang/rust/issues/91877
         let _: () = Self::ACCEPTABLE;
 
+        let dest = self.0;
+
         let rex = {
             //TODO comment
             let rex_w = (Reg::WIDTH == B64) as u8;
             let rex_r = 0;
             let rex_x = 0;
-            let rex_b = self.0.id_rex_bit();
+            let rex_b = dest.id_rex_bit();
             if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
                 // <- most significant bit
                 // 0 1 0 0 W R X B
@@ -214,14 +247,17 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
 
         Encoding {
             rex: rex,
-            opcode: 0xf7,
-            modrm: 0b11000000 + self.0.id_rm(),
-            disp8: None,
-            sib: None,
+            form: InstructionForm::RMOnly {
+                opcode: (0xF7, U3::Dec0),
+                rm: RegDirect(dest.id_lower()),
+            },
             imm32: Some(self.1),
         }
     }
 }
+
+use InstructionForm::*;
+use RMForm::*;
 
 impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
     const ACCEPTABLE: () = ();
@@ -247,58 +283,43 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
 
         Encoding {
             rex: rex,
-            opcode: 0x85,
-            modrm: 0b11_000_000 + (rhs.id_rm() << 3) + (lhs.id_rm() << 0),
-            disp8: None,
-            sib: None,
+            form: RegRM {
+                opcode: 0x85,
+                reg: rhs.id_lower(),
+                rm: RegDirect(lhs.id_lower()),
+            },
             imm32: None,
         }
     }
 }
 
-impl mnemonic_forms::Test for (AddressingForm, i32) {
+impl mnemonic_forms::Test for (Mem64, i32) {
     const ACCEPTABLE: () = ();
     fn encode(self) -> Encoding {
-        match self.0 {
-            AddressingForm::RegPlus8BOffset(dest) => {
-                let rex = {
-                    let rex_w = (dest.pointee == B64) as u8;
-                    let rex_r = 0;
-                    let rex_x = 0;
-                    let rex_b = dest.reg.id_rex_bit();
-                    if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                        Some(
-                            0b0100_0000
-                                + 0b1000 * rex_w
-                                + 0b0100 * rex_r
-                                + 0b0010 * rex_x
-                                + 0b0001 * rex_b,
-                        )
-                    } else {
-                        None
-                    }
-                };
-                let id_rm = dest.reg.id_rm();
-                const RM_SIB_ESCAPE: u8 = 0b100;
-                let sib = if id_rm == RM_SIB_ESCAPE {
-                    // | scale |   index   |    base   |
-                    // +---+---+---+---+---+---+---+---+
-                    // NOTE: huh, this breaks the id_rm naming because we are
-                    // not constructing the rm byte here.
-                    // mod=0b00 with index=0b100 encodes the [reg+disp8] form.
-                    Some(0b00_100_000 + id_rm)
-                } else {
-                    None
-                };
-                Encoding {
-                    rex: rex,
-                    opcode: 0xf7,
-                    modrm: 0b01_000_000 + id_rm,
-                    disp8: Some(dest.offset),
-                    sib: sib,
-                    imm32: Some(self.1),
-                }
+        let Mem64::RegPlusOffset(dest_reg, dest_disp) = self.0;
+        let rex = {
+            let rex_w = 1; // 64 bit operand size
+            let rex_r = 0;
+            let rex_x = 0;
+            let rex_b = dest_reg.id_rex_bit();
+            if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
+                Some(
+                    0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b,
+                )
+            } else {
+                None
             }
+        };
+        Encoding {
+            rex: rex,
+            form: InstructionForm::RMOnly {
+                opcode: (0xF7, U3::Dec0),
+                rm: RegPlus32BDisp {
+                    reg: dest_reg.id_lower(),
+                    disp: dest_disp,
+                },
+            },
+            imm32: Some(self.1),
         }
     }
 }
@@ -315,17 +336,39 @@ impl Assembler {
         if let Some(rex) = encoding.rex {
             self.encoded.push(rex);
         }
-        self.encoded.push(encoding.opcode);
-        self.encoded.push(encoding.modrm);
-        if let Some(sib) = encoding.sib {
-            self.encoded.push(sib);
-        }
+        /*
+         * TODO: remember to handle this
+                let id_rm = dest_reg.id_rm();
+                const RM_SIB_ESCAPE: u8 = 0b100;
+                let sib = if id_rm == RM_SIB_ESCAPE {
+                    // | scale |   index   |    base   |
+                    // +---+---+---+---+---+---+---+---+
+                    // NOTE: huh, this breaks the id_rm naming because we are
+                    // not constructing the rm byte here.
+                    // mod=0b00 with index=0b100 encodes the [reg+disp8] form.
+                    Some(0b00_100_000 + id_rm)
+                } else {
+                    None
+                };
+
         if let Some(disp8) = encoding.disp8 {
             // Rust gurantees that integers are two's complement and
             // casting between i8 and u8 is a no-op. See
             // https://doc.rust-lang.org/stable/reference/expressions/operator-expr.html#numeric-cast
             self.encoded.push(disp8.to_le() as u8);
         }
+            */
+        match encoding.form {
+            OpcodeOnly(opcode) => {
+                self.encoded.push(opcode);
+            }
+            RegRM { opcode, reg, rm } => {}
+            RMOnly {
+                opcode: (opcode_byte, opcode_extension),
+                rm,
+            } => {}
+        }
+
         if let Some(imm32) = encoding.imm32 {
             for byte in imm32.to_le_bytes() {
                 self.encoded.push(byte);
@@ -593,24 +636,22 @@ mod tests {
 
     #[test]
     fn test_with_memory() {
-        use RegisterWidth::*;
-
         test_encoding!(
             "48 f7 40 80 ff ff ff 7f"
             "test qword ptr [rax - 0x80], 0x7fffffff",
-            test(mem_opnd(B64, RAX, i8::MIN), i32::MAX)
+            test(mem64(RAX, i8::MIN.into()), i32::MAX)
         );
 
         test_encoding!(
             "49 f7 45 7f ff ff ff 7f"
             "test qword ptr [r13 + 0x7f], 0x7fffffff",
-            test(mem_opnd(B64, R13, i8::MAX), i32::MAX)
+            test(mem64(R13, i8::MAX.into()), i32::MAX)
         );
 
         test_encoding!(
             "48 f7 44 24 80 00 00 00 80"
             "test qword ptr [rsp - 0x80], -0x80000000",
-            test(mem_opnd(B64, RSP, i8::MIN), i32::MIN)
+            test(mem64(RSP, i8::MIN.into()), i32::MIN)
         );
 
         // Note: with offset == 0, there is a shorter encoding possible that does *not*
@@ -619,7 +660,7 @@ mod tests {
         test_encoding!(
             "49 f7 44 24 00 fe ca ab 0f"
             "test qword ptr [r12], 0xfabcafe",
-            test(mem_opnd(B64, R12, 0), 0xfabcafe)
+            test(mem64(R12, 0), 0xfabcafe)
         );
     }
 
