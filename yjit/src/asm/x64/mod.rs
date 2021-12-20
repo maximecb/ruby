@@ -199,40 +199,24 @@ pub enum InstructionForm {
     RMOnly { opcode: (u8, U3), rm: RMForm },
 }
 
-/// A register operand or a memory operand. Each variant maps to a configuration
-/// ModR/M.rm and the SIB byte. For memory operands, this produce 64 bit addresses only.
+/// A register operand or a memory operand. Each variants map to configurations of
+/// ModR/M.rm and the SIB byte. For memory operands, this produces 64 bit addresses only.
 /// Note that this does not describe how large the memory location is at the encoded
 /// address. Other parts of instruction control that.
 #[derive(Debug)]
 pub enum RMForm {
     /// Register operand
     RegDirect(U3),
-    /// Memory operand. The address is in a register
-    RegIndirect(U3),
-    /// Memory operand. The address is a register plus an offset
-    RegPlus8BDisp { reg: U3, disp: i8 },
-    /// Memory operand. The address is a register plus an offset
-    RegPlus32BDisp { reg: U3, disp: i32 },
-    /// Memory operand. The address is relative to the instruction pointer
+    /// Memory operand. The address is a register plus a displacement. Encodings vary depending on
+    /// the magnitude of the displacement.
+    RegPlusDisp { reg: U3, disp: i32 },
+    /// Memory operand. The address is relative to the instruction pointer.
     RIPRelative(i32),
     // NOTE: This includes no base + index * scale + displacement forms as we haven't
     // used them in the JIT.
 }
 
 impl RMForm {
-    /// Select smallest reg+disp form that can fit the displacement
-    fn select_reg_plus_disp<R: Register>(reg: R, disp: i32) -> Self {
-        let reg_id = reg.id_lower();
-        match disp.try_into() {
-            Ok(0) => Self::RegIndirect(reg_id),
-            Ok(disp8) => Self::RegPlus8BDisp {
-                reg: reg_id,
-                disp: disp8,
-            },
-            Err(_) => Self::RegPlus32BDisp { reg: reg_id, disp },
-        }
-    }
-
     /// Encode into ModR/M, SIB, and displacement bytes and push the result into a byte vector.
     fn encode_and_push(self, modrm_reg: U3, sink: &mut Vec<u8>) -> Result<(), TryReserveError> {
         match self {
@@ -241,11 +225,12 @@ impl RMForm {
                 let mod_rm = modrm_byte(U2::Dec3, modrm_reg, rm);
                 sink.try_reserve(1).map(|_| sink.push(mod_rm))
             }
-            RegIndirect(reg) => {
-                match reg {
-                    U3::Dec4 => {
+            RegPlusDisp { reg, disp } => {
+                match (i8::try_from(disp), reg) {
+                    // Go for shorter encodings when the displacement is zero.
+                    (Ok(0), U3::Dec4) => {
                         // rm=0b101 so no encoding available with mod=0b00 for [reg]. Use
-                        // mod=0b01 with a SIB byte to encode [rm_reg].
+                        // mod=0b01 with a special SIB byte to encode [rm_reg].
                         let mod_rm = modrm_byte(U2::Dec0, modrm_reg, U3::Dec4);
                         // scale=0b00 index=0b100 base=rm_reg
                         let sib = sib_byte(U2::Dec0, U3::Dec4, reg);
@@ -254,7 +239,7 @@ impl RMForm {
                             sink.push(sib);
                         })
                     }
-                    U3::Dec5 => {
+                    (Ok(0), U3::Dec5) => {
                         // rm=0b101 so no encoding available with mod=0b00 for [reg]. Use
                         // mod=0b01 with a zero 8 bit displacement.
                         let mod_rm = modrm_byte(U2::Dec1, modrm_reg, reg);
@@ -263,11 +248,40 @@ impl RMForm {
                             sink.push(0);
                         })
                     }
-                    rm_reg => {
+                    (Ok(0), rm_reg) => {
                         // The register we want to encode does not have a special id that acts as
                         // an escape code in the encoding. Everything fits in a mod=0b00 ModR/M.
                         let mod_rm = modrm_byte(U2::Dec0, modrm_reg, rm_reg);
                         sink.try_reserve(1).map(|_| sink.push(mod_rm))
+                    }
+                    // Displacement fits in one byte
+                    (Ok(disp8), reg) => {
+                        // mod=0b01, rm=0b100, and index=0b100.
+                        let mod_rm = modrm_byte(U2::Dec1, modrm_reg, reg);
+                        let sib: Option<u8> =
+                            (reg == U3::Dec4).then(|| sib_byte(U2::Dec0, U3::Dec4, reg));
+                        let disp_parts: [u8; 1] = disp8.to_le_bytes();
+                        sink.try_reserve(3).map(|_| {
+                            sink.push(mod_rm);
+                            sib.map(|byte| sink.push(byte));
+                            sink.push(disp_parts[0]);
+                        })
+                    }
+                    // General case. Need 4 bytes for the displacement
+                    (Err(_), reg) => {
+                        // mod=0b10, rm=0b100, and index=0b100.
+                        let disp32: i32 = disp;
+                        let mod_rm = modrm_byte(U2::Dec2, modrm_reg, U3::Dec4);
+                        let sib: u8 = sib_byte(U2::Dec0, U3::Dec4, reg);
+                        let disp_parts: [u8; 4] = disp32.to_le_bytes();
+                        sink.try_reserve(3).map(|_| {
+                            sink.push(mod_rm);
+                            sink.push(sib);
+                            sink.push(disp_parts[0]);
+                            sink.push(disp_parts[1]);
+                            sink.push(disp_parts[2]);
+                            sink.push(disp_parts[3]);
+                        })
                     }
                 }
             }
@@ -281,31 +295,6 @@ impl RMForm {
                     sink.push(offset_parts[1]);
                     sink.push(offset_parts[2]);
                     sink.push(offset_parts[3]);
-                })
-            }
-            RegPlus8BDisp { reg, disp } => {
-                // mod=0b01, rm=0b100, and index=0b100.
-                let mod_rm = modrm_byte(U2::Dec1, modrm_reg, reg);
-                let sib = (reg == U3::Dec4).then(|| sib_byte(U2::Dec0, U3::Dec4, reg));
-                let disp_parts: [u8; 1] = disp.to_le_bytes();
-                sink.try_reserve(3).map(|_| {
-                    sink.push(mod_rm);
-                    sib.map(|byte| sink.push(byte));
-                    sink.push(disp_parts[0]);
-                })
-            }
-            RegPlus32BDisp { reg, disp } => {
-                // mod=0b10, rm=0b100, and index=0b100.
-                let mod_rm = modrm_byte(U2::Dec2, modrm_reg, U3::Dec4);
-                let sib: u8 = sib_byte(U2::Dec0, U3::Dec4, reg);
-                let disp_parts: [u8; 4] = disp.to_le_bytes();
-                sink.try_reserve(3).map(|_| {
-                    sink.push(mod_rm);
-                    sink.push(sib);
-                    sink.push(disp_parts[0]);
-                    sink.push(disp_parts[1]);
-                    sink.push(disp_parts[2]);
-                    sink.push(disp_parts[3]);
                 })
             }
         }
@@ -438,7 +427,10 @@ impl mnemonic_forms::Test for (Mem64, i32) {
             rex,
             form: InstructionForm::RMOnly {
                 opcode: (0xF7, U3::Dec0),
-                rm: RMForm::select_reg_plus_disp(dest_reg, dest_disp),
+                rm: RMForm::RegPlusDisp {
+                    reg: dest_reg.id_lower(),
+                    disp: dest_disp,
+                },
             },
             imm32: Some(self.1),
         }
