@@ -187,16 +187,48 @@ pub struct Encoding {
     imm32: Option<i32>, // Tmporary. Maybe a enum with different imm sizes
 }
 
+/// An opcode. Might be up to 3 byte
+#[derive(Debug)]
+pub enum Opcode {
+    Plain(u8),
+    Escape0F(u8),
+    Escape0F38(u8),
+    Escape0F3A(u8),
+}
+
+impl Opcode {
+    fn encode_and_push(self, sink: &mut Vec<u8>) -> Result<(), TryReserveError> {
+        use Opcode::*;
+        match self {
+            Plain(byte) => sink.try_reserve(1).map(|_| sink.push(byte)),
+            Escape0F(byte) => sink.try_reserve(2).map(|_| {
+                sink.push(0x0F);
+                sink.push(byte);
+            }),
+            Escape0F38(byte) => sink.try_reserve(3).map(|_| {
+                sink.push(0x0F);
+                sink.push(0x38);
+                sink.push(byte);
+            }),
+            Escape0F3A(byte) => sink.try_reserve(3).map(|_| {
+                sink.push(0x0F);
+                sink.push(0x3A);
+                sink.push(byte);
+            }),
+        }
+    }
+}
+
 /// Different opcodes work with the bytes that follow differently. Each variant represent
 /// the meaning prescribed to the bytes that follow the opcode.
 pub enum InstructionForm {
     /// An instruction that doesn't have explicit register or memory operands. For example, `JMP`.
-    OpcodeOnly(u8),
+    OpcodeOnly(Opcode),
     /// An instruction with a register operand and another that is a register or a memory location.
-    RegRM { opcode: u8, reg: U3, rm: RMForm },
+    RegRM { opcode: Opcode, reg: U3, rm: RMForm },
     /// An instruction that uses ModR/M.reg as extension to the opcode. Manuals list these
     /// instructions with the `/n` syntax, where `n` is in the range `[0, 8)`.
-    RMOnly { opcode: (u8, U3), rm: RMForm },
+    RMOnly { opcode: (Opcode, U3), rm: RMForm },
 }
 
 /// A register operand or a memory operand. Each variants map to configurations of
@@ -326,6 +358,8 @@ mod mnemonic_forms {
     }
 }
 
+//macro_rules! impl_similar
+
 impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
     const ACCEPTABLE: () = match Reg::WIDTH {
         B64 | B32 => (),
@@ -361,7 +395,7 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
         Encoding {
             rex,
             form: InstructionForm::RMOnly {
-                opcode: (0xF7, U3::Dec0),
+                opcode: (Opcode::Plain(0xF7), U3::Dec0),
                 rm: RegDirect(dest.id_lower()),
             },
             imm32: Some(self.1),
@@ -397,7 +431,7 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
         Encoding {
             rex,
             form: RegRM {
-                opcode: 0x85,
+                opcode: Opcode::Plain(0x85),
                 reg: rhs.id_lower(),
                 rm: RegDirect(lhs.id_lower()),
             },
@@ -426,7 +460,7 @@ impl mnemonic_forms::Test for (Mem64, i32) {
         Encoding {
             rex,
             form: InstructionForm::RMOnly {
-                opcode: (0xF7, U3::Dec0),
+                opcode: (Opcode::Plain(0xF7), U3::Dec0),
                 rm: RMForm::RegPlusDisp {
                     reg: dest_reg.id_lower(),
                     disp: dest_disp,
@@ -473,19 +507,23 @@ impl Assembler {
             */
         match encoding.form {
             OpcodeOnly(opcode) => {
-                self.encoded.push(opcode);
+                opcode
+                    .encode_and_push(&mut self.encoded)
+                    .expect("alloc failure");
             }
             RegRM { opcode, reg, rm } => {
-                self.encoded.push(opcode);
-                rm.encode_and_push(reg, &mut self.encoded)
+                opcode
+                    .encode_and_push(&mut self.encoded)
+                    .and_then(|_| rm.encode_and_push(reg, &mut self.encoded))
                     .expect("alloc failure");
             }
             RMOnly {
-                opcode: (opcode_byte, opcode_extension),
+                opcode: (opcode_bytes, opcode_extension),
                 rm,
             } => {
-                self.encoded.push(opcode_byte);
-                rm.encode_and_push(opcode_extension, &mut self.encoded)
+                opcode_bytes
+                    .encode_and_push(&mut self.encoded)
+                    .and_then(|_| rm.encode_and_push(opcode_extension, &mut self.encoded))
                     .expect("alloc failure");
             }
         }
