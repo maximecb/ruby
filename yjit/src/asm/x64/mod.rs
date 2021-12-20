@@ -1,6 +1,8 @@
 //! An x64 assembler with Rust interface.
 //! Warning: incomplete and barely tested.
 
+use std::collections::TryReserveError;
+
 /// A type implementing this trait groups together general purpose register of a certain bit width.
 pub trait Register {
     /// Bit width of the register
@@ -81,6 +83,7 @@ pub enum RegisterWidth {
 }
 
 /// A 3-bit unsigned integer. Some fields of the ModR/M and SIB byte use exactly three bits.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum U3 {
     Dec0 = 0b000,
@@ -91,6 +94,30 @@ pub enum U3 {
     Dec5 = 0b101,
     Dec6 = 0b110,
     Dec7 = 0b111,
+}
+
+/// A 2-bit unsigned integer. Some fields of the ModR/M and SIB byte use exactly two bits.
+#[repr(u8)]
+pub enum U2 {
+    Dec0 = 0b00,
+    Dec1 = 0b01,
+    Dec2 = 0b10,
+    Dec3 = 0b11,
+}
+
+/// Make a byte from the format followed by the ModR/M and the SIB byte.
+fn u8_from_parts(top: U2, mid: U3, bottom: U3) -> u8 {
+    ((top as u8) << 6) + ((mid as u8) << 3) + (bottom as u8)
+}
+
+/// Make a ModR/M byte
+fn modrm_byte(mod_: U2, reg: U3, rm: U3) -> u8 {
+    u8_from_parts(mod_, reg, rm)
+}
+
+/// Make a scale, index, and base (SIB) byte
+fn sib_byte(scale: U2, index: U3, base: U3) -> u8 {
+    u8_from_parts(scale, index, base)
 }
 
 /// Make constants for general purpose registers.
@@ -148,6 +175,8 @@ pub struct Assembler {
     encoded: Vec<u8>,
 }
 
+//TODO the lower level encoding structs might go over better in a separate module.
+
 /// The encoding of one instruction from the base set. This is sightly more descriptive than
 /// the encoded bytes. Beware that some instances of this struct do not encode valid
 /// instructions. For example, nothing stops you from encoding an immediate for an opcode that
@@ -174,6 +203,7 @@ pub enum InstructionForm {
 /// ModR/M.rm and the SIB byte. For memory operands, this produce 64 bit addresses only.
 /// Note that this does not describe how large the memory location is at the encoded
 /// address. Other parts of instruction control that.
+#[derive(Debug)]
 pub enum RMForm {
     /// Register operand
     RegDirect(U3),
@@ -189,7 +219,98 @@ pub enum RMForm {
     // used them in the JIT.
 }
 
-//TODO the lower level encoding structs might go over better in a separate module.
+impl RMForm {
+    /// Select smallest reg+disp form that can fit the displacement
+    fn select_reg_plus_disp<R: Register>(reg: R, disp: i32) -> Self {
+        let reg_id = reg.id_lower();
+        match disp.try_into() {
+            Ok(0) => Self::RegIndirect(reg_id),
+            Ok(disp8) => Self::RegPlus8BDisp {
+                reg: reg_id,
+                disp: disp8,
+            },
+            Err(_) => Self::RegPlus32BDisp { reg: reg_id, disp },
+        }
+    }
+
+    /// Encode into ModR/M, SIB, and displacement bytes and push the result into a byte vector.
+    fn encode_and_push(self, modrm_reg: U3, sink: &mut Vec<u8>) -> Result<(), TryReserveError> {
+        match self {
+            RegDirect(rm) => {
+                // mod=0b11. Everything fits in the ModR/M byte.
+                let mod_rm = modrm_byte(U2::Dec3, modrm_reg, rm);
+                sink.try_reserve(1).map(|_| sink.push(mod_rm))
+            }
+            RegIndirect(reg) => {
+                match reg {
+                    U3::Dec4 => {
+                        // rm=0b101 so no encoding available with mod=0b00 for [reg]. Use
+                        // mod=0b01 with a SIB byte to encode [rm_reg].
+                        let mod_rm = modrm_byte(U2::Dec0, modrm_reg, U3::Dec4);
+                        // scale=0b00 index=0b100 base=rm_reg
+                        let sib = sib_byte(U2::Dec0, U3::Dec4, reg);
+                        sink.try_reserve(2).map(|_| {
+                            sink.push(mod_rm);
+                            sink.push(sib);
+                        })
+                    }
+                    U3::Dec5 => {
+                        // rm=0b101 so no encoding available with mod=0b00 for [reg]. Use
+                        // mod=0b01 with a zero 8 bit displacement.
+                        let mod_rm = modrm_byte(U2::Dec1, modrm_reg, reg);
+                        sink.try_reserve(3).map(|_| {
+                            sink.push(mod_rm);
+                            sink.push(0);
+                        })
+                    }
+                    rm_reg => {
+                        // The register we want to encode does not have a special id that acts as
+                        // an escape code in the encoding. Everything fits in a mod=0b00 ModR/M.
+                        let mod_rm = modrm_byte(U2::Dec0, modrm_reg, rm_reg);
+                        sink.try_reserve(1).map(|_| sink.push(mod_rm))
+                    }
+                }
+            }
+            RIPRelative(offset) => {
+                // mod=0b00 and rm=0b101
+                let mod_rm = modrm_byte(U2::Dec0, modrm_reg, U3::Dec0);
+                let offset_parts: [u8; 4] = offset.to_le_bytes();
+                sink.try_reserve(5).map(|_| {
+                    sink.push(mod_rm);
+                    sink.push(offset_parts[0]);
+                    sink.push(offset_parts[1]);
+                    sink.push(offset_parts[2]);
+                    sink.push(offset_parts[3]);
+                })
+            }
+            RegPlus8BDisp { reg, disp } => {
+                // mod=0b01, rm=0b100, and index=0b100.
+                let mod_rm = modrm_byte(U2::Dec1, modrm_reg, reg);
+                let sib = (reg == U3::Dec4).then(|| sib_byte(U2::Dec0, U3::Dec4, reg));
+                let disp_parts: [u8; 1] = disp.to_le_bytes();
+                sink.try_reserve(3).map(|_| {
+                    sink.push(mod_rm);
+                    sib.map(|byte| sink.push(byte));
+                    sink.push(disp_parts[0]);
+                })
+            }
+            RegPlus32BDisp { reg, disp } => {
+                // mod=0b10, rm=0b100, and index=0b100.
+                let mod_rm = modrm_byte(U2::Dec2, modrm_reg, U3::Dec4);
+                let sib: u8 = sib_byte(U2::Dec0, U3::Dec4, reg);
+                let disp_parts: [u8; 4] = disp.to_le_bytes();
+                sink.try_reserve(3).map(|_| {
+                    sink.push(mod_rm);
+                    sink.push(sib);
+                    sink.push(disp_parts[0]);
+                    sink.push(disp_parts[1]);
+                    sink.push(disp_parts[2]);
+                    sink.push(disp_parts[3]);
+                })
+            }
+        }
+    }
+}
 
 /// A 64 bit memory location operand
 pub enum Mem64 {
@@ -246,7 +367,7 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
         };
 
         Encoding {
-            rex: rex,
+            rex,
             form: InstructionForm::RMOnly {
                 opcode: (0xF7, U3::Dec0),
                 rm: RegDirect(dest.id_lower()),
@@ -282,7 +403,7 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
         };
 
         Encoding {
-            rex: rex,
+            rex,
             form: RegRM {
                 opcode: 0x85,
                 reg: rhs.id_lower(),
@@ -311,13 +432,10 @@ impl mnemonic_forms::Test for (Mem64, i32) {
             }
         };
         Encoding {
-            rex: rex,
+            rex,
             form: InstructionForm::RMOnly {
                 opcode: (0xF7, U3::Dec0),
-                rm: RegPlus32BDisp {
-                    reg: dest_reg.id_lower(),
-                    disp: dest_disp,
-                },
+                rm: RMForm::select_reg_plus_disp(dest_reg, dest_disp),
             },
             imm32: Some(self.1),
         }
@@ -362,11 +480,19 @@ impl Assembler {
             OpcodeOnly(opcode) => {
                 self.encoded.push(opcode);
             }
-            RegRM { opcode, reg, rm } => {}
+            RegRM { opcode, reg, rm } => {
+                self.encoded.push(opcode);
+                rm.encode_and_push(reg, &mut self.encoded)
+                    .expect("alloc failure");
+            }
             RMOnly {
                 opcode: (opcode_byte, opcode_extension),
                 rm,
-            } => {}
+            } => {
+                self.encoded.push(opcode_byte);
+                rm.encode_and_push(opcode_extension, &mut self.encoded)
+                    .expect("alloc failure");
+            }
         }
 
         if let Some(imm32) = encoding.imm32 {
@@ -509,7 +635,7 @@ mod tests {
 
             $( asm.$mnemonic($args); )*
 
-            assert_eq!(asm.byte_string(), $bytes);
+            assert_eq!($bytes, asm.byte_string());
 
             // In case we have a disassembler, compare against a disassembly expectation
             #[cfg(feature = "disassembly")]
@@ -654,13 +780,29 @@ mod tests {
             test(mem64(RSP, i8::MIN.into()), i32::MIN)
         );
 
-        // Note: with offset == 0, there is a shorter encoding possible that does *not*
-        // use an SIB byte. Expect this test to fail down the line when we select that.
-        // encoding.
+        // RSP, RBP, R12 and R13 are special because the lower part of their regiser id
+        // are escape codes in the ModR/M byte.
         test_encoding!(
-            "49 f7 44 24 00 fe ca ab 0f"
-            "test qword ptr [r12], 0xfabcafe",
-            test(mem64(R12, 0), 0xfabcafe)
+            "48 f7 04 24 ff ff ff 7f 49 f7 04 24 00 00 00 80 \
+             48 f7 45 00 ff ff ff 7f 49 f7 45 00 00 00 00 80"
+
+            "test qword ptr [rsp], 0x7fffffff", test(mem64(RSP, 0), i32::MAX)
+            "test qword ptr [r12], -0x80000000", test(mem64(R12, 0), i32::MIN)
+
+            "test qword ptr [rbp], 0x7fffffff", test(mem64(RBP, 0), i32::MAX)
+            "test qword ptr [r13], -0x80000000", test(mem64(R13, 0), i32::MIN)
+        );
+
+        test_encoding!(
+            "49 f7 84 24 80 00 00 00 01 00 00 00"
+            "test qword ptr [r12 + 0x80], 1",
+            test(mem64(R12, 1 + i32::from(i8::MAX)), 1)
+        );
+
+        test_encoding!(
+            "48 f7 84 24 7f ff ff ff fe ca ab 0f"
+            "test qword ptr [rsp - 0x81], 0xfabcafe",
+            test(mem64(RSP, i32::from(i8::MIN) - 1), 0xfabcafe)
         );
     }
 
