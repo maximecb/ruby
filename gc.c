@@ -1401,7 +1401,7 @@ void
 gc_pool_inbox_resize(rb_size_pool_t *size_pool)
 {
     struct rb_size_pool_inbox *inbox = size_pool->inbox;
-    GC_ASSERT(inbox->pos > inbox->capa);
+    GC_ASSERT(inbox->pos >= inbox->capa);
 
     int new_capa = inbox->capa + SIZE_POOL_INIT_INBOX_CAPA;
     VALUE *items = ruby_xrealloc(inbox->items, new_capa * sizeof(VALUE));
@@ -8287,6 +8287,21 @@ gc_marks_rest(rb_objspace_t *objspace)
 	gc_marks_finish(objspace);
     }
 
+
+    /* clear out unmarked items from the size pool inboxes */
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t *size_pool = &size_pools[i];
+        struct rb_size_pool_inbox *inbox = size_pool->inbox;
+
+        for (int j = 0; j < inbox->pos; j++) {
+            if (NIL_P(inbox->items[j])) continue;
+
+            if (!RVALUE_MARKED(inbox->items[j])) {
+                inbox->items[j] = Qnil;
+            }
+        }
+    }
+
     /* move to sweep */
     gc_sweep(objspace);
 }
@@ -8341,7 +8356,6 @@ gc_marks(rb_objspace_t *objspace, int full_mark)
     if (!is_incremental_marking(objspace)) {
         gc_marks_rest(objspace);
     }
-
 #if RGENGC_PROFILE > 0
     if (gc_prof_record(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
