@@ -349,8 +349,8 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
 
         let dest = self.0;
 
+        #[rustfmt::skip]
         let rex = {
-            //TODO comment
             let rex_w = (Reg::WIDTH == B64) as u8;
             let rex_r = 0;
             let rex_x = 0;
@@ -358,8 +358,11 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
             if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
                 // <- most significant bit
                 // 0 1 0 0 W R X B
-                let rex =
-                    0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b;
+                let rex = 0b0100_0000
+                            + 0b_1000 * rex_w
+                            + 0b_0100 * rex_r
+                            + 0b_0010 * rex_x
+                            + 0b_0001 * rex_b;
                 Some(rex)
             } else {
                 None
