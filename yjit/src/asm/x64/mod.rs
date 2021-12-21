@@ -10,7 +10,7 @@ pub trait Register {
 
     /// The bit used to identify the register in the REX byte.
     /// This bit is set for R9-R15, for example.
-    fn id_rex_bit(&self) -> u8;
+    fn id_rex_bit(&self) -> bool;
 
     /// The lower 3 bits of the number identifying the register. Used in the ModR/M byte, for
     /// example.
@@ -23,7 +23,7 @@ pub struct Reg16(RegId);
 pub struct Reg8(RegId);
 
 pub struct RegId {
-    id_rex_bit: u8,
+    id_rex_bit: bool,
     id_lower: U3,
 }
 
@@ -32,7 +32,7 @@ use RegisterWidth::*;
 impl Register for Reg64 {
     const WIDTH: RegisterWidth = B64;
 
-    fn id_rex_bit(&self) -> u8 {
+    fn id_rex_bit(&self) -> bool {
         self.0.id_rex_bit
     }
     fn id_lower(&self) -> U3 {
@@ -43,7 +43,7 @@ impl Register for Reg64 {
 impl Register for Reg32 {
     const WIDTH: RegisterWidth = B32;
 
-    fn id_rex_bit(&self) -> u8 {
+    fn id_rex_bit(&self) -> bool {
         self.0.id_rex_bit
     }
     fn id_lower(&self) -> U3 {
@@ -54,7 +54,7 @@ impl Register for Reg32 {
 impl Register for Reg16 {
     const WIDTH: RegisterWidth = B16;
 
-    fn id_rex_bit(&self) -> u8 {
+    fn id_rex_bit(&self) -> bool {
         self.0.id_rex_bit
     }
     fn id_lower(&self) -> U3 {
@@ -65,7 +65,7 @@ impl Register for Reg16 {
 impl Register for Reg8 {
     const WIDTH: RegisterWidth = B8;
 
-    fn id_rex_bit(&self) -> u8 {
+    fn id_rex_bit(&self) -> bool {
         self.0.id_rex_bit
     }
     fn id_lower(&self) -> U3 {
@@ -124,13 +124,13 @@ fn sib_byte(scale: U2, index: U3, base: U3) -> u8 {
 /// For simplificty, high byte registers such as AH are excluded on purpose.
 macro_rules! general_purpose_registers {
     (
-        $(rex:$vintage:literal $id:ident $b8_name:ident $b16_name:ident $b32_name:ident $b64_name:ident)*
+        $(rex:$rex_bit:literal $id:ident $b8_name:ident $b16_name:ident $b32_name:ident $b64_name:ident)*
     ) => {
         $(
-            pub const $b64_name: Reg64 = Reg64(RegId{ id_rex_bit: $vintage, id_lower: U3::$id });
-            pub const $b32_name: Reg32 = Reg32(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
-            pub const $b16_name: Reg16 = Reg16(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
-            pub const $b8_name: Reg8 = Reg8(RegId { id_rex_bit: $vintage, id_lower: U3::$id });
+            pub const $b64_name: Reg64 = Reg64(RegId{ id_rex_bit: $rex_bit != 0, id_lower: U3::$id });
+            pub const $b32_name: Reg32 = Reg32(RegId{ id_rex_bit: $rex_bit != 0, id_lower: U3::$id });
+            pub const $b16_name: Reg16 = Reg16(RegId{ id_rex_bit: $rex_bit != 0, id_lower: U3::$id });
+            pub const $b8_name: Reg8   =  Reg8(RegId{ id_rex_bit: $rex_bit != 0, id_lower: U3::$id });
         )*
     }
 }
@@ -358,7 +358,79 @@ mod mnemonic_forms {
     }
 }
 
-//macro_rules! impl_similar
+/*
+macro_rules! opcode_enum {
+    ($opcode:literal) => {Opcode::Plain($opcode)};
+    (0x0F $opcode:literal) => {Opcode::Escape0F($opcode)};
+    (0x0F 0x38 $opcode:literal) => {Opcode::Escape0F38($opcode)};
+    (0x0F 0x3A $opcode:literal) => {Opcode::Escape0F3A($opcode)};
+}
+
+macro_rules! pick_instruction_form {
+    () => { None };
+    ($extension:literal) => { match $extension {
+        0 => Some(U3::Dec0),
+        1 => Some(U3::Dec1),
+        2 => Some(U3::Dec2),
+        3 => Some(U3::Dec3),
+        4 => Some(U3::Dec4),
+        5 => Some(U3::Dec5),
+        6 => Some(U3::Dec6),
+        7 => Some(U3::Dec7),
+        _ => panic!(concat!("Opcode extension /", $extension, " not in the range 0..=7")),
+    }};
+}
+
+macro_rules! w_given {
+    () => { 0 };
+    ($w:ident) => {
+        {
+            struct W {}
+            let _: W = $w{}; // make sure the ident is literally W
+            1
+        }
+    };
+}
+
+macro_rules! impl_one {
+    ($(REX.$w:ident)? $($opcode:literal)+ $(/$extension:literal)? $trait:path $reg:path/$mem:path, $rhs_reg:path) => {
+        // this is a form where the dest operand uses the rm field
+        const _:Option<U3> = pick_instruction_form!($( $extension )?);
+        impl mnemonic_forms::$trait for ($reg, $rhs_reg) {
+            let dest = self.0;
+            let rex = {
+                let rex_w = w_given!($( $w )?);
+                let rex_r = 0;
+                let rex_x = 0;
+                let rex_b = dest.id_rex_bit();
+                if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
+                    // <- most significant bit
+                    // 0 1 0 0 W R X B
+                    let rex = 0b0100_0000
+                                + 0b_1000 * rex_w
+                                + 0b_0100 * rex_r
+                                + 0b_0010 * rex_x
+                                + 0b_0001 * rex_b;
+                    Some(rex)
+                } else {
+                    None
+                }
+            };
+
+            let opcode = opcode_enum!($opcode);
+            let rm_form = match pick_instruction_form!($( $extension )?) {
+                Some(extension) => {
+                    InstructionForm::RMOnly { opcode: (opcode, extension), rm: RMForm {  } }
+                }
+            }
+        }
+    };
+}
+
+
+impl_one!(0x73 /7 Reg32/Mem32, u32);
+impl_one!(REX.W 0x73 /7 Reg64/Mem64, i32);
+*/
 
 impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
     const ACCEPTABLE: () = match Reg::WIDTH {
@@ -372,25 +444,13 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
 
         let dest = self.0;
 
-        #[rustfmt::skip]
-        let rex = {
-            let rex_w = (Reg::WIDTH == B64) as u8;
-            let rex_r = 0;
-            let rex_x = 0;
-            let rex_b = dest.id_rex_bit();
-            if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                // <- most significant bit
-                // 0 1 0 0 W R X B
-                let rex = 0b0100_0000
-                            + 0b_1000 * rex_w
-                            + 0b_0100 * rex_r
-                            + 0b_0010 * rex_x
-                            + 0b_0001 * rex_b;
-                Some(rex)
-            } else {
-                None
-            }
-        };
+        let rex = Rex {
+            w: Reg::WIDTH == B64,
+            r: false,
+            x: false,
+            b: dest.id_rex_bit(),
+        }
+        .assemble();
 
         Encoding {
             rex,
@@ -406,27 +466,53 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
 use InstructionForm::*;
 use RMForm::*;
 
+/// Represents a REX byte. Mostly for code asethetics.
+struct Rex {
+    /// Usually makes instruction have 64 bit oprand size when set
+    w: bool,
+    /// Usually combines with ModR/M.reg to refer to a register
+    r: bool,
+    /// Usually combines with SIB.index to refer to a register
+    x: bool,
+    /// Usually combines with ModR/M.rm or SIB.base to refer to a register
+    b: bool,
+}
+
+impl Rex {
+    fn assemble(self) -> Option<u8> {
+        match self {
+            // The prefix is unnecessary when all fields are zero.
+            Rex {
+                w: false,
+                r: false,
+                b: false,
+                x: false,
+            } => None,
+            Rex { w, r, b, x } => {
+                #[rustfmt::skip]
+                let byte = 0b0100_0000
+                             + 0b_1000 * w as u8
+                             + 0b_0100 * r as u8
+                             + 0b_0010 * x as u8
+                             + 0b_0001 * b as u8;
+                Some(byte)
+            }
+        }
+    }
+}
+
 impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
     const ACCEPTABLE: () = ();
     fn encode(self) -> Encoding {
         let (lhs, rhs) = self;
-
         // Decide on the REX byte
-        let rex = {
-            let rex_w = (Reg::WIDTH == B64) as u8;
-            let rex_r = rhs.id_rex_bit();
-            let rex_x = (false) as u8;
-            let rex_b = lhs.id_rex_bit();
-            if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                // <- most significant bit
-                // 0 1 0 0 W R X B
-                let rex =
-                    0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b;
-                Some(rex)
-            } else {
-                None
-            }
-        };
+        let rex = Rex {
+            w: Reg::WIDTH == B64,
+            r: rhs.id_rex_bit(),
+            x: false,
+            b: lhs.id_rex_bit(),
+        }
+        .assemble();
 
         Encoding {
             rex,
@@ -444,19 +530,13 @@ impl mnemonic_forms::Test for (Mem64, i32) {
     const ACCEPTABLE: () = ();
     fn encode(self) -> Encoding {
         let Mem64::RegPlusOffset(dest_reg, dest_disp) = self.0;
-        let rex = {
-            let rex_w = 1; // 64 bit operand size
-            let rex_r = 0;
-            let rex_x = 0;
-            let rex_b = dest_reg.id_rex_bit();
-            if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                Some(
-                    0b0100_0000 + 0b1000 * rex_w + 0b0100 * rex_r + 0b0010 * rex_x + 0b0001 * rex_b,
-                )
-            } else {
-                None
-            }
-        };
+        let rex = Rex {
+            w: true, // 64 bit operand size
+            r: false,
+            x: false,
+            b: dest_reg.id_rex_bit(),
+        }
+        .assemble();
         Encoding {
             rex,
             form: InstructionForm::RMOnly {
