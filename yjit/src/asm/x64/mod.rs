@@ -2,6 +2,8 @@
 //! Warning: incomplete and barely tested.
 
 use std::collections::TryReserveError;
+use InstructionForm::*;
+use RMForm::*;
 
 /// A type implementing this trait groups together general purpose register of a certain bit width.
 pub trait Register {
@@ -333,139 +335,6 @@ impl RMForm {
     }
 }
 
-/// A 64 bit memory location operand
-pub enum Mem64 {
-    RegPlusOffset(Reg64, i32),
-}
-
-/// Short-hand for making a Mem64 operand.
-pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
-    Mem64::RegPlusOffset(reg, offset)
-}
-
-mod mnemonic_forms {
-    use crate::asm::x64::Encoding;
-    pub trait Test {
-        // This is a hack to allow use of generic parameter at build time.
-        // See https://github.com/rust-lang/rust/issues/91877
-        // If I try to use the generic arg in const context inside a function, I get
-        // "use of generic parameter from outer function".
-        // It gives a more obvious error message if I switch into const context using
-        // the size part of an array type:
-        // "error: generic parameters may not be used in const operations"
-        const ACCEPTABLE: ();
-        fn encode(self) -> Encoding;
-    }
-}
-
-/*
-macro_rules! opcode_enum {
-    ($opcode:literal) => {Opcode::Plain($opcode)};
-    (0x0F $opcode:literal) => {Opcode::Escape0F($opcode)};
-    (0x0F 0x38 $opcode:literal) => {Opcode::Escape0F38($opcode)};
-    (0x0F 0x3A $opcode:literal) => {Opcode::Escape0F3A($opcode)};
-}
-
-macro_rules! pick_instruction_form {
-    () => { None };
-    ($extension:literal) => { match $extension {
-        0 => Some(U3::Dec0),
-        1 => Some(U3::Dec1),
-        2 => Some(U3::Dec2),
-        3 => Some(U3::Dec3),
-        4 => Some(U3::Dec4),
-        5 => Some(U3::Dec5),
-        6 => Some(U3::Dec6),
-        7 => Some(U3::Dec7),
-        _ => panic!(concat!("Opcode extension /", $extension, " not in the range 0..=7")),
-    }};
-}
-
-macro_rules! w_given {
-    () => { 0 };
-    ($w:ident) => {
-        {
-            struct W {}
-            let _: W = $w{}; // make sure the ident is literally W
-            1
-        }
-    };
-}
-
-macro_rules! impl_one {
-    ($(REX.$w:ident)? $($opcode:literal)+ $(/$extension:literal)? $trait:path $reg:path/$mem:path, $rhs_reg:path) => {
-        // this is a form where the dest operand uses the rm field
-        const _:Option<U3> = pick_instruction_form!($( $extension )?);
-        impl mnemonic_forms::$trait for ($reg, $rhs_reg) {
-            let dest = self.0;
-            let rex = {
-                let rex_w = w_given!($( $w )?);
-                let rex_r = 0;
-                let rex_x = 0;
-                let rex_b = dest.id_rex_bit();
-                if (rex_w, rex_r, rex_x, rex_b) != (0, 0, 0, 0) {
-                    // <- most significant bit
-                    // 0 1 0 0 W R X B
-                    let rex = 0b0100_0000
-                                + 0b_1000 * rex_w
-                                + 0b_0100 * rex_r
-                                + 0b_0010 * rex_x
-                                + 0b_0001 * rex_b;
-                    Some(rex)
-                } else {
-                    None
-                }
-            };
-
-            let opcode = opcode_enum!($opcode);
-            let rm_form = match pick_instruction_form!($( $extension )?) {
-                Some(extension) => {
-                    InstructionForm::RMOnly { opcode: (opcode, extension), rm: RMForm {  } }
-                }
-            }
-        }
-    };
-}
-
-
-impl_one!(0x73 /7 Reg32/Mem32, u32);
-impl_one!(REX.W 0x73 /7 Reg64/Mem64, i32);
-*/
-
-impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
-    const ACCEPTABLE: () = match Reg::WIDTH {
-        B64 | B32 => (),
-        _ => panic!("Only Reg64 and Reg32 for now"),
-    };
-    fn encode(self) -> Encoding {
-        // It's surprising that the associated constant
-        // is not evaluated unless used. Bug report https://github.com/rust-lang/rust/issues/91877
-        let _: () = Self::ACCEPTABLE;
-
-        let dest = self.0;
-
-        let rex = Rex {
-            w: Reg::WIDTH == B64,
-            r: false,
-            x: false,
-            b: dest.id_rex_bit(),
-        }
-        .assemble();
-
-        Encoding {
-            rex,
-            form: InstructionForm::RMOnly {
-                opcode: (Opcode::Plain(0xF7), U3::Dec0),
-                rm: RegDirect(dest.id_lower()),
-            },
-            imm32: Some(self.1),
-        }
-    }
-}
-
-use InstructionForm::*;
-use RMForm::*;
-
 /// Represents a REX byte. Mostly for code asethetics.
 struct Rex {
     /// Usually makes instruction have 64 bit oprand size when set
@@ -501,8 +370,163 @@ impl Rex {
     }
 }
 
+/// A 64 bit memory location operand
+pub enum Mem64 {
+    RegPlusOffset(Reg64, i32),
+}
+
+/// Short-hand for making a Mem64 operand.
+pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
+    Mem64::RegPlusOffset(reg, offset)
+}
+
+mod mnemonic_forms {
+    use crate::asm::x64::Encoding;
+    pub trait Test {
+        fn encode(self) -> Encoding;
+    }
+}
+
+macro_rules! opcode_enum {
+    ($opcode:literal) => {
+        Opcode::Plain($opcode)
+    };
+    (0x0F $opcode:literal) => {
+        Opcode::Escape0F($opcode)
+    };
+    (0x0F 0x38 $opcode:literal) => {
+        Opcode::Escape0F38($opcode)
+    };
+    (0x0F 0x3A $opcode:literal) => {
+        Opcode::Escape0F3A($opcode)
+    };
+}
+
+macro_rules! w_given {
+    () => {
+        false
+    };
+    (W) => {
+        true
+    };
+}
+
+/// Select between two expressions depending on whether a token tree is given.
+/// Useful for working with $(...)? macro patterns.
+macro_rules! if_first_arg {
+    (, $_given:tt else $not_given:tt) => {{
+        $not_given
+    }};
+    ($first:tt, $given:tt else $_not_given:tt) => {{
+        $given
+    }};
+}
+
+/***
+//if_first_arg!(, {} else thatthing);
+//if_first_arg!(34, {} else thatthing);
+
+macro_rules! play {
+    ($($ext:literal)?) => { if_first_arg!($($ext)?, {} else {}); };
+}
+
+fn thing() {
+play!(4);
+play!();
+}
+*/
+
+/// Const function for use at build time with macros to convert a digit to U3.
+const fn u3_literal(n: u8) -> U3 {
+    match n {
+        0 => U3::Dec0,
+        1 => U3::Dec1,
+        2 => U3::Dec2,
+        3 => U3::Dec3,
+        4 => U3::Dec4,
+        5 => U3::Dec5,
+        6 => U3::Dec6,
+        7 => U3::Dec7,
+        _ => panic!("Numeric literal for U3 not in the range 0..=7"),
+    }
+}
+
+/// Select between two expressions based on if the first arg is "reg" or "imm".
+macro_rules! reg_or_imm {
+    (reg, reg: $reg_expr:expr , imm: $imm_expr:expr) => {
+        $reg_expr
+    };
+    (imm, reg: $reg_expr:expr , imm: $imm_expr:expr) => {
+        $imm_expr
+    };
+}
+
+macro_rules! impl_binary {
+    ($(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? $trait:ident rm:$reg:ident/$mem:ident, $src_type:tt : $rhs:ident) => {
+        impl mnemonic_forms::$trait for ($mem, $rhs) {
+            fn encode(self) -> Encoding {
+                let (Mem64::RegPlusOffset(dest_reg, dest_disp), _rhs) = self;
+
+                let rex = Rex {
+                    w: w_given!($( $w )?),
+                    r: reg_or_imm!($src_type, reg: _rhs.id_rex_bit(), imm: false ), // last arg different in rm=reg version
+                    x: false,
+                    b: dest_reg.id_rex_bit(),
+                }.assemble();
+
+                let opcode = opcode_enum!($($opcode)+);
+                let rm = RMForm::RegPlusDisp {
+                    reg: dest_reg.id_lower(),
+                    disp: dest_disp,
+                };
+
+                let form = if_first_arg!($($extension)?,
+                    {
+                        const EXT: U3 = u3_literal( $($extension)? );
+                        InstructionForm::RMOnly { opcode: (opcode, EXT), rm }
+                    } else {
+                        InstructionForm::RegRM { opcode, reg: _rhs.id_lower(), rm }
+                    }
+                );
+
+                Encoding {
+                    rex,
+                    form,
+                    imm32: reg_or_imm!($src_type, reg: None, imm: Some(self.1)),
+                }
+            }
+        }
+    };
+}
+
+impl_binary!(REX.W 0xF7 /0 Test rm:Reg64/Mem64, imm:i32);
+
+impl_binary!(REX.W 0x85 Test rm:Reg64/Mem64, reg:Reg64);
+
+impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
+    fn encode(self) -> Encoding {
+        let dest = self.0;
+
+        let rex = Rex {
+            w: Reg::WIDTH == B64,
+            r: false,
+            x: false,
+            b: dest.id_rex_bit(),
+        }
+        .assemble();
+
+        Encoding {
+            rex,
+            form: InstructionForm::RMOnly {
+                opcode: (Opcode::Plain(0xF7), U3::Dec0),
+                rm: RegDirect(dest.id_lower()),
+            },
+            imm32: Some(self.1),
+        }
+    }
+}
+
 impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
-    const ACCEPTABLE: () = ();
     fn encode(self) -> Encoding {
         let (lhs, rhs) = self;
         // Decide on the REX byte
@@ -526,8 +550,8 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
     }
 }
 
+/*
 impl mnemonic_forms::Test for (Mem64, i32) {
-    const ACCEPTABLE: () = ();
     fn encode(self) -> Encoding {
         let Mem64::RegPlusOffset(dest_reg, dest_disp) = self.0;
         let rex = Rex {
@@ -550,6 +574,7 @@ impl mnemonic_forms::Test for (Mem64, i32) {
         }
     }
 }
+*/
 
 impl Assembler {
     pub fn new() -> Self {
@@ -871,6 +896,27 @@ mod tests {
         )
 
         // TODO: write panic tests
+    }
+
+    #[test]
+    fn test_rmm_r() {
+        test_encoding!(
+            "48 85 40 80"
+            "test qword ptr [rax - 0x80], rax",
+            test(mem64(RAX, i8::MIN.into()), RAX)
+        );
+
+        test_encoding!(
+            "49 85 44 24 80"
+            "test qword ptr [r12 - 0x80], rax",
+            test(mem64(R12, i8::MIN.into()), RAX)
+        );
+
+        test_encoding!(
+            "4d 85 6d 80"
+            "test qword ptr [r13 - 0x80], r13",
+            test(mem64(R13, i8::MIN.into()), R13)
+        );
     }
 
     #[test]
