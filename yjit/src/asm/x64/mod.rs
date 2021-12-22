@@ -2,8 +2,11 @@
 //! Warning: incomplete and barely tested.
 
 use std::collections::TryReserveError;
+
+use self::AddressingForm::*;
 use InstructionForm::*;
 use RMForm::*;
+use RegisterWidth::*;
 
 /// A type implementing this trait groups together general purpose register of a certain bit width.
 pub trait Register {
@@ -19,17 +22,11 @@ pub trait Register {
     fn id_lower(&self) -> U3;
 }
 
-pub struct Reg64(RegId);
-pub struct Reg32(RegId);
-pub struct Reg16(RegId);
-pub struct Reg8(RegId);
-
+#[derive(Debug)]
 pub struct RegId {
     id_rex_bit: bool,
     id_lower: U3,
 }
-
-use RegisterWidth::*;
 
 impl Register for Reg64 {
     const WIDTH: RegisterWidth = B64;
@@ -122,6 +119,19 @@ fn sib_byte(scale: U2, index: U3, base: U3) -> u8 {
     u8_from_parts(scale, index, base)
 }
 
+/// 64 bit register operand
+#[derive(Debug)]
+pub struct Reg64(RegId);
+/// 32 bit register operand
+#[derive(Debug)]
+pub struct Reg32(RegId);
+/// 16 bit register operand
+#[derive(Debug)]
+pub struct Reg16(RegId);
+/// 8 bit register operand
+#[derive(Debug)]
+pub struct Reg8(RegId);
+
 /// Make constants for general purpose registers.
 /// For simplificty, high byte registers such as AH are excluded on purpose.
 macro_rules! general_purpose_registers {
@@ -157,19 +167,19 @@ general_purpose_registers! {
     rex:1 Dec7 R15L R15W R15D R15
 }
 
-/*
-#[derive(Debug)]
-pub enum RegWidthInteger {
-    I8(i8),
-    I16(i16),
-    I32(i32),
-    I64(i64),
-    U8(u8),
-    U16(u16),
-    U32(u32),
-    U64(u64),
+/// 64 bit memory operands
+pub struct Mem64(AddressingForm);
+/// 32 bit memory operands
+pub struct Mem32(AddressingForm);
+/// 16 bit memory operands
+pub struct Mem16(AddressingForm);
+/// 8 bit memory operands
+pub struct Mem8(AddressingForm);
+
+/// Short-hand for making a Mem64 operand.
+pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
+    Mem64(AddressingForm::RegPlusDisp(reg, offset))
 }
-*/
 
 /// x64 assembler
 pub struct Assembler {
@@ -183,10 +193,21 @@ pub struct Assembler {
 /// the encoded bytes. Beware that some instances of this struct do not encode valid
 /// instructions. For example, nothing stops you from encoding an immediate for an opcode that
 /// does not precede any immediates.
-pub struct Encoding {
+pub struct Encoding<const IMM_SIZE: usize> {
     rex: Option<u8>,
     form: InstructionForm,
-    imm32: Option<i32>, // Tmporary. Maybe a enum with different imm sizes
+    immediate: [u8; IMM_SIZE],
+}
+
+impl<const IMM_SIZE: usize> Encoding<IMM_SIZE> {
+    /// This is a strange dance to get stable rustc to run this check at build time.
+    /// Maybe a future version of Rust will offer a more intuitive way to do this.
+    /// See https://github.com/rust-lang/rust/issues/79429
+    /// TODO: ask around about this
+    const RUN_BUILD_TIME_IMM_SIZE_CHECK: () = match IMM_SIZE {
+        0 | 1 | 2 | 4 | 8 => (),
+        _ => panic!("Attempt encode strangely sized immediate"),
+    };
 }
 
 /// An opcode. Might be up to 3 byte
@@ -241,13 +262,9 @@ pub enum InstructionForm {
 pub enum RMForm {
     /// Register operand
     RegDirect(U3),
-    /// Memory operand. The address is a register plus a displacement. Encodings vary depending on
-    /// the magnitude of the displacement.
-    RegPlusDisp { reg: U3, disp: i32 },
-    /// Memory operand. The address is relative to the instruction pointer.
-    RIPRelative(i32),
-    // NOTE: This includes no base + index * scale + displacement forms as we haven't
-    // used them in the JIT.
+    /// Memory operand where the address is calculated through an encodable form, for example,
+    /// `register + displacement`.
+    Mem(AddressingForm),
 }
 
 impl RMForm {
@@ -259,7 +276,9 @@ impl RMForm {
                 let mod_rm = modrm_byte(U2::Dec3, modrm_reg, rm);
                 sink.try_reserve(1).map(|_| sink.push(mod_rm))
             }
-            RegPlusDisp { reg, disp } => {
+            Mem(RegPlusDisp(reg, disp)) => {
+                let reg = reg.id_lower();
+
                 match (i8::try_from(disp), reg) {
                     // Go for shorter encodings when the displacement is zero.
                     (Ok(0), U3::Dec4) => {
@@ -319,7 +338,7 @@ impl RMForm {
                     }
                 }
             }
-            RIPRelative(offset) => {
+            Mem(RIPRelative(offset)) => {
                 // mod=0b00 and rm=0b101
                 let mod_rm = modrm_byte(U2::Dec0, modrm_reg, U3::Dec0);
                 let offset_parts: [u8; 4] = offset.to_le_bytes();
@@ -331,6 +350,26 @@ impl RMForm {
                     sink.push(offset_parts[3]);
                 })
             }
+        }
+    }
+}
+
+/// A way to compute an address that is encodable.
+#[derive(Debug)]
+pub enum AddressingForm {
+    /// The address is a register plus a displacement.
+    RegPlusDisp(Reg64, i32),
+    /// The address the instruction pointer plus a displacement.
+    RIPRelative(i32),
+    // NOTE: This includes no base + index * scale + displacement forms as we haven't
+    // used them in the JIT.
+}
+
+impl AddressingForm {
+    fn rex_xb(&self) -> (bool, bool) {
+        match self {
+            RegPlusDisp(reg, _) => (false, reg.id_rex_bit()),
+            RIPRelative(_) => (false, false),
         }
     }
 }
@@ -367,23 +406,6 @@ impl Rex {
                 Some(byte)
             }
         }
-    }
-}
-
-/// A 64 bit memory location operand
-pub enum Mem64 {
-    RegPlusOffset(Reg64, i32),
-}
-
-/// Short-hand for making a Mem64 operand.
-pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
-    Mem64::RegPlusOffset(reg, offset)
-}
-
-mod mnemonic_forms {
-    use crate::asm::x64::Encoding;
-    pub trait Test {
-        fn encode(self) -> Encoding;
     }
 }
 
@@ -459,50 +481,152 @@ macro_rules! reg_or_imm {
     (imm, reg: $reg_expr:expr , imm: $imm_expr:expr) => {
         $imm_expr
     };
+    (reg, reg: $reg_expr:item , imm: $imm_expr:item) => {
+        $reg_expr
+    };
+    (imm, reg: $reg_expr:item , imm: $imm_expr:item) => {
+        $imm_expr
+    };
 }
 
 macro_rules! impl_binary {
-    ($(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? $trait:ident rm:$reg:ident/$mem:ident, $src_type:tt : $rhs:ident) => {
-        impl mnemonic_forms::$trait for ($mem, $rhs) {
-            fn encode(self) -> Encoding {
-                let (Mem64::RegPlusOffset(dest_reg, dest_disp), _rhs) = self;
+    // For binary instructions that follow the form (r/m, (reg|imm))
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm:$reg:ident/$mem:ident, $src_type:tt : $rhs:ident) => {
+        // Version where the lhs R/M is a register
+        impl mnemonic_forms::$trait for ($reg, $rhs) {
+            reg_or_imm!(
+                $src_type,
+                reg: type Output = Encoding::<0>;,
+                imm: type Output = Encoding::<{($rhs::BITS/8) as usize}>;
+            );
+
+            fn encode(self) -> Self::Output {
+                let (dest_reg, _src) = self;
 
                 let rex = Rex {
                     w: w_given!($( $w )?),
-                    r: reg_or_imm!($src_type, reg: _rhs.id_rex_bit(), imm: false ), // last arg different in rm=reg version
+                    r: reg_or_imm!($src_type, reg: _src.id_rex_bit(), imm: false),
                     x: false,
                     b: dest_reg.id_rex_bit(),
                 }.assemble();
 
                 let opcode = opcode_enum!($($opcode)+);
-                let rm = RMForm::RegPlusDisp {
-                    reg: dest_reg.id_lower(),
-                    disp: dest_disp,
-                };
-
+                let rm = RMForm::RegDirect(dest_reg.id_lower());
                 let form = if_first_arg!($($extension)?,
                     {
+                        let _ = reg_or_imm!(
+                            $src_type,
+                            reg: compile_error!("Can't have both a ModRM.reg opcode extension and a register operand"),
+                            imm: ()
+                        );
                         const EXT: U3 = u3_literal( $($extension)? );
                         InstructionForm::RMOnly { opcode: (opcode, EXT), rm }
                     } else {
-                        InstructionForm::RegRM { opcode, reg: _rhs.id_lower(), rm }
+                        reg_or_imm!(
+                            $src_type,
+                            reg: InstructionForm::RegRM { opcode, reg: _src.id_lower(), rm },
+                            imm: compile_error!("Not sure what to put for ModR/M.reg since there is no extension and no register operand")
+                        )
                     }
                 );
 
                 Encoding {
                     rex,
                     form,
-                    imm32: reg_or_imm!($src_type, reg: None, imm: Some(self.1)),
+                    immediate: reg_or_imm!($src_type, reg: [], imm: _src.to_le_bytes()),
+                }
+            }
+        }
+        // Version where the lhs R/M is a memory location
+        impl mnemonic_forms::$trait for ($mem, $rhs) {
+            reg_or_imm!(
+                $src_type,
+                reg: type Output = Encoding::<0>;,
+                imm: type Output = Encoding::<{($rhs::BITS/8) as usize}>;
+            );
+
+            fn encode(self) -> Self::Output {
+                let ($mem(addressing), _src) = self;
+
+                let (x, b) = addressing.rex_xb();
+                let rex = Rex {
+                    w: w_given!($( $w )?),
+                    r: reg_or_imm!($src_type, reg: _src.id_rex_bit(), imm: false),
+                    x,
+                    b,
+                }.assemble();
+
+                let opcode = opcode_enum!($($opcode)+);
+                let rm = RMForm::Mem(addressing);
+
+                let form = if_first_arg!($($extension)?,
+                    {
+                        let _ = reg_or_imm!(
+                            $src_type,
+                            reg: compile_error!("Can't have both a ModRM.reg opcode extension and a register operand"),
+                            imm: ()
+                        );
+                        const EXT: U3 = u3_literal( $($extension)? );
+                        InstructionForm::RMOnly { opcode: (opcode, EXT), rm }
+                    } else {
+                        reg_or_imm!(
+                            $src_type,
+                            reg: InstructionForm::RegRM { opcode, reg: _src.id_lower(), rm },
+                            imm: compile_error!("Not sure what to put for ModR/M.reg since there is no extension and no register operand")
+                        )
+                    }
+                );
+
+                Encoding {
+                    rex,
+                    form,
+                    immediate: reg_or_imm!($src_type, reg: [], imm: _src.to_le_bytes()),
                 }
             }
         }
     };
 }
 
-impl_binary!(REX.W 0xF7 /0 Test rm:Reg64/Mem64, imm:i32);
+mod mnemonic_forms {
+    use crate::asm::x64::{Assembler, Encoding};
 
-impl_binary!(REX.W 0x85 Test rm:Reg64/Mem64, reg:Reg64);
+    pub trait Test {
+        type Output;
+        fn encode(self) -> Self::Output;
+    }
+    impl Assembler {
+        pub fn test<T, const IMM_SIZE: usize>(&mut self, operands: T)
+        where
+            T: Test<Output = Encoding<IMM_SIZE>>,
+        {
+            self.push_one_insn(operands.encode());
+        }
+    }
 
+    pub trait Mov {
+        type Output;
+        fn encode(self) -> Self::Output;
+    }
+    impl Assembler {
+        pub fn mov<T, const IMM_SIZE: usize>(&mut self, operands: T)
+        where
+            T: Mov<Output = Encoding<IMM_SIZE>>,
+        {
+            self.push_one_insn(operands.encode());
+        }
+    }
+}
+
+impl_binary!(Test REX.W 0x84 /0 rm:  Reg8/Mem8, imm: u8);
+impl_binary!(Test       0xF7 /0 rm:Reg32/Mem32, imm:u32);
+impl_binary!(Test REX.W 0xF7 /0 rm:Reg64/Mem64, imm:i32);
+
+impl_binary!(Test       0x85 rm:Reg32/Mem32, reg:Reg32);
+impl_binary!(Test REX.W 0x85 rm:Reg64/Mem64, reg:Reg64);
+
+impl_binary!(Mov 0xC7 /0 rm:Reg32/Mem32, imm:u32);
+
+/*
 impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
     fn encode(self) -> Encoding {
         let dest = self.0;
@@ -549,6 +673,7 @@ impl<Reg: Register> mnemonic_forms::Test for (Reg, Reg) {
         }
     }
 }
+*/
 
 /*
 impl mnemonic_forms::Test for (Mem64, i32) {
@@ -577,14 +702,7 @@ impl mnemonic_forms::Test for (Mem64, i32) {
 */
 
 impl Assembler {
-    pub fn new() -> Self {
-        Assembler { encoded: vec![] }
-    }
-    pub fn encoded(&self) -> &Vec<u8> {
-        &self.encoded
-    }
-
-    fn push_one_insn(&mut self, encoding: Encoding) {
+    fn push_one_insn<const IMM_SIZE: usize>(&mut self, encoding: Encoding<IMM_SIZE>) {
         if let Some(rex) = encoding.rex {
             self.encoded.push(rex);
         }
@@ -633,11 +751,26 @@ impl Assembler {
             }
         }
 
-        if let Some(imm32) = encoding.imm32 {
-            for byte in imm32.to_le_bytes() {
-                self.encoded.push(byte);
-            }
-        }
+        // See doc about this constant.
+        let _ = Encoding::<IMM_SIZE>::RUN_BUILD_TIME_IMM_SIZE_CHECK;
+
+        self.encoded
+            .try_reserve(IMM_SIZE)
+            .map(|_| {
+                for byte in encoding.immediate {
+                    self.encoded.push(byte)
+                }
+            })
+            .expect("alloc failure");
+    }
+}
+
+impl Assembler {
+    pub fn new() -> Self {
+        Assembler { encoded: vec![] }
+    }
+    pub fn encoded(&self) -> &Vec<u8> {
+        &self.encoded
     }
 
     /*
@@ -690,10 +823,6 @@ impl Assembler {
         }
     }
     */
-
-    pub fn test<T: mnemonic_forms::Test>(&mut self, operands: T) {
-        self.push_one_insn(operands.encode());
-    }
 
     /*
     pub fn mov(&mut self, dst: Operand, src: Operand) {
@@ -870,11 +999,11 @@ mod tests {
 
         // reg32, imm32
         test_encoding!(
-            "f7 c7 ff ff ff 7f 41 f7 c1 fe ca ab 0f f7 c7 00 00 00 80 41 f7 c1 ff ff ff ff"
-            "test edi, 0x7fffffff", test(EDI, i32::MAX)
+            "f7 c7 ff ff ff ff 41 f7 c1 fe ca ab 0f f7 c7 ef be ad de 41 f7 c1 ff ff ff ff"
+            "test edi, 0xffffffff", test(EDI, u32::MAX)
             "test r9d, 0xfabcafe", test(R9D, 0xFABCAFE)
-            "test edi, 0x80000000", test(EDI, i32::MIN)
-            "test r9d, 0xffffffff", test(R9D, -1)
+            "test edi, 0xdeadbeef", test(EDI, 0xDEADBEEF)
+            "test r9d, 0xffffffff", test(R9D, u32::MAX)
         );
 
         // reg64, reg64
@@ -962,6 +1091,14 @@ mod tests {
             "48 f7 84 24 7f ff ff ff fe ca ab 0f"
             "test qword ptr [rsp - 0x81], 0xfabcafe",
             test(mem64(RSP, i32::from(i8::MIN) - 1), 0xfabcafe)
+        );
+    }
+
+    #[test]
+    fn mov() {
+        test_encoding!(
+            "c7 c0 fe ca ab 0f"
+            "mov eax, 0xfabcafe", mov(EAX, 0xfabcafe)
         );
     }
 
