@@ -585,10 +585,12 @@ macro_rules! impl_binary {
             }
         }
     };
+    // TODO: reg, r/m forms. Should be easier because no need for reg or imm
 }
 
 mod mnemonic_forms {
     use crate::asm::x64::{Assembler, Encoding};
+    // TODO: DRY this up with a macro
 
     pub trait Test {
         type Output;
@@ -617,7 +619,10 @@ mod mnemonic_forms {
     }
 }
 
-impl_binary!(Test REX.W 0x84 /0 rm:  Reg8/Mem8, imm: u8);
+// TODO: Override for test with ax, imm. It's got a shorter encoding with a different bytecode.
+// TODO: Write a test generation script
+
+impl_binary!(Test REX.W 0xF6 /0 rm:  Reg8/Mem8, imm: u8);
 impl_binary!(Test       0xF7 /0 rm:Reg32/Mem32, imm:u32);
 impl_binary!(Test REX.W 0xF7 /0 rm:Reg64/Mem64, imm:i32);
 
