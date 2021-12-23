@@ -196,7 +196,7 @@ pub struct Assembler {
 pub struct Encoding<const IMM_SIZE: usize> {
     rex: Option<u8>,
     form: InstructionForm,
-    immediate: [u8; IMM_SIZE],
+    immediate: Option<[u8; IMM_SIZE]>,
 }
 
 impl<const IMM_SIZE: usize> Encoding<IMM_SIZE> {
@@ -541,13 +541,15 @@ macro_rules! impl_binary {
                 Encoding {
                     rex,
                     form,
-                    immediate: reg_or_imm!($src_type, reg: [], imm: _src.to_le_bytes()),
+                    immediate: reg_or_imm!($src_type, reg: None, imm: Some(_src.to_le_bytes())),
                 }
             }
         }
     };
     // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a memory location
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_mem:$mem:ident, $src_type:tt : $rhs:ident) => {
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_mem:$mem:ident, $src_type:tt : $rhs:ident
+        $(, let $specialize_pattern:pat = &self, $specialize_body:stmt)?
+    ) => {
         // Version where the lhs R/M is a memory location
         impl mnemonic_forms::$trait for ($mem, $rhs) {
             reg_or_imm!(
@@ -557,6 +559,12 @@ macro_rules! impl_binary {
             );
 
             fn encode(self) -> Self::Output {
+                // Transcribe specialization, if given
+                $({
+                    let $specialize_pattern = &self;
+                    $specialize_body
+                })?
+
                 let ($mem(addressing), _src) = self;
 
                 let (x, b) = addressing.rex_xb();
@@ -591,7 +599,7 @@ macro_rules! impl_binary {
                 Encoding {
                     rex,
                     form,
-                    immediate: reg_or_imm!($src_type, reg: [], imm: _src.to_le_bytes()),
+                    immediate: reg_or_imm!($src_type, reg: None, imm: Some(_src.to_le_bytes())),
                 }
             }
         }
@@ -622,11 +630,15 @@ mod mnemonic_forms {
         };
     }
 
-    mnemonic!(test, Test);
     mnemonic!(mov, Mov);
+    mnemonic!(test, Test);
+    mnemonic!(shl, Shl);
 }
 
 // TODO: Write a test generation script
+
+impl_binary!(Mov 0xC7 /0 rm_reg:Reg32, imm:u32);
+impl_binary!(Mov 0xC7 /0 rm_mem:Mem32, imm:u32);
 
 impl_binary!(Test REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
 impl_binary!(Test       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
@@ -642,8 +654,7 @@ impl_binary!(Test REX.W 0x85 rm_reg:Reg64, reg:Reg64);
 impl_binary!(Test       0x85 rm_mem:Mem32, reg:Reg32);
 impl_binary!(Test REX.W 0x85 rm_mem:Mem64, reg:Reg64);
 
-impl_binary!(Mov 0xC7 /0 rm_reg:Reg32, imm:u32);
-impl_binary!(Mov 0xC7 /0 rm_mem:Mem32, imm:u32);
+impl_binary!(Shl REX.W 0xC1 /4 rm_reg:Reg64, imm:u8, let (reg, imm) = &self, if *imm == 1 { return left_shift_by_one(reg) });
 
 /// Special shorter encoding for test {al,ax,eax,rax}, imm{8,16,32,64}
 fn test_ax_imm_special<R: Register, const IMM_SIZE: usize>(
@@ -659,7 +670,23 @@ fn test_ax_imm_special<R: Register, const IMM_SIZE: usize>(
         }
         .assemble(),
         form: InstructionForm::OpcodeOnly(Opcode::Plain(if R::WIDTH == B8 { 0xA8 } else { 0xA9 })),
-        immediate: imm_le_bytes,
+        immediate: Some(imm_le_bytes),
+    }
+}
+
+/// Special shorter encoding for shl rm, 1
+fn left_shift_by_one<R: Register>(reg: &R) -> Encoding<1> {
+    let opcode = Opcode::Plain(if R::WIDTH == B8 { 0xD0 } else { 0xD1 });
+    Encoding {
+        rex: Rex {
+            w: (R::WIDTH == B64),
+            r: false,
+            x: false,
+            b: reg.id_rex_bit(),
+        }
+        .assemble(),
+        form: InstructionForm::RMOnly{opcode: (opcode, U3::Dec4), rm: RMForm::RegDirect(reg.id_lower())},
+        immediate: None,
     }
 }
 
@@ -794,8 +821,10 @@ impl Assembler {
         self.encoded
             .try_reserve(IMM_SIZE)
             .map(|_| {
-                for byte in encoding.immediate {
-                    self.encoded.push(byte)
+                if let Some(bytes) = encoding.immediate {
+                    for byte in bytes {
+                        self.encoded.push(byte)
+                    }
                 }
             })
             .expect("alloc failure");
@@ -1022,6 +1051,25 @@ mod tests {
         assert_eq!("48 d1 f8 49 d1 f9 48 d1 ff 41 d1 fa", asm.byte_string());
     }
     */
+
+
+    #[test]
+    fn shl_and_sal() {
+        test_encoding!(
+            "48 c1 e0 02 48 d1 e1 49 d1 e7 49 c1 e3 03 49 d1 e4 49 c1 e4 02 49 d1 e5 49 c1 e5 03"
+            "shl rax, 2",  shl(RAX, 2)
+            "shl rcx, 1",  shl(RCX, 1)
+
+            "shl r15, 1",  shl(R15, 1)
+            "shl r11, 3",  shl(R11, 3)
+
+            "shl r12, 1",  shl(R12, 1)
+            "shl r12, 2",  shl(R12, 2)
+
+            "shl r13, 1",  shl(R13, 1)
+            "shl r13, 3",  shl(R13, 3)
+        );
+    }
 
     #[test]
     fn test() {
