@@ -601,33 +601,29 @@ macro_rules! impl_binary {
 
 mod mnemonic_forms {
     use crate::asm::x64::{Assembler, Encoding};
-    // TODO: DRY this up with a macro
 
-    pub trait Test {
-        type Output;
-        fn encode(self) -> Self::Output;
-    }
-    impl Assembler {
-        pub fn test<T, const IMM_SIZE: usize>(&mut self, operands: T)
-        where
-            T: Test<Output = Encoding<IMM_SIZE>>,
-        {
-            self.push_one_insn(operands.encode());
-        }
+    /// The interface to the assembler has each mnemonic as a method taking a
+    /// tuple that implements the different forms of the instruction. Mnemonic methods
+    /// have very similar signatures so this macro helps to stay DRY.
+    macro_rules! mnemonic {
+        ($mnemonic:ident, $trait:ident) => {
+            pub trait $trait {
+                type Output;
+                fn encode(self) -> Self::Output;
+            }
+            impl Assembler {
+                pub fn $mnemonic<T, const IMM_SIZE: usize>(&mut self, operands: T)
+                where
+                    T: $trait<Output = Encoding<IMM_SIZE>>,
+                {
+                    self.push_one_insn(operands.encode());
+                }
+            }
+        };
     }
 
-    pub trait Mov {
-        type Output;
-        fn encode(self) -> Self::Output;
-    }
-    impl Assembler {
-        pub fn mov<T, const IMM_SIZE: usize>(&mut self, operands: T)
-        where
-            T: Mov<Output = Encoding<IMM_SIZE>>,
-        {
-            self.push_one_insn(operands.encode());
-        }
-    }
+    mnemonic!(test, Test);
+    mnemonic!(mov, Mov);
 }
 
 // TODO: Write a test generation script
