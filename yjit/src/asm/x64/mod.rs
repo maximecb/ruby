@@ -491,7 +491,9 @@ macro_rules! reg_or_imm {
 
 macro_rules! impl_binary {
     // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a register
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident) => {
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident,
+        $(let $specialize_pattern:pat, $specialize_body:stmt)?
+    ) => {
         // Version where the lhs R/M is a register
         impl mnemonic_forms::$trait for ($reg, $rhs) {
             reg_or_imm!(
