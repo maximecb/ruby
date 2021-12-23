@@ -442,6 +442,13 @@ macro_rules! if_first_arg {
     ($first:tt, $given:tt else $_not_given:tt) => {{
         $given
     }};
+
+    (, $_given:item else $not_given:item) => {
+        $not_given
+    };
+    ($first:tt, $given:item else $_not_given:item) => {
+        $given
+    };
 }
 
 /***
@@ -486,6 +493,22 @@ macro_rules! reg_or_imm {
     };
     (imm, reg: $_reg:item , imm: $imm:item) => {
         $imm
+    };
+}
+
+/// Manual +{rb,rw,rd,rq} syntax to our sized register types.
+macro_rules! reg_size_to_type {
+    (+rb) => {
+        Reg8
+    };
+    (+rw) => {
+        Reg16
+    };
+    (+rd) => {
+        Reg32
+    };
+    (+rq) => {
+        Reg64
     };
 }
 
@@ -611,6 +634,45 @@ macro_rules! impl_binary {
     // TODO: reg, r/m forms. Should be easier because no need for reg or imm
 }
 
+/// For instructions that use the lower 3 bits of the opcode to refer to a register.
+/// Exercise: how would you change this to support BSWAP?
+macro_rules! impl_reg_in_opcode {
+    (
+        $trait:ident $(REX.$w:tt)? $opcode:literal +$reg:tt $(imm: $rhs_imm:ident)?
+    ) => {
+        impl mnemonic_forms::$trait for (reg_size_to_type!(+$reg) $(, $rhs_imm)?) {
+            if_first_arg!(
+                $($rhs_imm)?,
+                type Output = Encoding::<{($($rhs_imm)?::BITS/8) as usize}>;
+                else type Output = Encoding::<0>;
+            );
+
+            fn encode(self) -> Self::Output {
+                let reg = self.0;
+                let reg_id: U3 = reg.id_lower();
+
+                #[allow(unused)]
+                let immediate: Option<[u8; 0]> = None;
+                $(
+                    let immediate = Some(self.1.to_le_bytes());
+                    let _: $rhs_imm = 0;
+                )?
+
+                Encoding {
+                    rex: Rex {
+                        w: <reg_size_to_type!(+$reg)>::WIDTH == B64,
+                        r: false,
+                        x: false,
+                        b: reg.id_rex_bit(),
+                    }.assemble(),
+                    form: InstructionForm::OpcodeOnly(Opcode::Plain($opcode + (reg_id as u8))),
+                    immediate,
+                }
+            }
+        }
+    }
+}
+
 mod mnemonic_forms {
     use crate::asm::x64::{Assembler, Encoding};
 
@@ -653,8 +715,13 @@ mod mnemonic_forms {
 
 // TODO: Write a test generation script
 
-impl_binary!(MOV 0xC7 /0 rm_reg:Reg32, imm:u32);
-impl_binary!(MOV 0xC7 /0 rm_mem:Mem32, imm:u32);
+impl_reg_in_opcode!(MOV       0xB0 +rb imm: u8);
+impl_reg_in_opcode!(MOV       0xB8 +rd imm:u32);
+impl_reg_in_opcode!(MOV REX.W 0xB8 +rq imm:u64);
+
+impl_binary!(MOV       0xC7 /0 rm_mem: Mem8, imm: u8);
+impl_binary!(MOV       0xC7 /0 rm_mem:Mem32, imm:u32);
+impl_binary!(MOV REX.W 0xC7 /0 rm_mem:Mem64, imm:u32);
 
 impl_binary!(TEST REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
 impl_binary!(TEST       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
@@ -664,9 +731,11 @@ impl_binary!(TEST REX.W 0xF6 /0 rm_mem: Mem8, imm: u8);
 impl_binary!(TEST       0xF7 /0 rm_mem:Mem32, imm:u32);
 impl_binary!(TEST REX.W 0xF7 /0 rm_mem:Mem64, imm:i32);
 
+impl_binary!(TEST       0x84 rm_reg: Reg8, reg: Reg8);
 impl_binary!(TEST       0x85 rm_reg:Reg32, reg:Reg32);
 impl_binary!(TEST REX.W 0x85 rm_reg:Reg64, reg:Reg64);
 
+impl_binary!(TEST       0x84 rm_mem: Mem8, reg: Reg8);
 impl_binary!(TEST       0x85 rm_mem:Mem32, reg:Reg32);
 impl_binary!(TEST REX.W 0x85 rm_mem:Mem64, reg:Reg64);
 
@@ -983,7 +1052,7 @@ mod tests {
     }
 
     macro_rules! test_encoding {
-        ($bytes:literal $($disasm:literal, $mnemonic:ident $args:expr)+) => {{
+        ($bytes:literal $($disasm:literal, $mnemonic:ident $args:expr $(,)?)+) => {{
             let mut asm = Assembler::new();
 
             $( asm.$mnemonic($args); )*
@@ -1201,8 +1270,12 @@ mod tests {
     #[test]
     fn mov() {
         test_encoding!(
-            "c7 c0 fe ca ab 0f"
-            "mov eax, 0xfabcafe", mov(EAX, 0xfabcafe)
+            "b0 00 b8 fe ca ab 0f 41 b8 fe ca ab 0f 48 b8 ff ff ff ff ff ff ff ff 49 bf 00 00 00 00 01 00 00 00"
+            "mov al, 0", mov(AL, 0),
+            "mov eax, 0xfabcafe", mov(EAX, 0xfabcafe),
+            "mov r8d, 0xfabcafe", mov(R8D, 0xfabcafe),
+            "movabs rax, 0xffffffffffffffff", mov(RAX, u64::MAX),
+            "movabs r15, 0x100000000", mov(R15, u64::from(u32::MAX)+1),
         );
     }
 
