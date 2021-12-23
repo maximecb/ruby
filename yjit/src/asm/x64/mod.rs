@@ -22,7 +22,7 @@ pub trait Register {
     fn id_lower(&self) -> U3;
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct RegId {
     id_rex_bit: bool,
     id_lower: U3,
@@ -120,16 +120,16 @@ fn sib_byte(scale: U2, index: U3, base: U3) -> u8 {
 }
 
 /// 64 bit register operand
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Reg64(RegId);
 /// 32 bit register operand
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Reg32(RegId);
 /// 16 bit register operand
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Reg16(RegId);
 /// 8 bit register operand
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct Reg8(RegId);
 
 /// Make constants for general purpose registers.
@@ -491,8 +491,8 @@ macro_rules! reg_or_imm {
 
 macro_rules! impl_binary {
     // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a register
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident,
-        $(let $specialize_pattern:pat, $specialize_body:stmt)?
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident
+        $(, let $specialize_pattern:pat = &self, $specialize_body:stmt)?
     ) => {
         // Version where the lhs R/M is a register
         impl mnemonic_forms::$trait for ($reg, $rhs) {
@@ -503,7 +503,13 @@ macro_rules! impl_binary {
             );
 
             fn encode(self) -> Self::Output {
-                let (dest_reg, _src) = self;
+                // Transcribe specialization, if given
+                $({
+                    let $specialize_pattern = &self;
+                    $specialize_body
+                })?
+
+                let (dest_reg, _src) = &self;
 
                 let rex = Rex {
                     w: w_given!($( $w )?),
@@ -624,12 +630,11 @@ mod mnemonic_forms {
     }
 }
 
-// TODO: Override for test with ax, imm. It's got a shorter encoding with a different bytecode.
 // TODO: Write a test generation script
 
-impl_binary!(Test REX.W 0xF6 /0 rm_reg: Reg8, imm: u8);
-impl_binary!(Test       0xF7 /0 rm_reg:Reg32, imm:u32);
-impl_binary!(Test REX.W 0xF7 /0 rm_reg:Reg64, imm:i32);
+impl_binary!(Test REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
+impl_binary!(Test       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
+impl_binary!(Test REX.W 0xF7 /0 rm_reg:Reg64, imm:i32, let (reg, imm) = &self, if *reg == RAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
 
 impl_binary!(Test REX.W 0xF6 /0 rm_mem: Mem8, imm: u8);
 impl_binary!(Test       0xF7 /0 rm_mem:Mem32, imm:u32);
@@ -643,6 +648,24 @@ impl_binary!(Test REX.W 0x85 rm_mem:Mem64, reg:Reg64);
 
 impl_binary!(Mov 0xC7 /0 rm_reg:Reg32, imm:u32);
 impl_binary!(Mov 0xC7 /0 rm_mem:Mem32, imm:u32);
+
+/// Special shorter encoding for test {al,ax,eax,rax}, imm{8,16,32,64}
+fn test_ax_imm_special<R: Register, const IMM_SIZE: usize>(
+    _reg: &R,
+    imm_le_bytes: [u8; IMM_SIZE],
+) -> Encoding<IMM_SIZE> {
+    Encoding {
+        rex: Rex {
+            w: (R::WIDTH == B64),
+            r: false,
+            x: false,
+            b: false,
+        }
+        .assemble(),
+        form: InstructionForm::OpcodeOnly(Opcode::Plain(if R::WIDTH == B8 { 0xA8 } else { 0xA9 })),
+        immediate: imm_le_bytes,
+    }
+}
 
 /*
 impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
@@ -1008,7 +1031,7 @@ mod tests {
     fn test() {
         // reg64, imm32
         test_encoding!(
-            "48 f7 c0 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff"
+            "48 a9 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff"
             "test rax, 0x7fffffff",  test(RAX, i32::MAX)
             "test r11, 0xfabcafe",   test(R11, 0xFABCAFE)
             "test rdi, -0xfabcafe",  test(RDI, -0xFABCAFE)
