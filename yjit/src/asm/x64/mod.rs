@@ -202,7 +202,7 @@ pub struct Encoding<const IMM_SIZE: usize> {
 impl<const IMM_SIZE: usize> Encoding<IMM_SIZE> {
     /// This is a strange dance to get stable rustc to run this check at build time.
     /// Maybe a future version of Rust will offer a more intuitive way to do this.
-    /// See https://github.com/rust-lang/rust/issues/79429
+    /// See <https://github.com/rust-lang/rust/issues/79429>
     /// TODO: ask around about this
     const RUN_BUILD_TIME_IMM_SIZE_CHECK: () = match IMM_SIZE {
         0 | 1 | 2 | 4 | 8 => (),
@@ -475,23 +475,26 @@ const fn u3_literal(n: u8) -> U3 {
 
 /// Select between two expressions based on if the first arg is "reg" or "imm".
 macro_rules! reg_or_imm {
-    (reg, reg: $reg_expr:expr , imm: $imm_expr:expr) => {
-        $reg_expr
+    (reg, reg: $reg:expr , imm: $_imm:expr) => {
+        $reg
     };
-    (imm, reg: $reg_expr:expr , imm: $imm_expr:expr) => {
-        $imm_expr
+    (imm, reg: $_reg:expr , imm: $imm:expr) => {
+        $imm
     };
-    (reg, reg: $reg_expr:item , imm: $imm_expr:item) => {
-        $reg_expr
+    (reg, reg: $reg:item , imm: $_imm:item) => {
+        $reg
     };
-    (imm, reg: $reg_expr:item , imm: $imm_expr:item) => {
-        $imm_expr
+    (imm, reg: $_reg:item , imm: $imm:item) => {
+        $imm
     };
 }
 
+/// Implement one particular instruction form for a two tuple. The syntax is inspired by the
+/// manuals. It's a bit complex, but hopefully not too bad to use once you look at a few examples.
 macro_rules! impl_binary {
     // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a register
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident
+    (
+        $trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident
         $(, let $specialize_pattern:pat = &self, $specialize_body:stmt)?
     ) => {
         // Version where the lhs R/M is a register
@@ -547,7 +550,8 @@ macro_rules! impl_binary {
         }
     };
     // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a memory location
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_mem:$mem:ident, $src_type:tt : $rhs:ident
+    (
+        $trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_mem:$mem:ident, $src_type:tt : $rhs:ident
         $(, let $specialize_pattern:pat = &self, $specialize_body:stmt)?
     ) => {
         // Version where the lhs R/M is a memory location
@@ -698,7 +702,10 @@ fn left_shift_by_one<R: Register>(reg: &R) -> Encoding<1> {
             b: reg.id_rex_bit(),
         }
         .assemble(),
-        form: InstructionForm::RMOnly{opcode: (opcode, U3::Dec4), rm: RMForm::RegDirect(reg.id_lower())},
+        form: InstructionForm::RMOnly {
+            opcode: (opcode, U3::Dec4),
+            rm: RMForm::RegDirect(reg.id_lower()),
+        },
         immediate: None,
     }
 }
@@ -1064,7 +1071,6 @@ mod tests {
         assert_eq!("48 d1 f8 49 d1 f9 48 d1 ff 41 d1 fa", asm.byte_string());
     }
     */
-
 
     #[test]
     fn shl_and_sal() {
