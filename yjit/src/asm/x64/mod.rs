@@ -613,12 +613,13 @@ mod mnemonic_forms {
     /// The interface to the assembler has each mnemonic as a method taking a
     /// tuple that implements the different forms of the instruction. Mnemonic methods
     /// have very similar signatures so this macro helps to stay DRY.
-    macro_rules! mnemonic {
+    macro_rules! asm_method {
         ($mnemonic:ident, $trait:ident) => {
-            pub trait $trait {
-                type Output;
-                fn encode(self) -> Self::Output;
-            }
+            asm_method!(make trait $trait);
+            asm_method!($mnemonic, alias $trait);
+        };
+        // Same encoding, different mnemonics. For example, shl and sal, je and jz.
+        ($mnemonic:ident, alias $trait:ident) => {
             impl Assembler {
                 pub fn $mnemonic<T, const IMM_SIZE: usize>(&mut self, operands: T)
                 where
@@ -628,33 +629,45 @@ mod mnemonic_forms {
                 }
             }
         };
+        (make trait $trait:ident) => {
+            pub trait $trait {
+                type Output;
+                fn encode(self) -> Self::Output;
+            }
+        };
     }
 
-    mnemonic!(mov, Mov);
-    mnemonic!(test, Test);
-    mnemonic!(shl, Shl);
+    asm_method!(mov, MOV);
+    asm_method!(test, TEST);
+
+    asm_method!(shl, SHL);
+    asm_method!(sal, alias SHL);
+
+    asm_method!(shr, SHR);
+    asm_method!(sar, SAR);
 }
 
 // TODO: Write a test generation script
 
-impl_binary!(Mov 0xC7 /0 rm_reg:Reg32, imm:u32);
-impl_binary!(Mov 0xC7 /0 rm_mem:Mem32, imm:u32);
+impl_binary!(MOV 0xC7 /0 rm_reg:Reg32, imm:u32);
+impl_binary!(MOV 0xC7 /0 rm_mem:Mem32, imm:u32);
 
-impl_binary!(Test REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
-impl_binary!(Test       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
-impl_binary!(Test REX.W 0xF7 /0 rm_reg:Reg64, imm:i32, let (reg, imm) = &self, if *reg == RAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
+impl_binary!(TEST REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
+impl_binary!(TEST       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
+impl_binary!(TEST REX.W 0xF7 /0 rm_reg:Reg64, imm:i32, let (reg, imm) = &self, if *reg == RAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
 
-impl_binary!(Test REX.W 0xF6 /0 rm_mem: Mem8, imm: u8);
-impl_binary!(Test       0xF7 /0 rm_mem:Mem32, imm:u32);
-impl_binary!(Test REX.W 0xF7 /0 rm_mem:Mem64, imm:i32);
+impl_binary!(TEST REX.W 0xF6 /0 rm_mem: Mem8, imm: u8);
+impl_binary!(TEST       0xF7 /0 rm_mem:Mem32, imm:u32);
+impl_binary!(TEST REX.W 0xF7 /0 rm_mem:Mem64, imm:i32);
 
-impl_binary!(Test       0x85 rm_reg:Reg32, reg:Reg32);
-impl_binary!(Test REX.W 0x85 rm_reg:Reg64, reg:Reg64);
+impl_binary!(TEST       0x85 rm_reg:Reg32, reg:Reg32);
+impl_binary!(TEST REX.W 0x85 rm_reg:Reg64, reg:Reg64);
 
-impl_binary!(Test       0x85 rm_mem:Mem32, reg:Reg32);
-impl_binary!(Test REX.W 0x85 rm_mem:Mem64, reg:Reg64);
+impl_binary!(TEST       0x85 rm_mem:Mem32, reg:Reg32);
+impl_binary!(TEST REX.W 0x85 rm_mem:Mem64, reg:Reg64);
 
-impl_binary!(Shl REX.W 0xC1 /4 rm_reg:Reg64, imm:u8, let (reg, imm) = &self, if *imm == 1 { return left_shift_by_one(reg) });
+// NOTE: Shift amounts are masked to the lower 5/6 bits.
+impl_binary!(SHL REX.W 0xC1 /4 rm_reg:Reg64, imm:u8, let (reg, imm) = &self, if *imm == 1 { return left_shift_by_one(reg) });
 
 /// Special shorter encoding for test {al,ax,eax,rax}, imm{8,16,32,64}
 fn test_ax_imm_special<R: Register, const IMM_SIZE: usize>(
