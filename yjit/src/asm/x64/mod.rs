@@ -490,8 +490,8 @@ macro_rules! reg_or_imm {
 }
 
 macro_rules! impl_binary {
-    // For binary instructions that follow the form (r/m, (reg|imm))
-    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm:$reg:ident/$mem:ident, $src_type:tt : $rhs:ident) => {
+    // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a register
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_reg:$reg:ident, $src_type:tt : $rhs:ident) => {
         // Version where the lhs R/M is a register
         impl mnemonic_forms::$trait for ($reg, $rhs) {
             reg_or_imm!(
@@ -537,6 +537,9 @@ macro_rules! impl_binary {
                 }
             }
         }
+    };
+    // For binary instructions that follow the form (r/m, (reg|imm)) where r/m is a memory location
+    ($trait:ident $(REX.$w:tt)? $($opcode:literal)+ $(/$extension:literal)? rm_mem:$mem:ident, $src_type:tt : $rhs:ident) => {
         // Version where the lhs R/M is a memory location
         impl mnemonic_forms::$trait for ($mem, $rhs) {
             reg_or_imm!(
@@ -622,14 +625,22 @@ mod mnemonic_forms {
 // TODO: Override for test with ax, imm. It's got a shorter encoding with a different bytecode.
 // TODO: Write a test generation script
 
-impl_binary!(Test REX.W 0xF6 /0 rm:  Reg8/Mem8, imm: u8);
-impl_binary!(Test       0xF7 /0 rm:Reg32/Mem32, imm:u32);
-impl_binary!(Test REX.W 0xF7 /0 rm:Reg64/Mem64, imm:i32);
+impl_binary!(Test REX.W 0xF6 /0 rm_reg: Reg8, imm: u8);
+impl_binary!(Test       0xF7 /0 rm_reg:Reg32, imm:u32);
+impl_binary!(Test REX.W 0xF7 /0 rm_reg:Reg64, imm:i32);
 
-impl_binary!(Test       0x85 rm:Reg32/Mem32, reg:Reg32);
-impl_binary!(Test REX.W 0x85 rm:Reg64/Mem64, reg:Reg64);
+impl_binary!(Test REX.W 0xF6 /0 rm_mem: Mem8, imm: u8);
+impl_binary!(Test       0xF7 /0 rm_mem:Mem32, imm:u32);
+impl_binary!(Test REX.W 0xF7 /0 rm_mem:Mem64, imm:i32);
 
-impl_binary!(Mov 0xC7 /0 rm:Reg32/Mem32, imm:u32);
+impl_binary!(Test       0x85 rm_reg:Reg32, reg:Reg32);
+impl_binary!(Test REX.W 0x85 rm_reg:Reg64, reg:Reg64);
+
+impl_binary!(Test       0x85 rm_mem:Mem32, reg:Reg32);
+impl_binary!(Test REX.W 0x85 rm_mem:Mem64, reg:Reg64);
+
+impl_binary!(Mov 0xC7 /0 rm_reg:Reg32, imm:u32);
+impl_binary!(Mov 0xC7 /0 rm_mem:Mem32, imm:u32);
 
 /*
 impl<Reg: Register> mnemonic_forms::Test for (Reg, i32) {
