@@ -640,6 +640,7 @@ macro_rules! impl_reg_in_opcode {
     (
         $trait:ident $(REX.$w:tt)? $opcode:literal +$reg:tt $(imm: $rhs_imm:ident)?
     ) => {
+        #[allow(unused_parens)] // silence warning in the unary case
         impl mnemonic_forms::$trait for (reg_size_to_type!(+$reg) $(, $rhs_imm)?) {
             if_first_arg!(
                 $($rhs_imm)?,
@@ -648,7 +649,13 @@ macro_rules! impl_reg_in_opcode {
             );
 
             fn encode(self) -> Self::Output {
-                let reg = self.0;
+                #[allow(unused)]
+                let reg = &self;
+                $(
+                    let reg = &self.0;
+                    let _: $rhs_imm = 0;
+                )?
+
                 let reg_id: U3 = reg.id_lower();
 
                 #[allow(unused)]
@@ -660,7 +667,7 @@ macro_rules! impl_reg_in_opcode {
 
                 Encoding {
                     rex: Rex {
-                        w: <reg_size_to_type!(+$reg)>::WIDTH == B64,
+                        w: w_given!($( $w )?),
                         r: false,
                         x: false,
                         b: reg.id_rex_bit(),
@@ -705,6 +712,8 @@ mod mnemonic_forms {
 
     asm_method!(mov, MOV);
     asm_method!(test, TEST);
+    asm_method!(push, PUSH);
+    asm_method!(pop, POP);
 
     asm_method!(shl, SHL);
     asm_method!(sal, alias SHL);
@@ -714,6 +723,10 @@ mod mnemonic_forms {
 }
 
 // TODO: Write a test generation script
+//
+impl_reg_in_opcode!(PUSH 0x50 +rq);
+
+impl_reg_in_opcode!(POP 0x58 +rq);
 
 impl_reg_in_opcode!(MOV       0xB0 +rb imm: u8);
 impl_reg_in_opcode!(MOV       0xB8 +rd imm:u32);
@@ -1052,7 +1065,7 @@ mod tests {
     }
 
     macro_rules! test_encoding {
-        ($bytes:literal $($disasm:literal, $mnemonic:ident $args:expr $(,)?)+) => {{
+        ($bytes:literal $($disasm:literal, $mnemonic:ident ($args:expr))+) => {{
             let mut asm = Assembler::new();
 
             $( asm.$mnemonic($args); )*
@@ -1145,17 +1158,17 @@ mod tests {
     fn shl_and_sal() {
         test_encoding!(
             "48 c1 e0 02 48 d1 e1 49 d1 e7 49 c1 e3 03 49 d1 e4 49 c1 e4 02 49 d1 e5 49 c1 e5 03"
-            "shl rax, 2",  shl(RAX, 2)
-            "shl rcx, 1",  shl(RCX, 1)
+            "shl rax, 2",  shl((RAX, 2))
+            "shl rcx, 1",  shl((RCX, 1))
 
-            "shl r15, 1",  shl(R15, 1)
-            "shl r11, 3",  shl(R11, 3)
+            "shl r15, 1",  shl((R15, 1))
+            "shl r11, 3",  shl((R11, 3))
 
-            "shl r12, 1",  shl(R12, 1)
-            "shl r12, 2",  shl(R12, 2)
+            "shl r12, 1",  shl((R12, 1))
+            "shl r12, 2",  shl((R12, 2))
 
-            "shl r13, 1",  shl(R13, 1)
-            "shl r13, 3",  shl(R13, 3)
+            "shl r13, 1",  shl((R13, 1))
+            "shl r13, 3",  shl((R13, 3))
         );
     }
 
@@ -1164,37 +1177,37 @@ mod tests {
         // reg64, imm32
         test_encoding!(
             "48 a9 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff"
-            "test rax, 0x7fffffff",  test(RAX, i32::MAX)
-            "test r11, 0xfabcafe",   test(R11, 0xFABCAFE)
-            "test rdi, -0xfabcafe",  test(RDI, -0xFABCAFE)
-            "test r8, -1",           test(R8, -1)
+            "test rax, 0x7fffffff",  test((RAX, i32::MAX))
+            "test r11, 0xfabcafe",   test((R11, 0xFABCAFE))
+            "test rdi, -0xfabcafe",  test((RDI, -0xFABCAFE))
+            "test r8, -1",           test((R8, -1))
         );
 
         // reg32, imm32
         test_encoding!(
             "f7 c7 ff ff ff ff 41 f7 c1 fe ca ab 0f f7 c7 ef be ad de 41 f7 c1 ff ff ff ff"
-            "test edi, 0xffffffff", test(EDI, u32::MAX)
-            "test r9d, 0xfabcafe", test(R9D, 0xFABCAFE)
-            "test edi, 0xdeadbeef", test(EDI, 0xDEADBEEF)
-            "test r9d, 0xffffffff", test(R9D, u32::MAX)
+            "test edi, 0xffffffff", test((EDI, u32::MAX))
+            "test r9d, 0xfabcafe", test((R9D, 0xFABCAFE))
+            "test edi, 0xdeadbeef", test((EDI, 0xDEADBEEF))
+            "test r9d, 0xffffffff", test((R9D, u32::MAX))
         );
 
         // reg64, reg64
         test_encoding!(
             "48 85 d0 4c 85 d9 49 85 dc 4d 85 f7"
-            "test rax, rdx", test(RAX, RDX)
-            "test rcx, r11", test(RCX, R11)
-            "test r12, rbx", test(R12, RBX)
-            "test r15, r14", test(R15, R14)
+            "test rax, rdx", test((RAX, RDX))
+            "test rcx, r11", test((RCX, R11))
+            "test r12, rbx", test((R12, RBX))
+            "test r15, r14", test((R15, R14))
         );
 
         // reg32, reg32
         test_encoding!(
             "85 d0 44 85 d9 41 85 dc 45 85 f7"
-            "test eax, edx", test(EAX, EDX)
-            "test ecx, r11d", test(ECX, R11D)
-            "test r12d, ebx", test(R12D, EBX)
-            "test r15d, r14d", test(R15D, R14D)
+            "test eax, edx", test((EAX, EDX))
+            "test ecx, r11d", test((ECX, R11D))
+            "test r12d, ebx", test((R12D, EBX))
+            "test r15d, r14d", test((R15D, R14D))
         )
 
         // TODO: write panic tests
@@ -1205,19 +1218,19 @@ mod tests {
         test_encoding!(
             "48 85 40 80"
             "test qword ptr [rax - 0x80], rax",
-            test(mem64(RAX, i8::MIN.into()), RAX)
+            test((mem64(RAX, i8::MIN.into()), RAX))
         );
 
         test_encoding!(
             "49 85 44 24 80"
             "test qword ptr [r12 - 0x80], rax",
-            test(mem64(R12, i8::MIN.into()), RAX)
+            test((mem64(R12, i8::MIN.into()), RAX))
         );
 
         test_encoding!(
             "4d 85 6d 80"
             "test qword ptr [r13 - 0x80], r13",
-            test(mem64(R13, i8::MIN.into()), R13)
+            test((mem64(R13, i8::MIN.into()), R13))
         );
     }
 
@@ -1226,19 +1239,19 @@ mod tests {
         test_encoding!(
             "48 f7 40 80 ff ff ff 7f"
             "test qword ptr [rax - 0x80], 0x7fffffff",
-            test(mem64(RAX, i8::MIN.into()), i32::MAX)
+            test((mem64(RAX, i8::MIN.into()), i32::MAX))
         );
 
         test_encoding!(
             "49 f7 45 7f ff ff ff 7f"
             "test qword ptr [r13 + 0x7f], 0x7fffffff",
-            test(mem64(R13, i8::MAX.into()), i32::MAX)
+            test((mem64(R13, i8::MAX.into()), i32::MAX))
         );
 
         test_encoding!(
             "48 f7 44 24 80 00 00 00 80"
             "test qword ptr [rsp - 0x80], -0x80000000",
-            test(mem64(RSP, i8::MIN.into()), i32::MIN)
+            test((mem64(RSP, i8::MIN.into()), i32::MIN))
         );
 
         // RSP, RBP, R12 and R13 are special because the lower part of their regiser id
@@ -1247,23 +1260,43 @@ mod tests {
             "48 f7 04 24 ff ff ff 7f 49 f7 04 24 00 00 00 80 \
              48 f7 45 00 ff ff ff 7f 49 f7 45 00 00 00 00 80"
 
-            "test qword ptr [rsp], 0x7fffffff", test(mem64(RSP, 0), i32::MAX)
-            "test qword ptr [r12], -0x80000000", test(mem64(R12, 0), i32::MIN)
+            "test qword ptr [rsp], 0x7fffffff", test((mem64(RSP, 0), i32::MAX))
+            "test qword ptr [r12], -0x80000000", test((mem64(R12, 0), i32::MIN))
 
-            "test qword ptr [rbp], 0x7fffffff", test(mem64(RBP, 0), i32::MAX)
-            "test qword ptr [r13], -0x80000000", test(mem64(R13, 0), i32::MIN)
+            "test qword ptr [rbp], 0x7fffffff", test((mem64(RBP, 0), i32::MAX))
+            "test qword ptr [r13], -0x80000000", test((mem64(R13, 0), i32::MIN))
         );
 
         test_encoding!(
             "49 f7 84 24 80 00 00 00 01 00 00 00"
             "test qword ptr [r12 + 0x80], 1",
-            test(mem64(R12, 1 + i32::from(i8::MAX)), 1)
+            test((mem64(R12, 1 + i32::from(i8::MAX)), 1))
         );
 
         test_encoding!(
             "48 f7 84 24 7f ff ff ff fe ca ab 0f"
             "test qword ptr [rsp - 0x81], 0xfabcafe",
-            test(mem64(RSP, i32::from(i8::MIN) - 1), 0xfabcafe)
+            test((mem64(RSP, i32::from(i8::MIN) - 1), 0xfabcafe))
+        );
+    }
+
+    #[test]
+    fn push() {
+        test_encoding!(
+            "50 41 54 41 55"
+            "push rax", push(RAX)
+            "push r12", push(R12)
+            "push r13", push(R13)
+        );
+    }
+
+    #[test]
+    fn pop() {
+        test_encoding!(
+            "58 41 5c 41 5d"
+            "pop rax", pop(RAX)
+            "pop r12", pop(R12)
+            "pop r13", pop(R13)
         );
     }
 
@@ -1271,11 +1304,11 @@ mod tests {
     fn mov() {
         test_encoding!(
             "b0 00 b8 fe ca ab 0f 41 b8 fe ca ab 0f 48 b8 ff ff ff ff ff ff ff ff 49 bf 00 00 00 00 01 00 00 00"
-            "mov al, 0", mov(AL, 0),
-            "mov eax, 0xfabcafe", mov(EAX, 0xfabcafe),
-            "mov r8d, 0xfabcafe", mov(R8D, 0xfabcafe),
-            "movabs rax, 0xffffffffffffffff", mov(RAX, u64::MAX),
-            "movabs r15, 0x100000000", mov(R15, u64::from(u32::MAX)+1),
+            "mov al, 0", mov((AL, 0))
+            "mov eax, 0xfabcafe", mov((EAX, 0xfabcafe))
+            "mov r8d, 0xfabcafe", mov((R8D, 0xfabcafe))
+            "movabs rax, 0xffffffffffffffff", mov((RAX, u64::MAX))
+            "movabs r15, 0x100000000", mov((R15, u64::from(u32::MAX)+1))
         );
     }
 
