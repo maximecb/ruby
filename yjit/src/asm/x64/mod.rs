@@ -634,6 +634,72 @@ macro_rules! impl_binary {
     // TODO: reg, r/m forms. Should be easier because no need for reg or imm
 }
 
+/// Implement an instruction that takes a single R/M operand.
+/// All of the ones we want so far use ModR/M.reg as an opcode extension.
+macro_rules! impl_unary {
+    // Version where the R/M operand is a register
+    ($trait:ident $(REX.$w:tt)? $opcode:literal /$extension:literal rm_reg:$reg:ident) => {
+        impl mnemonic_forms::$trait for $reg {
+            type Output = Encoding<0>;
+
+            fn encode(self) -> Self::Output {
+                let reg = self;
+
+                let rex = Rex {
+                    w: w_given!($( $w )?),
+                    r: false,
+                    x: false,
+                    b: reg.id_rex_bit(),
+                }.assemble();
+
+                let form = {
+                    let rm = RMForm::RegDirect(reg.id_lower());
+                    const EXT: U3 = u3_literal($extension);
+                    let opcode = (Opcode::Plain($opcode), EXT);
+                    InstructionForm::RMOnly { opcode, rm }
+                };
+
+                Encoding {
+                    rex,
+                    form,
+                    immediate: None,
+                }
+            }
+        }
+    };
+    // Version where the R/M operand is a memory location
+    ($trait:ident $(REX.$w:tt)? $opcode:literal /$extension:literal rm_mem:$mem:ident) => {
+        impl mnemonic_forms::$trait for $mem {
+            type Output = Encoding<0>;
+
+            fn encode(self) -> Self::Output {
+                let mem = self;
+
+                let (x, b) = mem.0.rex_xb();
+                let rex = Rex {
+                    w: w_given!($( $w )?),
+                    r: false,
+                    x,
+                    b,
+                }.assemble();
+
+                let form = {
+                    let rm = RMForm::Mem(mem.0);
+                    const EXT: U3 = u3_literal($extension);
+                    let opcode = (Opcode::Plain($opcode), EXT);
+                    InstructionForm::RMOnly { opcode, rm }
+                };
+
+                Encoding {
+                    rex,
+                    form,
+                    immediate: None,
+                }
+            }
+        }
+    };
+}
+
 /// For instructions that use the lower 3 bits of the opcode to refer to a register.
 /// Exercise: how would you change this to support BSWAP?
 macro_rules! impl_reg_in_opcode {
@@ -720,6 +786,11 @@ mod mnemonic_forms {
 
     asm_method!(shr, SHR);
     asm_method!(sar, SAR);
+
+    asm_method!(jmp, JMP);
+
+    asm_method!(call, CALL);
+    asm_method!(not, NOT);
 }
 
 // TODO: Write a test generation script
@@ -754,6 +825,16 @@ impl_binary!(TEST REX.W 0x85 rm_mem:Mem64, reg:Reg64);
 
 // NOTE: Shift amounts are masked to the lower 5/6 bits.
 impl_binary!(SHL REX.W 0xC1 /4 rm_reg:Reg64, imm:u8, let (reg, imm) = &self, if *imm == 1 { return left_shift_by_one(reg) });
+
+impl_unary!(NOT       0xF6 /2 rm_reg: Reg8);
+impl_unary!(NOT       0xF7 /2 rm_reg:Reg32);
+impl_unary!(NOT REX.W 0xF7 /2 rm_reg:Reg64);
+
+impl_unary!(CALL 0xFF /2 rm_reg:Reg64);
+impl_unary!(CALL 0xFF /2 rm_mem:Mem64);
+
+impl_unary!(JMP 0xFF /4 rm_reg:Reg64);
+impl_unary!(JMP 0xFF /4 rm_mem:Mem64);
 
 /// Special shorter encoding for test {al,ax,eax,rax}, imm{8,16,32,64}
 fn test_ax_imm_special<R: Register, const IMM_SIZE: usize>(
@@ -1297,6 +1378,33 @@ mod tests {
             "pop rax", pop(RAX)
             "pop r12", pop(R12)
             "pop r13", pop(R13)
+        );
+    }
+
+    #[test]
+    fn randoms() {
+        test_encoding!(
+            "ff e0 41 ff e0 ff 21 41 ff 63 f6"
+            "jmp rax", jmp(RAX)
+            "jmp r8", jmp(R8)
+            "jmp qword ptr [rcx]", jmp(mem64(RCX, 0))
+            "jmp qword ptr [r11 - 0xa]", jmp(mem64(R11, -0xa))
+        );
+
+        test_encoding!(
+            "f6 d0 f7 d0 48 f7 d0 49 f7 d0"
+            "not al", not(AL)
+            "not eax", not(EAX)
+            "not rax", not(RAX)
+            "not r8", not(R8)
+        );
+
+        test_encoding!(
+            "ff d0 41 ff d0 ff 11 41 ff 53 f6"
+            "call rax", call(RAX)
+            "call r8", call(R8)
+            "call qword ptr [rcx]", call(mem64(RCX, 0))
+            "call qword ptr [r11 - 0xa]", call(mem64(R11, -0xa))
         );
     }
 
