@@ -157,14 +157,14 @@ general_purpose_registers! {
     rex:0 Dec5 BPL  BP   EBP  RBP
     rex:0 Dec6 SIL  SI   ESI  RSI
     rex:0 Dec7 DIL  DI   EDI  RDI
-    rex:1 Dec0 R8L  R8W  R8D  R8
-    rex:1 Dec1 R9L  R9W  R9D  R9
-    rex:1 Dec2 R10L R10W R10D R10
-    rex:1 Dec3 R11L R11W R11D R11
-    rex:1 Dec4 R12L R12W R12D R12
-    rex:1 Dec5 R13L R13W R13D R13
-    rex:1 Dec6 R14L R14W R14D R14
-    rex:1 Dec7 R15L R15W R15D R15
+    rex:1 Dec0 R8B  R8W  R8D  R8
+    rex:1 Dec1 R9B  R9W  R9D  R9
+    rex:1 Dec2 R10B R10W R10D R10
+    rex:1 Dec3 R11B R11W R11D R11
+    rex:1 Dec4 R12B R12W R12D R12
+    rex:1 Dec5 R13B R13W R13D R13
+    rex:1 Dec6 R14B R14W R14D R14
+    rex:1 Dec7 R15B R15W R15D R15
 }
 
 /// 64 bit memory operands
@@ -175,6 +175,16 @@ pub struct Mem32(AddressingForm);
 pub struct Mem16(AddressingForm);
 /// 8 bit memory operands
 pub struct Mem8(AddressingForm);
+
+/// Short-hand for making a Mem8 operand.
+pub fn mem8(reg: Reg64, offset: i32) -> Mem8 {
+    Mem8(AddressingForm::RegPlusDisp(reg, offset))
+}
+
+/// Short-hand for making a Mem32 operand.
+pub fn mem32(reg: Reg64, offset: i32) -> Mem32 {
+    Mem32(AddressingForm::RegPlusDisp(reg, offset))
+}
 
 /// Short-hand for making a Mem64 operand.
 pub fn mem64(reg: Reg64, offset: i32) -> Mem64 {
@@ -324,12 +334,13 @@ impl RMForm {
                     (Err(_), reg) => {
                         // mod=0b10, rm=0b100, and index=0b100.
                         let disp32: i32 = disp;
-                        let mod_rm = modrm_byte(U2::Dec2, modrm_reg, U3::Dec4);
-                        let sib: u8 = sib_byte(U2::Dec0, U3::Dec4, reg);
+                        let mod_rm = modrm_byte(U2::Dec2, modrm_reg, reg);
+                        let sib: Option<u8> =
+                            (reg == U3::Dec4).then(|| sib_byte(U2::Dec0, U3::Dec4, reg));
                         let disp_parts: [u8; 4] = disp32.to_le_bytes();
-                        sink.try_reserve(3).map(|_| {
+                        sink.try_reserve(6).map(|_| {
                             sink.push(mod_rm);
-                            sink.push(sib);
+                            sib.map(|byte| sink.push(byte));
                             sink.push(disp_parts[0]);
                             sink.push(disp_parts[1]);
                             sink.push(disp_parts[2]);
@@ -806,6 +817,8 @@ impl_reg_in_opcode!(MOV REX.W 0xB8 +rq imm:u64);
 impl_binary!(MOV       0xC7 /0 rm_mem: Mem8, imm: u8);
 impl_binary!(MOV       0xC7 /0 rm_mem:Mem32, imm:u32);
 impl_binary!(MOV REX.W 0xC7 /0 rm_mem:Mem64, imm:u32);
+
+impl_binary!(MOV       0x88 rm_mem: Mem8, reg: Reg8);
 
 impl_binary!(TEST REX.W 0xF6 /0 rm_reg: Reg8, imm: u8, let (reg, imm) = &self, if *reg == AL  { return test_ax_imm_special(reg, imm.to_le_bytes()) });
 impl_binary!(TEST       0xF7 /0 rm_reg:Reg32, imm:u32, let (reg, imm) = &self, if *reg == EAX { return test_ax_imm_special(reg, imm.to_le_bytes()) });
@@ -1417,6 +1430,15 @@ mod tests {
             "mov r8d, 0xfabcafe", mov((R8D, 0xfabcafe))
             "movabs rax, 0xffffffffffffffff", mov((RAX, u64::MAX))
             "movabs r15, 0x100000000", mov((R15, u64::from(u32::MAX)+1))
+        );
+    }
+
+    #[test]
+    fn mov_load_8b() {
+        test_encoding!(
+            "45 88 bf 00 ff ff ff"
+
+            "mov byte ptr [r15 - 0x100], r15b", mov((mem8(R15, -0x100), R15B))
         );
     }
 
