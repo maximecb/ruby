@@ -709,7 +709,8 @@ typedef struct rb_size_pool_struct {
 enum gc_mode {
     gc_mode_none,
     gc_mode_marking,
-    gc_mode_sweeping
+    gc_mode_sweeping,
+    gc_mode_compacting,
 };
 
 typedef struct rb_objspace {
@@ -1003,6 +1004,7 @@ gc_mode_verify(enum gc_mode mode)
       case gc_mode_none:
       case gc_mode_marking:
       case gc_mode_sweeping:
+      case gc_mode_compacting:
 	break;
       default:
 	rb_bug("gc_mode_verify: unreachable (%d)", (int)mode);
@@ -4903,6 +4905,7 @@ static VALUE gc_move(rb_objspace_t *objspace, VALUE scan, VALUE free, size_t slo
 static void
 lock_page_body(rb_objspace_t *objspace, struct heap_page_body *body)
 {
+
 #if defined(_WIN32)
     DWORD old_protect;
 
@@ -4970,6 +4973,38 @@ try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page,
     }
 
     return false;
+}
+
+static bool
+try_move2(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, VALUE src)
+{
+    if (!free_page) {
+        return false;
+    }
+    GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(src), src));
+
+    VALUE dest = (VALUE)free_page->freelist;
+    if (!dest) {
+        return false;
+    }
+    free_page->freelist = RANY(dest)->as.free.next;
+
+    GC_ASSERT(RB_BUILTIN_TYPE(dest) == T_NONE);
+
+    // if we're moving onto the same page
+    if (free_page->slot_size == GET_HEAP_PAGE(src)->slot_size) {
+        objspace->rcompactor.moved_count_table[BUILTIN_TYPE(src)]++;
+        objspace->rcompactor.total_moved++;
+
+        //fprintf(stderr, "\t\tMoving objects: %s\n\t\t\t-> %s\n", obj_info(src), obj_info(dest));
+        gc_move(objspace, src, dest, free_page->slot_size);
+        gc_pin(objspace, src);
+        FL_SET(src, FL_FROM_FREELIST);
+    } else {
+        rb_bug("here be dragons");
+    }
+
+    return true;
 }
 
 static short
@@ -5221,8 +5256,10 @@ check_stack_for_moved(rb_objspace_t *objspace)
     each_machine_stack_value(ec, revert_machine_stack_references);
 }
 
+static void gc_mode_transition(rb_objspace_t *objspace, enum gc_mode mode);
+
 static void
-gc_compact_finish(rb_objspace_t *objspace, rb_size_pool_t *pool, rb_heap_t *heap)
+gc_compact_finish(rb_objspace_t *objspace)
 {
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_size_pool_t *size_pool = &size_pools[i];
@@ -5384,12 +5421,13 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                             /* We *want* to fill this slot */
                             MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
                         }
-                        else {
-                            (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
-                            heap_page_add_freeobj(objspace, sweep_page, vp);
-                            gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
-                            ctx->freed_slots++;
-                        }
+                        // becuase when we compact we're populating the swept
+                        // pages freelist, we want to make sure freed slots get
+                        // added there regardless
+                        (void)VALGRIND_MAKE_MEM_UNDEFINED((void*)p, BASE_SLOT_SIZE);
+                        heap_page_add_freeobj(objspace, sweep_page, vp);
+                        gc_report(3, objspace, "page_sweep: %s is added to freelist\n", obj_info(vp));
+                        ctx->freed_slots++;
                     }
                     else {
                         ctx->final_slots++;
@@ -5422,9 +5460,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
                         /* We *want* to fill this slot */
                         MARK_IN_BITMAP(GET_HEAP_PINNED_BITS(vp), vp);
                     }
-                    else {
-                        ctx->empty_slots++; /* already freed */
-                    }
+                    ctx->empty_slots++; /* already freed */
                     break;
             }
         }
@@ -5434,7 +5470,7 @@ gc_sweep_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bit
 }
 
 static inline void
-gc_sweep_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, struct gc_sweep_context *ctx)
+gc_sweep_page(rb_objspace_t *objspace, rb_heap_t *heap, struct gc_sweep_context *ctx)
 {
     struct heap_page *sweep_page = ctx->page;
 
@@ -5445,27 +5481,18 @@ gc_sweep_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
 
     gc_report(2, objspace, "page_sweep: start.\n");
 
-    if (heap->compact_cursor) {
-        if (sweep_page == heap->compact_cursor) {
-            /* The compaction cursor and sweep page met, so we need to quit compacting */
-            gc_report(5, objspace, "Quit compacting, mark and compact cursor met\n");
-            gc_compact_finish(objspace, size_pool, heap);
-        }
-        else {
-            /* We anticipate filling the page, so NULL out the freelist. */
-            asan_unpoison_memory_region(&sweep_page->freelist, sizeof(RVALUE*), false);
-            sweep_page->freelist = NULL;
-            asan_poison_memory_region(&sweep_page->freelist, sizeof(RVALUE*));
-        }
+#if RGENGC_CHECK_MODE
+    if (!objspace->flags.immediate_sweep || objspace->flags.during_compacting) {
+        GC_ASSERT(sweep_page->flags.before_sweep == TRUE);
     }
-
+#endif
     sweep_page->flags.before_sweep = FALSE;
     sweep_page->free_slots = 0;
 
     p = (uintptr_t)sweep_page->start;
     bits = sweep_page->mark_bits;
 
-    int page_rvalue_count = sweep_page->total_slots * (size_pool->slot_size / BASE_SLOT_SIZE);
+    int page_rvalue_count = sweep_page->total_slots * (sweep_page->slot_size / BASE_SLOT_SIZE);
     int out_of_range_bits = (NUM_IN_PAGE(p) + page_rvalue_count) % BITS_BITLENGTH;
     if (out_of_range_bits != 0) { // sizeof(RVALUE) == 64
         bits[BITMAP_INDEX(p) + page_rvalue_count / BITS_BITLENGTH] |= ~(((bits_t)1 << out_of_range_bits) - 1);
@@ -5485,12 +5512,6 @@ gc_sweep_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
             gc_sweep_plane(objspace, heap, p, bitset, ctx);
         }
         p += BITS_BITLENGTH * BASE_SLOT_SIZE;
-    }
-
-    if (heap->compact_cursor) {
-        if (gc_fill_swept_page(objspace, heap, sweep_page, ctx)) {
-            gc_compact_finish(objspace, size_pool, heap);
-        }
     }
 
     if (!heap->compact_cursor) {
@@ -5558,6 +5579,7 @@ gc_mode_name(enum gc_mode mode)
       case gc_mode_none: return "none";
       case gc_mode_marking: return "marking";
       case gc_mode_sweeping: return "sweeping";
+      case gc_mode_compacting: return "compacting";
       default: rb_bug("gc_mode_name: unknown mode: %d", (int)mode);
     }
 }
@@ -5570,7 +5592,8 @@ gc_mode_transition(rb_objspace_t *objspace, enum gc_mode mode)
     switch (prev_mode) {
       case gc_mode_none:     GC_ASSERT(mode == gc_mode_marking); break;
       case gc_mode_marking:  GC_ASSERT(mode == gc_mode_sweeping); break;
-      case gc_mode_sweeping: GC_ASSERT(mode == gc_mode_none); break;
+      case gc_mode_sweeping: GC_ASSERT(mode == gc_mode_none || mode == gc_mode_compacting); break;
+      case gc_mode_compacting: GC_ASSERT(mode == gc_mode_none); break;
     }
 #endif
     if (0) fprintf(stderr, "gc_mode_transition: %s->%s\n", gc_mode_name(gc_mode(objspace)), gc_mode_name(mode));
@@ -5605,6 +5628,7 @@ static void
 gc_sweep_start_heap(rb_objspace_t *objspace, rb_heap_t *heap)
 {
     heap->sweeping_page = list_top(&heap->pages, struct heap_page, page_node);
+
     heap->free_pages = NULL;
 #if GC_ENABLE_INCREMENTAL_MARK
     heap->pooled_pages = NULL;
@@ -5758,7 +5782,7 @@ gc_sweep_step(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *hea
             .freed_slots = 0,
             .empty_slots = 0,
         };
-        gc_sweep_page(objspace, size_pool, heap, &ctx);
+        gc_sweep_page(objspace, heap, &ctx);
         int free_slots = ctx.freed_slots + ctx.empty_slots;
 
         heap->sweeping_page = list_next(&heap->pages, sweep_page, page_node);
@@ -5931,6 +5955,7 @@ static void
 gc_compact_start(rb_objspace_t *objspace)
 {
     struct heap_page *page = NULL;
+    gc_mode_transition(objspace, gc_mode_compacting);
 
     for (int i = 0; i < SIZE_POOL_COUNT; i++) {
         rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(&size_pools[i]);
@@ -5940,6 +5965,11 @@ gc_compact_start(rb_objspace_t *objspace)
 
         heap->compact_cursor = list_tail(&heap->pages, struct heap_page, page_node);
         heap->compact_cursor_index = 0;
+    }
+
+    rb_ractor_t *r = NULL;
+    list_for_each(&GET_VM()->ractor.set, r, vmlr_node) {
+        rb_gc_ractor_newobj_cache_clear(&r->newobj_cache);
     }
 
     if (gc_prof_enabled(objspace)) {
@@ -8190,6 +8220,176 @@ gc_marks_step(rb_objspace_t *objspace, size_t slots)
 }
 #endif
 
+static rb_heap_t *
+gc_compact_destination_heap(rb_objspace_t *objspace, VALUE p)
+{
+    switch(BUILTIN_TYPE(p)) {
+        /* case T_STRING: */
+        /*     { */
+        /*         size_t memsize = obj_memsize_of(p, 0); */
+        /*         size_t idx = size_pool_idx_for_size(memsize); */
+        /*         return SIZE_POOL_EDEN_HEAP(&size_pools[idx]); */
+        /*         *pool = &size_pools[idx]; */
+        /*     } */
+        default:
+            return &GET_HEAP_PAGE(p)->size_pool->eden_heap;
+    }
+}
+
+static bool
+gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
+{
+    GC_ASSERT(BUILTIN_TYPE(src) != T_MOVED);
+
+    // first work out which heap this object wants to move to
+    rb_heap_t *dheap = gc_compact_destination_heap(objspace, src);
+
+    if (dheap->sweeping_page == dheap->compact_cursor) {
+        return false;
+    }
+
+    while(!try_move2(objspace, dheap, dheap->free_pages, src)) {
+        if (dheap->sweeping_page == dheap->compact_cursor) {
+            return false;
+        }
+        struct gc_sweep_context ctx = {
+            .page = dheap->sweeping_page,
+            .final_slots = 0,
+            .freed_slots = 0,
+            .empty_slots = 0,
+        };
+        gc_sweep_page(objspace, dheap, &ctx);
+
+        if (ctx.page->free_slots > 0) {
+            heap_add_freepage(dheap, dheap->sweeping_page);
+        }
+        dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
+    }
+
+    return true;
+}
+
+
+static bool
+gc_compact_plane(rb_objspace_t *objspace, rb_heap_t *heap, uintptr_t p, bits_t bitset, struct heap_page *page) {
+    short slot_size = page->slot_size;
+    short slot_bits = slot_size / sizeof(RVALUE);
+    GC_ASSERT(slot_bits > 0);
+
+    do {
+        VALUE vp = (VALUE)p;
+        GC_ASSERT(vp % sizeof(RVALUE) == 0);
+
+        if (bitset & 1) {
+            objspace->rcompactor.considered_count_table[BUILTIN_TYPE(vp)]++;
+
+            if (!gc_compact_move_optimal(objspace, heap, vp)) {
+                //the cursors met. bubble up
+                return false;
+            }
+        }
+        p += slot_size;
+        bitset >>= slot_bits;
+    } while (bitset);
+
+    return true;
+}
+
+// Iterate up all the objects in page, moving them to where they want to go
+static bool
+gc_compact_page(rb_objspace_t *objspace, rb_size_pool_t *size_pool, rb_heap_t *heap, struct heap_page *page)
+{
+    GC_ASSERT(page == heap->compact_cursor);
+
+    bits_t *mark_bits, *pin_bits;
+    bits_t bitset;
+    RVALUE *p = (RVALUE *)page->start;
+
+    mark_bits = page->mark_bits;
+    pin_bits = page->pinned_bits;
+
+    // objects that can be moved are marked and not pinned
+    bitset = (mark_bits[0] & ~pin_bits[0]);
+    bitset >>= NUM_IN_PAGE(p);
+    if (bitset) {
+        if (!gc_compact_plane(objspace, heap, (uintptr_t)p, bitset, page))
+            return false;
+    }
+    p += (BITS_BITLENGTH - NUM_IN_PAGE(p));
+
+    for (int j = 1; j < HEAP_PAGE_BITMAP_LIMIT; j++) {
+        bitset = (mark_bits[j] & ~pin_bits[j]);
+        if (bitset) {
+            if (!gc_compact_plane(objspace, heap, (uintptr_t)p, bitset, page))
+                return false;
+        }
+        p += BITS_BITLENGTH;
+    }
+
+    return true;
+}
+
+static bool
+gc_compact_cursors_met(rb_objspace_t *objspace) {
+    for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+        rb_size_pool_t *size_pool = &size_pools[i];
+        rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
+
+        if ( heap->sweeping_page != heap->compact_cursor) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void
+gc_sweep_compact(rb_objspace_t *objspace)
+{
+    gc_verify_internal_consistency(objspace);
+
+    gc_sweep_start(objspace);
+    gc_compact_start(objspace);
+
+    while(!gc_compact_cursors_met(objspace)) {
+        for (int i = 0; i < SIZE_POOL_COUNT; i++) {
+            rb_size_pool_t *size_pool = &size_pools[i];
+            rb_heap_t *heap = SIZE_POOL_EDEN_HEAP(size_pool);
+
+            if (heap->sweeping_page == heap->compact_cursor) {
+                continue;
+            }
+
+            GC_ASSERT(heap->compact_cursor);
+            struct heap_page *start_page = heap->compact_cursor;
+
+            if (!gc_compact_page(objspace, size_pool, heap, start_page)) {
+                GC_ASSERT(heap->sweeping_page);
+                GC_ASSERT(heap->compact_cursor);
+
+                // If we're hear the cursors must have met for this heap
+                GC_ASSERT(heap->sweeping_page == heap->compact_cursor);
+                lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
+                continue;
+            }
+
+            lock_page_body(objspace, GET_PAGE_BODY(start_page->start));
+
+            // If we get here, we've finished moving all objects on the compact_cursor page
+            // So we can move the cursor on to the next one.
+            struct heap_page *nc = list_prev(&heap->pages, heap->compact_cursor, page_node);
+            if (nc) {
+                heap->compact_cursor = nc;
+            }
+        }
+    }
+
+    gc_compact_finish(objspace);
+    gc_sweep_rest(objspace);
+
+    gc_verify_internal_consistency(objspace);
+}
+
 static void
 gc_marks_rest(rb_objspace_t *objspace)
 {
@@ -8212,7 +8412,12 @@ gc_marks_rest(rb_objspace_t *objspace)
     }
 
     /* move to sweep */
-    gc_sweep(objspace);
+    if (objspace->flags.during_compacting) {
+        gc_sweep_compact(objspace);
+    }
+    else {
+        gc_sweep(objspace);
+    }
 }
 
 static void
@@ -9854,7 +10059,6 @@ check_id_table_move(VALUE value, void *data)
 VALUE
 rb_gc_location(VALUE value)
 {
-
     VALUE destination;
 
     if (!SPECIAL_CONST_P(value)) {
@@ -10193,6 +10397,10 @@ gc_ref_update(void *vstart, void *vend, size_t stride, rb_objspace_t * objspace,
 
     /* For each object on the page */
     for (; v != (VALUE)vend; v += stride) {
+        /* if (!MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(v), v) && BUILTIN_TYPE(v) != T_NONE) { */
+        /*     fprintf(stderr, "updating refs for unmarked object %s\n", obj_info(v)); */
+        /*     continue; */
+        /* } */
         void *poisoned = asan_poisoned_object_p(v);
         asan_unpoison_object(v, false);
 

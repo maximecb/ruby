@@ -817,7 +817,7 @@ assert_equal "good", %q{
   foo
 
   begin
-    GC.verify_compaction_references(double_heap: true, toward: :empty)
+    GC.verify_compaction_references(double_heap: true)
   rescue NotImplementedError
     # in case compaction isn't supported
   end
