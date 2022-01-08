@@ -1351,13 +1351,7 @@ sock_s_pack_sockaddr_in(VALUE self, VALUE port, VALUE host)
     len += SOCK_ADDR_STRING_ALIGNMENT;
 #endif
 
-    VALUE addr = rb_str_new(NULL, len);
-    char *ptr = rsock_sockaddr_string_ptr(addr);
-    memcpy(ptr, res->ai->ai_addr, res->ai->ai_addrlen);
-#ifdef SOCK_ADDR_STRING_ALIGNMENT
-    rb_str_set_len(addr, res->ai->ai_addrlen + (ptr - RSTRING_PTR(addr)));
-#endif
-
+    VALUE addr = rsock_sockaddr_to_string(res->ai->ai_addr, res->ai->ai_addrlen);
     rb_freeaddrinfo(res);
 
     return addr;

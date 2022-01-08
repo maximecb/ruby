@@ -298,6 +298,7 @@ int Rconnect();
 #define SockAddrStringValue(v) rsock_sockaddr_string_value(&(v))
 #define SockAddrStringValuePtr(v) rsock_sockaddr_string_value_ptr(&(v))
 #define SockAddrStringValueWithAddrinfo(v, rai_ret) rsock_sockaddr_string_value_with_addrinfo(&(v), &(rai_ret))
+VALUE rsock_sockaddr_to_string(struct sockaddr *addr, size_t len);
 VALUE rsock_sockaddr_string_value(volatile VALUE *);
 char *rsock_sockaddr_string_ptr(VALUE str);
 char *rsock_sockaddr_string_value_ptr(volatile VALUE *);

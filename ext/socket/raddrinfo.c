@@ -1839,8 +1839,7 @@ static VALUE
 addrinfo_to_sockaddr(VALUE self)
 {
     rb_addrinfo_t *rai = get_addrinfo(self);
-    VALUE ret;
-    ret = rb_str_new((char*)&rai->addr, rai->sockaddr_len);
+    VALUE ret = rsock_sockaddr_to_string(&rai->addr.addr, rai->sockaddr_len);
     return ret;
 }
 
@@ -2527,6 +2526,19 @@ addrinfo_s_unix(int argc, VALUE *argv, VALUE self)
 }
 
 #endif
+
+VALUE
+rsock_sockaddr_to_string(struct sockaddr *addr, size_t len)
+{
+    VALUE str = rb_str_new(NULL, len);
+    char *ptr = rsock_sockaddr_string_ptr(str);
+    memcpy(ptr, addr, len);
+#ifdef SOCK_ADDR_STRING_ALIGNMENT
+    rb_str_set_len(str, len + (ptr - RSTRING_PTR(str)));
+#endif
+
+    return str;
+}
 
 VALUE
 rsock_sockaddr_string_value(volatile VALUE *v)
