@@ -2553,10 +2553,26 @@ rsock_sockaddr_string_value_with_addrinfo(volatile VALUE *v, VALUE *rai_ret)
 }
 
 char *
+rsock_sockaddr_string_ptr(VALUE str)
+{
+    char *ptr = RSTRING_PTR(str);
+
+#ifdef SOCK_ADDR_STRING_ALIGNMENT
+    /* String pointer may be unaligned, Solaris SPARC requires alignment.
+     * Compute the next pointer that has alignment. */
+    if ((uintptr_t)ptr % SOCK_ADDR_STRING_ALIGNMENT != 0) {
+        ptr += SOCK_ADDR_STRING_ALIGNMENT - ((uintptr_t)ptr % SOCK_ADDR_STRING_ALIGNMENT);
+    }
+#endif
+
+    return ptr;
+}
+
+char *
 rsock_sockaddr_string_value_ptr(volatile VALUE *v)
 {
     rsock_sockaddr_string_value(v);
-    return RSTRING_PTR(*v);
+    return rsock_sockaddr_string_ptr(*v);
 }
 
 VALUE

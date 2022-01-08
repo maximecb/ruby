@@ -290,10 +290,16 @@ int Rconnect();
 
 #define BLOCKING_REGION_FD(func, arg) (long)rb_thread_io_blocking_region((func), (arg), (arg)->fd)
 
+#ifdef __sun
+/* String pointer may be unaligned, Solaris SPARC requires alignment. */
+# define SOCK_ADDR_STRING_ALIGNMENT (alignof(struct sockaddr))
+#endif
+
 #define SockAddrStringValue(v) rsock_sockaddr_string_value(&(v))
 #define SockAddrStringValuePtr(v) rsock_sockaddr_string_value_ptr(&(v))
 #define SockAddrStringValueWithAddrinfo(v, rai_ret) rsock_sockaddr_string_value_with_addrinfo(&(v), &(rai_ret))
 VALUE rsock_sockaddr_string_value(volatile VALUE *);
+char *rsock_sockaddr_string_ptr(VALUE str);
 char *rsock_sockaddr_string_value_ptr(volatile VALUE *);
 VALUE rsock_sockaddr_string_value_with_addrinfo(volatile VALUE *v, VALUE *ai_ret);
 

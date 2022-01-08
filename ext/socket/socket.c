@@ -1314,6 +1314,19 @@ sock_s_getnameinfo(int argc, VALUE *argv, VALUE _)
     UNREACHABLE_RETURN(Qnil);
 }
 
+static void
+sock_s_unpack_sockaddr_len_check(VALUE addr, struct sockaddr *sockaddr)
+{
+    long len = RSTRING_LEN(addr);
+
+    if (len <
+            (char*)&((struct sockaddr *)sockaddr)->sa_family +
+            sizeof(((struct sockaddr *)sockaddr)->sa_family) -
+            (char*)sockaddr) {
+        rb_raise(rb_eArgError, "too short sockaddr");
+    }
+}
+
 /*
  * call-seq:
  *   Socket.sockaddr_in(port, host)      => sockaddr
@@ -1332,7 +1345,18 @@ static VALUE
 sock_s_pack_sockaddr_in(VALUE self, VALUE port, VALUE host)
 {
     struct rb_addrinfo *res = rsock_addrinfo(host, port, AF_UNSPEC, 0, 0);
-    VALUE addr = rb_str_new((char*)res->ai->ai_addr, res->ai->ai_addrlen);
+
+    long len = res->ai->ai_addrlen;
+#ifdef SOCK_ADDR_STRING_ALIGNMENT
+    len += SOCK_ADDR_STRING_ALIGNMENT;
+#endif
+
+    VALUE addr = rb_str_new(NULL, len);
+    char *ptr = rsock_sockaddr_string_ptr(addr);
+    memcpy(ptr, res->ai->ai_addr, res->ai->ai_addrlen);
+#ifdef SOCK_ADDR_STRING_ALIGNMENT
+    rb_str_set_len(addr, res->ai->ai_addrlen + (ptr - RSTRING_PTR(addr)));
+#endif
 
     rb_freeaddrinfo(res);
 
@@ -1359,11 +1383,8 @@ sock_s_unpack_sockaddr_in(VALUE self, VALUE addr)
     VALUE host;
 
     sockaddr = (struct sockaddr_in*)SockAddrStringValuePtr(addr);
-    if (RSTRING_LEN(addr) <
-        (char*)&((struct sockaddr *)sockaddr)->sa_family +
-        sizeof(((struct sockaddr *)sockaddr)->sa_family) -
-        (char*)sockaddr)
-        rb_raise(rb_eArgError, "too short sockaddr");
+
+    sock_s_unpack_sockaddr_len_check(addr, (struct sockaddr *)sockaddr);
     if (((struct sockaddr *)sockaddr)->sa_family != AF_INET
 #ifdef INET6
         && ((struct sockaddr *)sockaddr)->sa_family != AF_INET6
@@ -1375,6 +1396,7 @@ sock_s_unpack_sockaddr_in(VALUE self, VALUE addr)
         rb_raise(rb_eArgError, "not an AF_INET sockaddr");
 #endif
     }
+
     host = rsock_make_ipaddr((struct sockaddr*)sockaddr, RSTRING_SOCKLEN(addr));
     return rb_assoc_new(INT2NUM(ntohs(sockaddr->sin_port)), host);
 }
@@ -1428,11 +1450,8 @@ sock_s_unpack_sockaddr_un(VALUE self, VALUE addr)
     VALUE path;
 
     sockaddr = (struct sockaddr_un*)SockAddrStringValuePtr(addr);
-    if (RSTRING_LEN(addr) <
-        (char*)&((struct sockaddr *)sockaddr)->sa_family +
-        sizeof(((struct sockaddr *)sockaddr)->sa_family) -
-        (char*)sockaddr)
-        rb_raise(rb_eArgError, "too short sockaddr");
+
+    sock_s_unpack_sockaddr_len_check(addr, (struct sockaddr *)sockaddr);
     if (((struct sockaddr *)sockaddr)->sa_family != AF_UNIX) {
         rb_raise(rb_eArgError, "not an AF_UNIX sockaddr");
     }
