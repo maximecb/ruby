@@ -195,6 +195,8 @@ VALUE rb_cSymbol;
     } \
 } while (0)
 
+#define STR_SET_FORCE_HEAP(str) FL_SET(str, STR_FORCE_HEAP)
+
 #define STR_HEAP_PTR(str)  (RSTRING(str)->as.heap.ptr)
 #define STR_HEAP_SIZE(str) ((size_t)RSTRING(str)->as.heap.aux.capa + TERM_LEN(str))
 /* TODO: include the terminator size in capa. */
@@ -1033,6 +1035,19 @@ VALUE
 rb_enc_str_new_static(const char *ptr, long len, rb_encoding *enc)
 {
     return str_new_static(rb_cString, ptr, len, rb_enc_to_index(enc));
+}
+
+VALUE
+rb_str_new_force_heap(long capa)
+{
+    VALUE str = str_alloc_heap(rb_cString);
+
+    STR_SET_FORCE_HEAP(str);
+    RSTRING(str)->as.heap.aux.capa = capa;
+    RSTRING(str)->as.heap.ptr = ALLOC_N(char, (size_t)capa + 1);
+    RSTRING(str)->as.heap.ptr[0] = '\0';
+
+    return str;
 }
 
 static VALUE str_cat_conv_enc_opts(VALUE newstr, long ofs, const char *ptr, long len,
@@ -2416,7 +2431,7 @@ str_make_independent_expand(VALUE str, long len, long expand, const int termlen)
 
     if (len > capa) len = capa;
 
-    if (!STR_EMBED_P(str) && str_embed_capa(str) >= capa + termlen) {
+    if (!STR_EMBED_P(str) && str_embed_capa(str) >= capa + termlen && !STR_FORCE_HEAP_P(str)) {
 	ptr = RSTRING(str)->as.heap.ptr;
 	STR_SET_EMBED(str);
         memcpy(RSTRING(str)->as.embed.ary, ptr, len);

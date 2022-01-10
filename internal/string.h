@@ -17,6 +17,7 @@
 
 #define STR_NOEMBED      FL_USER1
 #define STR_SHARED       FL_USER2 /* = ELTS_SHARED */
+#define STR_FORCE_HEAP   FL_USER3
 
 #ifdef rb_fstring_cstr
 # undef rb_fstring_cstr
@@ -101,6 +102,12 @@ static inline bool
 STR_SHARED_P(VALUE str)
 {
     return FL_ALL_RAW(str, STR_NOEMBED | ELTS_SHARED);
+}
+
+static inline bool
+STR_FORCE_HEAP_P(VALUE str)
+{
+    return FL_TEST_RAW(str, STR_FORCE_HEAP);
 }
 
 static inline bool
