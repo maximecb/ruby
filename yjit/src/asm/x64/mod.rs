@@ -1326,6 +1326,15 @@ mod tests {
             "test qword ptr [r13 - 0x80], r13",
             test((mem64(R13, i8::MIN.into()), R13))
         );
+
+        // FIXME: Buggy encoding. These registers require a REX prefix.
+        test_encoding!(
+            "84 f0 84 f8 84 e8 84 e0"
+            "test al, sil", test((AL, SIL))
+            "test al, dil", test((AL, DIL))
+            "test al, bpl", test((AL, BPL))
+            "test al, spl", test((AL, SPL))
+        );
     }
 
     #[test]
