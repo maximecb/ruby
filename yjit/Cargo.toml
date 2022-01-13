@@ -1,9 +1,9 @@
 [package]
 name = "yjit"
-version = "0.1.0"
-edition = "2021"
-rust-version = "1.57.0"
-publish = false
+version = "0.1.0"       # YJIT version
+edition = "2021"        # Rust 2021 edition to compile with
+rust-version = "1.57.0" # Minimally supported rust version
+publish = false         # Don't publish to crates.io
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -25,7 +25,7 @@ capstone = { version = "0.10.0", optional = true }
 disassembly = ["capstone"]
 
 [profile.release]
-# The extra robustness that comes from checking for arithmetidc overflow is
+# The extra robustness that comes from checking for arithmetic overflow is
 # worth the performance cost for the compiler.
 overflow-checks = true
 
