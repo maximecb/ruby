@@ -3,6 +3,7 @@ use crate::asm::x64::*;
 use crate::core::*;
 
 
+
 // Callee-saved registers
 //#define REG_CFP R13
 //#define REG_EC R12
@@ -17,6 +18,42 @@ use crate::core::*;
 
 
 
+// Code generation state
+pub struct JITState
+{
+    // Inline and outlined code blocks we are
+    // currently generating code into
+    //codeblock_t* cb;
+    //codeblock_t* ocb;
+
+    // Block version being compiled
+    block: Block,
+
+    // Instruction sequence this is associated with
+    //const rb_iseq_t *iseq;
+
+    // Index of the current instruction being compiled
+    insn_idx: u32,
+
+    /*
+    // Opcode for the instruction being compiled
+    int opcode;
+
+    // PC of the instruction being compiled
+    VALUE *pc;
+    */
+
+    // Side exit to the instruction being compiled. See :side-exit:.
+    side_exit_for_pc: CodePtr,
+
+    // Execution context when compilation started
+    // This allows us to peek at run-time values
+    //rb_execution_context_t *ec;
+
+    // Whether we need to record the code address at
+    // the end of this bytecode instruction for global invalidation
+    record_boundary_patch_point : bool,
+}
 
 enum CodegenStatus {
     EndBlock,
@@ -24,11 +61,12 @@ enum CodegenStatus {
     CantCompile,
 }
 
-
-
-
+// TODO: this also needs an Assembler&
 // Code generation function signature
-//typedef codegen_status_t (*codegen_fn)(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb);
+type CodeGenFn = fn(jit: &JITState, ctx: &Ctx, cb: &Assembler) -> CodegenStatus;
+
+
+
 
 //static void jit_ensure_block_entry_exit(jitstate_t *jit);
 

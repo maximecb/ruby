@@ -1,4 +1,5 @@
 use crate::cruby::*;
+use crate::asm::x64::*;
 use crate::codegen::*;
 
 // Maximum number of temp value types we keep track of
@@ -136,7 +137,7 @@ pub const BLOCKID_NULL: BlockId = BlockId { iseq: 0, idx: 0 };
 
 /// Pointer to a piece of machine code
 /// We may later change this to wrap an u32
-struct CodePtr(*mut u8);
+pub struct CodePtr(*mut u8);
 
 // TODO: do we want constructor (new) or some from() methods for code pointers?
 impl CodePtr {
@@ -150,15 +151,8 @@ enum BranchShape
     DEFAULT // Neither target is next
 }
 
-
-
-/*
 // Branch code generation function signature
-typedef void (*branchgen_fn)(codeblock_t* cb, uint8_t* target0, uint8_t* target1, uint8_t shape);
-*/
-
-
-
+type BranchGenFn = fn(cb: &Assembler, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch_t objects
@@ -183,9 +177,8 @@ struct Branch
     // Jump target addresses
     dst_addrs: [CodePtr; 2],
 
-    // TODO
     // Branch code generation function
-    //branchgen_fn gen_fn;
+    gen_fn: BranchGenFn,
 
     // Shape of the branch
     shape: BranchShape,
@@ -253,41 +246,4 @@ pub struct Block
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.
     entry_exit: CodePtr,
-}
-
-// Code generation state
-pub struct JITState
-{
-    // Inline and outlined code blocks we are
-    // currently generating code into
-    //codeblock_t* cb;
-    //codeblock_t* ocb;
-
-    // Block version being compiled
-    block: Block,
-
-    // Instruction sequence this is associated with
-    //const rb_iseq_t *iseq;
-
-    // Index of the current instruction being compiled
-    insn_idx: u32,
-
-    /*
-    // Opcode for the instruction being compiled
-    int opcode;
-
-    // PC of the instruction being compiled
-    VALUE *pc;
-    */
-
-    // Side exit to the instruction being compiled. See :side-exit:.
-    side_exit_for_pc: CodePtr,
-
-    // Execution context when compilation started
-    // This allows us to peek at run-time values
-    //rb_execution_context_t *ec;
-
-    // Whether we need to record the code address at
-    // the end of this bytecode instruction for global invalidation
-    record_boundary_patch_point : bool,
 }
