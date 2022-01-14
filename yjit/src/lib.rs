@@ -1,11 +1,18 @@
 // Silence dead code warnings until we are done porting YJIT
+#![allow(unused_imports)]
 #![allow(dead_code)]
 
 pub mod asm {
     pub mod x64;
 }
 
+// Types we expose from CRuby
+mod cruby;
+
+// Core BBV logic
 mod core;
+
+mod codegen;
 
 #[cfg(test)]
 mod tests {
