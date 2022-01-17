@@ -10,6 +10,7 @@ const MAX_TEMP_TYPES: usize = 8;
 const MAX_LOCAL_TYPES: usize = 8;
 
 // Represent the type of a value (local/stack/self) in YJIT
+#[derive(Copy, Clone)]
 pub enum Type {
     Unknown,
     Imm,
@@ -61,6 +62,7 @@ impl Type {
 
 // Potential mapping of a value on the temporary stack to
 // self, a local variable or constant so that we can track its type
+#[derive(Copy, Clone)]
 pub enum TempMapping {
     Stack,              // Normal stack value
     SelfOpnd,           // Temp maps to the self operand
@@ -531,12 +533,13 @@ impl Context {
         }
 
         // If any values on the stack map to this local we must detach them
-        for mapping in ctx.temp_mapping.iter_mut() {
+        for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
                 TempMapping::Stack => TempMapping::Stack,
                 TempMapping::SelfOpnd => TempMapping::SelfOpnd,
                 TempMapping::Local{idx} => {
                     if idx as usize == local_idx {
+                        ctx.temp_types[i] = ctx.local_types[idx as usize];
                         TempMapping::Stack
                     } else {
                         TempMapping::Local{idx}
@@ -548,26 +551,25 @@ impl Context {
         ctx.local_types[local_idx] = local_type;
     }
 
-    /*
     /// Erase local variable type information
     /// eg: because of a call we can't track
-    static void
-    ctx_clear_local_types(ctx_t *ctx)
-    {
+    fn clear_local_types(ctx: &mut Self) {
         // When clearing local types we must detach any stack mappings to those
         // locals. Even if local values may have changed, stack values will not.
-        for (int i = 0; i < MAX_TEMP_TYPES; i++) {
-            temp_mapping_t *mapping = &ctx->temp_mapping[i];
-            if (mapping->kind == TEMP_LOCAL) {
-                RUBY_ASSERT(mapping->idx < MAX_LOCAL_TYPES);
-                ctx->temp_types[i] = ctx->local_types[mapping->idx];
-                *mapping = MAP_STACK;
+        for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
+            *mapping = match *mapping {
+                TempMapping::Stack => TempMapping::Stack,
+                TempMapping::SelfOpnd => TempMapping::SelfOpnd,
+                TempMapping::Local{idx} => {
+                    ctx.temp_types[i] = ctx.local_types[idx as usize];
+                    TempMapping::Stack
+                },
             }
-            RUBY_ASSERT(mapping->kind == TEMP_STACK || mapping->kind == TEMP_SELF);
         }
-        memset(&ctx->local_types, 0, sizeof(ctx->local_types));
+
+        // Clear the local types
+        ctx.local_types = [Type::default(); MAX_LOCAL_TYPES];
     }
-    */
 }
 
 
