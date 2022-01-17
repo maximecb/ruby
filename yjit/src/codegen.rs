@@ -63,7 +63,7 @@ enum CodegenStatus {
 
 // TODO: this also needs an Assembler&
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &Ctx, cb: &Assembler) -> CodegenStatus;
+type CodeGenFn = fn(jit: &JITState, ctx: &Context, cb: &Assembler) -> CodegenStatus;
 
 
 
