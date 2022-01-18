@@ -15,6 +15,8 @@ mod core;
 
 mod codegen;
 
+mod options;
+
 #[cfg(test)]
 mod tests {
     // use crate::asm::x64::*;

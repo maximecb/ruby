@@ -12,7 +12,7 @@ const MAX_TEMP_TYPES: usize = 8;
 const MAX_LOCAL_TYPES: usize = 8;
 
 // Represent the type of a value (local/stack/self) in YJIT
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Type {
     Unknown,
     UnknownImm,
@@ -74,20 +74,27 @@ impl Type {
     /// Returns 0 if the two are the same
     /// Returns > 0 if different but compatible
     /// Returns INT_MAX if incompatible
-    fn diff(&self, dst: &Self) -> usize
+    fn diff(self, dst: Self) -> usize
     {
-        // Perfect match
-        if matches!(self, dst) {
+        println!("diff {:?}, {:?}", self, dst);
+
+        // Perfect match, difference is zero
+        if self == dst {
             return 0;
         }
 
+        // Any type can flow into an unknown type
+        if dst == Type::Unknown {
+            return 1;
+        }
+
         // Specific heap type into unknown heap type is imperfect but valid
-        if self.is_heap() && matches!(dst, Type::UnknownHeap) {
+        if self.is_heap() && dst == Type::UnknownHeap {
             return 1;
         }
 
         // Specific type into unknown immediate type is imperfect but valid
-        if self.is_imm() && matches!(dst, Type::UnknownImm) {
+        if self.is_imm() && dst == Type::UnknownImm {
             return 1;
         }
 
@@ -97,11 +104,11 @@ impl Type {
 
     /// Upgrade this type into a more specific compatible type
     /// The new type must be compatible and at least as specific as the previously known type.
-    fn upgrade(&mut self, src: &Self)
+    fn upgrade(&mut self, src: Self)
     {
         // Here we're checking that src is more specific than self
-        assert!(src.diff(self) != usize::MAX);
-        *self = *src;
+        assert!(src.diff(*self) != usize::MAX);
+        *self = src;
     }
 }
 
@@ -415,14 +422,14 @@ impl Context {
     */
 
     /// Get the type of an instruction operand
-    fn get_opnd_type(&self, opnd: &InsnOpnd) -> Type
+    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
     {
         match opnd {
             SelfOpnd => {
                 self.self_type
             },
             StackOpnd{ idx } => {
-                let idx = *idx as u16;
+                let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
 
@@ -453,7 +460,7 @@ impl Context {
     /// This value must be compatible and at least as specific as the previously known type.
     /// If this value originated from self, or an lvar, the learned type will be
     /// propagated back to its source.
-    fn upgrade_opnd_type(&mut self, opnd: &InsnOpnd, opnd_type: &Type)
+    fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
     {
         // TODO: we need a global for the YJIT options, maybe on options.rs ?
         /*
@@ -468,7 +475,7 @@ impl Context {
                 self.self_type.upgrade(opnd_type)
             },
             StackOpnd{ idx } => {
-                let idx = *idx as u16;
+                let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
 
@@ -605,6 +612,92 @@ impl Context {
         // Clear the local types
         ctx.local_types = [Type::default(); MAX_LOCAL_TYPES];
     }
+
+    /// Compute a difference score for two context objects
+    /// Returns 0 if the two contexts are the same
+    /// Returns > 0 if different but compatible
+    /// Returns usize::MAX if incompatible
+    fn diff(&self, dst: &Context) -> usize
+    {
+        // Self is the source context (at the end of the predecessor)
+        let src = self;
+
+        /*
+        // Can only lookup the first version in the chain
+        if (dst->chain_depth != 0)
+            return INT_MAX;
+
+        // Blocks with depth > 0 always produce new versions
+        // Sidechains cannot overlap
+        if (src->chain_depth != 0)
+            return INT_MAX;
+
+        if (dst->stack_size != src->stack_size)
+            return INT_MAX;
+
+        if (dst->sp_offset != src->sp_offset)
+            return INT_MAX;
+
+        // Difference sum
+        int diff = 0;
+
+        // Check the type of self
+        int self_diff = type_diff(src->self_type, dst->self_type);
+
+        if (self_diff == INT_MAX)
+            return INT_MAX;
+
+        diff += self_diff;
+
+        // For each local type we track
+        for (size_t i = 0; i < MAX_LOCAL_TYPES; ++i)
+        {
+            val_type_t t_src = src->local_types[i];
+            val_type_t t_dst = dst->local_types[i];
+            int temp_diff = type_diff(t_src, t_dst);
+
+            if (temp_diff == INT_MAX)
+                return INT_MAX;
+
+            diff += temp_diff;
+        }
+
+        // For each value on the temp stack
+        for (size_t i = 0; i < src->stack_size; ++i)
+        {
+            temp_type_mapping_t m_src = ctx_get_opnd_mapping(src, OPND_STACK(i));
+            temp_type_mapping_t m_dst = ctx_get_opnd_mapping(dst, OPND_STACK(i));
+
+            if (m_dst.mapping.kind != m_src.mapping.kind) {
+                if (m_dst.mapping.kind == TEMP_STACK) {
+                    // We can safely drop information about the source of the temp
+                    // stack operand.
+                    diff += 1;
+                }
+                else {
+                    return INT_MAX;
+                }
+            }
+            else if (m_dst.mapping.idx != m_src.mapping.idx) {
+                return INT_MAX;
+            }
+
+            int temp_diff = type_diff(m_src.type, m_dst.type);
+
+            if (temp_diff == INT_MAX)
+                return INT_MAX;
+
+            diff += temp_diff;
+        }
+
+        return diff;
+        */
+
+        unreachable!();
+
+
+
+    }
 }
 
 
@@ -657,126 +750,6 @@ yjit_type_of_value(VALUE val)
             return TYPE_HEAP;
         }
     }
-}
-
-/* The name of a type, for debugging */
-RBIMPL_ATTR_MAYBE_UNUSED()
-static const char *
-yjit_type_name(val_type_t type)
-{
-    RUBY_ASSERT(!(type.is_imm && type.is_heap));
-
-    switch (type.type) {
-      case ETYPE_UNKNOWN:
-        if (type.is_imm) {
-            return "unknown immediate";
-        }
-        else if (type.is_heap) {
-            return "unknown heap";
-        }
-        else {
-            return "unknown";
-        }
-      case ETYPE_NIL:
-        return "nil";
-      case ETYPE_TRUE:
-        return "true";
-      case ETYPE_FALSE:
-        return "false";
-      case ETYPE_FIXNUM:
-        return "fixnum";
-      case ETYPE_FLONUM:
-        return "flonum";
-      case ETYPE_ARRAY:
-        return "array";
-      case ETYPE_HASH:
-        return "hash";
-      case ETYPE_SYMBOL:
-        return "symbol";
-      case ETYPE_STRING:
-        return "string";
-    }
-
-    UNREACHABLE_RETURN("");
-}
-
-/**
-Compute a difference score for two context objects
-Returns 0 if the two contexts are the same
-Returns > 0 if different but compatible
-Returns INT_MAX if incompatible
-*/
-static int
-ctx_diff(const ctx_t *src, const ctx_t *dst)
-{
-    // Can only lookup the first version in the chain
-    if (dst->chain_depth != 0)
-        return INT_MAX;
-
-    // Blocks with depth > 0 always produce new versions
-    // Sidechains cannot overlap
-    if (src->chain_depth != 0)
-        return INT_MAX;
-
-    if (dst->stack_size != src->stack_size)
-        return INT_MAX;
-
-    if (dst->sp_offset != src->sp_offset)
-        return INT_MAX;
-
-    // Difference sum
-    int diff = 0;
-
-    // Check the type of self
-    int self_diff = type_diff(src->self_type, dst->self_type);
-
-    if (self_diff == INT_MAX)
-        return INT_MAX;
-
-    diff += self_diff;
-
-    // For each local type we track
-    for (size_t i = 0; i < MAX_LOCAL_TYPES; ++i)
-    {
-        val_type_t t_src = src->local_types[i];
-        val_type_t t_dst = dst->local_types[i];
-        int temp_diff = type_diff(t_src, t_dst);
-
-        if (temp_diff == INT_MAX)
-            return INT_MAX;
-
-        diff += temp_diff;
-    }
-
-    // For each value on the temp stack
-    for (size_t i = 0; i < src->stack_size; ++i)
-    {
-        temp_type_mapping_t m_src = ctx_get_opnd_mapping(src, OPND_STACK(i));
-        temp_type_mapping_t m_dst = ctx_get_opnd_mapping(dst, OPND_STACK(i));
-
-        if (m_dst.mapping.kind != m_src.mapping.kind) {
-            if (m_dst.mapping.kind == TEMP_STACK) {
-                // We can safely drop information about the source of the temp
-                // stack operand.
-                diff += 1;
-            }
-            else {
-                return INT_MAX;
-            }
-        }
-        else if (m_dst.mapping.idx != m_src.mapping.idx) {
-            return INT_MAX;
-        }
-
-        int temp_diff = type_diff(m_src.type, m_dst.type);
-
-        if (temp_diff == INT_MAX)
-            return INT_MAX;
-
-        diff += temp_diff;
-    }
-
-    return diff;
 }
 
 // Get all blocks for a particular place in an iseq.
@@ -1626,5 +1599,31 @@ yjit_init_core(void)
 {
     gen_code_for_exit_from_stub();
 }
-
 */
+
+
+
+
+#[cfg(test)]
+mod tests {
+    use crate::core::*;
+
+    #[test]
+    fn types() {
+        // Valid src => dst
+        assert_eq!(Type::Unknown.diff(Type::Unknown), 0);
+        assert_eq!(Type::UnknownImm.diff(Type::UnknownImm), 0);
+        assert_ne!(Type::UnknownImm.diff(Type::Unknown), usize::MAX);
+        assert_ne!(Type::Fixnum.diff(Type::Unknown), usize::MAX);
+        assert_ne!(Type::Fixnum.diff(Type::UnknownImm), usize::MAX);
+
+        // Invalid src => dst
+        assert_eq!(Type::Unknown.diff(Type::UnknownImm), usize::MAX);
+        assert_eq!(Type::Unknown.diff(Type::Fixnum), usize::MAX);
+        assert_eq!(Type::Fixnum.diff(Type::UnknownHeap), usize::MAX);
+    }
+
+    fn context() {
+        // TODO: tests for the Context object
+    }
+}
