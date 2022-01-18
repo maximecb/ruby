@@ -418,40 +418,37 @@ impl Context {
 
         return opnd;
     }
-
-    /**
-    Get the type of an instruction operand
     */
-    static val_type_t
-    ctx_get_opnd_type(const ctx_t *ctx, insn_opnd_t opnd)
+
+    /// Get the type of an instruction operand
+    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
     {
-        if (opnd.is_self)
-            return ctx->self_type;
+        match opnd {
+            InsnOpnd::SelfOpnd => self.self_type,
+            InsnOpnd::StackOpnd{ idx } => {
+                assert!(idx < self.stack_size);
+                let stack_idx = self.stack_size - 1 - idx;
 
-        RUBY_ASSERT(opnd.idx < ctx->stack_size);
-        int stack_idx = ctx->stack_size - 1 - opnd.idx;
+                // If outside of tracked range, do nothing
+                if stack_idx as usize >= MAX_TEMP_TYPES {
+                    return Type::Unknown;
+                }
 
-        // If outside of tracked range, do nothing
-        if (stack_idx >= MAX_TEMP_TYPES)
-            return TYPE_UNKNOWN;
+                let mapping = self.temp_mapping[stack_idx as usize];
 
-        temp_mapping_t mapping = ctx->temp_mapping[stack_idx];
-
-        switch (mapping.kind) {
-        case TEMP_SELF:
-            return ctx->self_type;
-
-        case TEMP_STACK:
-            return ctx->temp_types[ctx->stack_size - 1 - opnd.idx];
-
-        case TEMP_LOCAL:
-            RUBY_ASSERT(mapping.idx < MAX_LOCAL_TYPES);
-            return ctx->local_types[mapping.idx];
+                match mapping {
+                    TempMapping::SelfOpnd => self.self_type,
+                    TempMapping::Stack => self.temp_types[(self.stack_size - 1 - idx) as usize],
+                    TempMapping::Local{idx} => {
+                        assert!((idx as usize) < MAX_LOCAL_TYPES);
+                        return self.local_types[idx as usize]
+                    },
+                }
+            }
         }
-
-        rb_bug("unreachable");
     }
 
+    /*
     /**
     Upgrade (or "learn") the type of an instruction operand
     This value must be compatible and at least as specific as the previously known type.
