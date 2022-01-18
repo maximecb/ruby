@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use crate::cruby::*;
 use crate::asm::x64::*;
 use crate::codegen::*;
@@ -13,8 +13,8 @@ const MAX_LOCAL_TYPES: usize = 8;
 #[derive(Copy, Clone)]
 pub enum Type {
     Unknown,
-    Imm,
-    Heap,
+    UnknownImm,
+    UnknownHeap,
     Nil,
     True,
     False,
@@ -37,7 +37,7 @@ impl Default for Type {
 impl Type {
     fn is_imm(&self) -> bool {
         match self {
-            Type::Imm => true,
+            Type::UnknownImm => true,
             Type::Nil => true,
             Type::True => true,
             Type::False => true,
@@ -50,13 +50,56 @@ impl Type {
 
     fn is_heap(&self) -> bool {
         match self {
-            Type::Heap => true,
+            Type::UnknownHeap => true,
             Type::Array => true,
             Type::Hash => true,
             Type::HeapSymbol => true,
             Type::String => true,
             _ => false,
         }
+    }
+
+    fn is_unknown(&self) -> bool {
+        match self {
+            Type::Unknown => true,
+            Type::UnknownImm => true,
+            Type::UnknownHeap => true,
+            _ => false,
+        }
+    }
+
+    /// Compute a difference between two value types
+    /// Returns 0 if the two are the same
+    /// Returns > 0 if different but compatible
+    /// Returns INT_MAX if incompatible
+    fn diff(&self, dst: &Self) -> usize
+    {
+        // Perfect match
+        if matches!(self, dst) {
+            return 0;
+        }
+
+        // Specific heap type into unknown heap type is imperfect but valid
+        if self.is_heap() && matches!(dst, Type::UnknownHeap) {
+            return 1;
+        }
+
+        // Specific type into unknown immediate type is imperfect but valid
+        if self.is_imm() && matches!(dst, Type::UnknownImm) {
+            return 1;
+        }
+
+        // Incompatible types
+        return usize::MAX;
+    }
+
+    /// Upgrade this type into a more specific compatible type
+    /// The new type must be compatible and at least as specific as the previously known type.
+    fn upgrade(&mut self, src: &Self)
+    {
+        // Here we're checking that src is more specific than self
+        assert!(src.diff(self) != usize::MAX);
+        *self = *src;
     }
 }
 
@@ -164,7 +207,7 @@ type BranchGenFn = fn(cb: &Assembler, target0: CodePtr, target1: CodePtr, shape:
 struct Branch
 {
     // Block this is attached to
-    block: Rc<Block>,
+    block: Weak<Block>,
 
     // Positions where the generated code starts and ends
     start_addr: CodePtr,
@@ -176,7 +219,7 @@ struct Branch
     // Branch target blocks and their contexts
     targets: [BlockId; 2],
     target_ctxs: [Context; 2],
-    blocks: [Rc<Block>; 2],
+    blocks: [Weak<Block>; 2],
 
     // Jump target addresses
     dst_addrs: [CodePtr; 2],
@@ -187,7 +230,6 @@ struct Branch
     // Shape of the branch
     shape: BranchShape,
 }
-
 
 
 
@@ -204,8 +246,6 @@ typedef rb_darray(cme_dependency_t) cme_dependency_array_t;
 
 typedef rb_darray(branch_t*) branch_array_t;
 */
-
-
 
 
 
@@ -231,7 +271,7 @@ pub struct Block
 
     // List of incoming branches (from predecessors)
     // These are reference counted (ownership shared between predecessor and successors)
-    incoming: Vec<Rc<Branch>>,
+    incoming: Vec<Weak<Branch>>,
 
     // List of outgoing branches (to successors)
     outgoing: Vec<Rc<Branch>>,
@@ -411,13 +451,6 @@ impl Context {
 
         rb_bug("unreachable");
     }
-
-    static int type_diff(val_type_t src, val_type_t dst);
-
-    #define UPGRADE_TYPE(dest, src) do { \
-        RUBY_ASSERT(type_diff((src), (dest)) != INT_MAX); \
-        (dest) = (src); \
-    } while (false)
 
     /**
     Upgrade (or "learn") the type of an instruction operand
@@ -663,42 +696,6 @@ yjit_type_name(val_type_t type)
     }
 
     UNREACHABLE_RETURN("");
-}
-
-/*
-Compute a difference between two value types
-Returns 0 if the two are the same
-Returns > 0 if different but compatible
-Returns INT_MAX if incompatible
-*/
-static int
-type_diff(val_type_t src, val_type_t dst)
-{
-    RUBY_ASSERT(!src.is_heap || !src.is_imm);
-    RUBY_ASSERT(!dst.is_heap || !dst.is_imm);
-
-    // If dst assumes heap but src doesn't
-    if (dst.is_heap && !src.is_heap)
-        return INT_MAX;
-
-    // If dst assumes imm but src doesn't
-    if (dst.is_imm && !src.is_imm)
-        return INT_MAX;
-
-    // If dst assumes known type different from src
-    if (dst.type != ETYPE_UNKNOWN && dst.type != src.type)
-        return INT_MAX;
-
-    if (dst.is_heap != src.is_heap)
-        return 1;
-
-    if (dst.is_imm != src.is_imm)
-        return 1;
-
-    if (dst.type != src.type)
-        return 1;
-
-    return 0;
 }
 
 /**
