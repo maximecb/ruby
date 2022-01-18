@@ -2,6 +2,8 @@ use std::rc::{Rc, Weak};
 use crate::cruby::*;
 use crate::asm::x64::*;
 use crate::codegen::*;
+use InsnOpnd::*;
+use TempMapping::*;
 
 // Maximum number of temp value types we keep track of
 const MAX_TEMP_TYPES: usize = 8;
@@ -107,15 +109,15 @@ impl Type {
 // self, a local variable or constant so that we can track its type
 #[derive(Copy, Clone)]
 pub enum TempMapping {
-    Stack,              // Normal stack value
-    SelfOpnd,           // Temp maps to the self operand
-    Local { idx: u8 },  // Temp maps to a local variable with index
-    //Const,            // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
+    StackMapping,               // Normal stack value
+    SelfMapping,                // Temp maps to the self operand
+    LocalMapping { idx: u8 },   // Temp maps to a local variable with index
+    //ConstMapping,             // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
 }
 
 impl Default for TempMapping {
     fn default() -> Self {
-        TempMapping::Stack
+        StackMapping
     }
 }
 
@@ -231,9 +233,6 @@ struct Branch
     shape: BranchShape,
 }
 
-
-
-
 /*
 // In case this block is invalidated, these two pieces of info
 // help to remove all pointers to this block in the system.
@@ -246,10 +245,6 @@ typedef rb_darray(cme_dependency_t) cme_dependency_array_t;
 
 typedef rb_darray(branch_t*) branch_array_t;
 */
-
-
-
-
 
 /// Basic block version
 /// Represents a portion of an iseq compiled with a given context
@@ -297,7 +292,6 @@ pub struct Block
 // For exiting from YJIT frame from branch_stub_hit().
 // Filled by gen_code_for_exit_from_stub().
 //static uint8_t *code_for_exit_from_stub = NULL;
-
 
 impl Context {
     /*
@@ -421,25 +415,32 @@ impl Context {
     */
 
     /// Get the type of an instruction operand
-    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
+    fn get_opnd_type(&self, opnd: &InsnOpnd) -> Type
     {
         match opnd {
-            InsnOpnd::SelfOpnd => self.self_type,
-            InsnOpnd::StackOpnd{ idx } => {
+            SelfOpnd => {
+                self.self_type
+            },
+            StackOpnd{ idx } => {
+                let idx = *idx as u16;
                 assert!(idx < self.stack_size);
-                let stack_idx = self.stack_size - 1 - idx;
+                let stack_idx = (self.stack_size - 1 - idx) as usize;
 
                 // If outside of tracked range, do nothing
-                if stack_idx as usize >= MAX_TEMP_TYPES {
+                if stack_idx >= MAX_TEMP_TYPES {
                     return Type::Unknown;
                 }
 
-                let mapping = self.temp_mapping[stack_idx as usize];
+                let mapping = self.temp_mapping[stack_idx];
 
                 match mapping {
-                    TempMapping::SelfOpnd => self.self_type,
-                    TempMapping::Stack => self.temp_types[(self.stack_size - 1 - idx) as usize],
-                    TempMapping::Local{idx} => {
+                    SelfMapping => {
+                        self.self_type
+                    },
+                    StackMapping => {
+                        self.temp_types[(self.stack_size - 1 - idx) as usize]
+                    },
+                    LocalMapping{idx} => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
                         return self.local_types[idx as usize]
                     },
@@ -448,50 +449,54 @@ impl Context {
         }
     }
 
-    /*
-    /**
-    Upgrade (or "learn") the type of an instruction operand
-    This value must be compatible and at least as specific as the previously known type.
-    If this value originated from self, or an lvar, the learned type will be
-    propagated back to its source.
-    */
-    static void
-    ctx_upgrade_opnd_type(ctx_t *ctx, insn_opnd_t opnd, val_type_t type)
+    /// Upgrade (or "learn") the type of an instruction operand
+    /// This value must be compatible and at least as specific as the previously known type.
+    /// If this value originated from self, or an lvar, the learned type will be
+    /// propagated back to its source.
+    fn upgrade_opnd_type(&mut self, opnd: &InsnOpnd, opnd_type: &Type)
     {
+        // TODO: we need a global for the YJIT options, maybe on options.rs ?
+        /*
         // If type propagation is disabled, store no types
-        if (rb_yjit_opts.no_type_prop)
-            return;
-
-        if (opnd.is_self) {
-            UPGRADE_TYPE(ctx->self_type, type);
+        if rb_yjit_opts.no_type_prop {
             return;
         }
+        */
 
-        RUBY_ASSERT(opnd.idx < ctx->stack_size);
-        int stack_idx = ctx->stack_size - 1 - opnd.idx;
+        match opnd {
+            SelfOpnd => {
+                self.self_type.upgrade(opnd_type)
+            },
+            StackOpnd{ idx } => {
+                let idx = *idx as u16;
+                assert!(idx < self.stack_size);
+                let stack_idx = (self.stack_size - 1 - idx) as usize;
 
-        // If outside of tracked range, do nothing
-        if (stack_idx >= MAX_TEMP_TYPES)
-            return;
+                // If outside of tracked range, do nothing
+                if stack_idx >= MAX_TEMP_TYPES {
+                    return;
+                }
 
-        temp_mapping_t mapping = ctx->temp_mapping[stack_idx];
+                let mapping = self.temp_mapping[stack_idx];
 
-        switch (mapping.kind) {
-        case TEMP_SELF:
-            UPGRADE_TYPE(ctx->self_type, type);
-            break;
-
-        case TEMP_STACK:
-            UPGRADE_TYPE(ctx->temp_types[stack_idx], type);
-            break;
-
-        case TEMP_LOCAL:
-            RUBY_ASSERT(mapping.idx < MAX_LOCAL_TYPES);
-            UPGRADE_TYPE(ctx->local_types[mapping.idx], type);
-            break;
+                match mapping {
+                    SelfMapping => {
+                        self.self_type.upgrade(opnd_type)
+                    },
+                    StackMapping => {
+                        self.temp_types[stack_idx].upgrade(opnd_type)
+                    },
+                    LocalMapping{idx} => {
+                        let idx = idx as usize;
+                        assert!(idx < MAX_LOCAL_TYPES);
+                        self.local_types[idx].upgrade(opnd_type);
+                    },
+                }
+            }
         }
     }
 
+    /*
     /*
     Get both the type and mapping (where the value originates) of an operand.
     This is can be used with ctx_stack_push_mapping or ctx_set_opnd_mapping to copy
@@ -565,14 +570,14 @@ impl Context {
         // If any values on the stack map to this local we must detach them
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
-                TempMapping::Stack => TempMapping::Stack,
-                TempMapping::SelfOpnd => TempMapping::SelfOpnd,
-                TempMapping::Local{idx} => {
+                StackMapping => StackMapping,
+                SelfMapping => SelfMapping,
+                LocalMapping{idx} => {
                     if idx as usize == local_idx {
                         ctx.temp_types[i] = ctx.local_types[idx as usize];
-                        TempMapping::Stack
+                        StackMapping
                     } else {
-                        TempMapping::Local{idx}
+                        LocalMapping{idx}
                     }
                 },
             }
@@ -588,11 +593,11 @@ impl Context {
         // locals. Even if local values may have changed, stack values will not.
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
-                TempMapping::Stack => TempMapping::Stack,
-                TempMapping::SelfOpnd => TempMapping::SelfOpnd,
-                TempMapping::Local{idx} => {
+                StackMapping => StackMapping,
+                SelfMapping => SelfMapping,
+                LocalMapping{idx} => {
                     ctx.temp_types[i] = ctx.local_types[idx as usize];
-                    TempMapping::Stack
+                    StackMapping
                 },
             }
         }
