@@ -61,15 +61,6 @@ impl Type {
         }
     }
 
-    fn is_unknown(&self) -> bool {
-        match self {
-            Type::Unknown => true,
-            Type::UnknownImm => true,
-            Type::UnknownHeap => true,
-            _ => false,
-        }
-    }
-
     /// Compute a difference between two value types
     /// Returns 0 if the two are the same
     /// Returns > 0 if different but compatible
@@ -114,7 +105,7 @@ impl Type {
 
 // Potential mapping of a value on the temporary stack to
 // self, a local variable or constant so that we can track its type
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TempMapping {
     StackMapping,               // Normal stack value
     SelfMapping,                // Temp maps to the self operand
@@ -128,16 +119,8 @@ impl Default for TempMapping {
     }
 }
 
-/*
-// Represents both the type and mapping
-typedef struct {
-    temp_mapping_t mapping;
-    val_type_t type;
-} temp_type_mapping_t;
-STATIC_ASSERT(temp_type_mapping_size, sizeof(temp_type_mapping_t) == 2);
-*/
-
 // Operand to a bytecode instruction
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum InsnOpnd {
     // The value is self
     SelfOpnd,
@@ -504,38 +487,37 @@ impl Context {
     }
 
     /*
-    /*
     Get both the type and mapping (where the value originates) of an operand.
     This is can be used with ctx_stack_push_mapping or ctx_set_opnd_mapping to copy
     a stack value's type while maintaining the mapping.
     */
-    static temp_type_mapping_t
-    ctx_get_opnd_mapping(const ctx_t *ctx, insn_opnd_t opnd)
+    fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
     {
-        temp_type_mapping_t type_mapping;
-        type_mapping.type = ctx_get_opnd_type(ctx, opnd);
+        let opnd_type = self.get_opnd_type(opnd);
 
-        if (opnd.is_self) {
-            type_mapping.mapping = MAP_SELF;
-            return type_mapping;
+        match opnd {
+            SelfOpnd => {
+                (SelfMapping, opnd_type)
+            },
+            StackOpnd{ idx } => {
+                let idx = idx as u16;
+                assert!(idx < self.stack_size);
+                let stack_idx = (self.stack_size - 1 - idx) as usize;
+
+                if stack_idx < MAX_TEMP_TYPES {
+                    (self.temp_mapping[stack_idx], opnd_type)
+                }
+                else {
+                    // We can't know the source of this stack operand, so we assume it is
+                    // a stack-only temporary. type will be UNKNOWN
+                    assert!(opnd_type == Type::Unknown);
+                    (StackMapping, opnd_type)
+                }
+            }
         }
-
-        RUBY_ASSERT(opnd.idx < ctx->stack_size);
-        int stack_idx = ctx->stack_size - 1 - opnd.idx;
-
-        if (stack_idx < MAX_TEMP_TYPES) {
-            type_mapping.mapping = ctx->temp_mapping[stack_idx];
-        }
-        else {
-            // We can't know the source of this stack operand, so we assume it is
-            // a stack-only temporary. type will be UNKNOWN
-            RUBY_ASSERT(type_mapping.type.type == ETYPE_UNKNOWN);
-            type_mapping.mapping = MAP_STACK;
-        }
-
-        return type_mapping;
     }
 
+    /*
     /*
     Overwrite both the type and mapping of a stack operand.
     */
@@ -622,46 +604,54 @@ impl Context {
         // Self is the source context (at the end of the predecessor)
         let src = self;
 
-        /*
         // Can only lookup the first version in the chain
-        if (dst->chain_depth != 0)
-            return INT_MAX;
+        if dst.chain_depth != 0 {
+            return usize::MAX;
+        }
 
         // Blocks with depth > 0 always produce new versions
         // Sidechains cannot overlap
-        if (src->chain_depth != 0)
-            return INT_MAX;
+        if src.chain_depth != 0 {
+            return usize::MAX;
+        }
 
-        if (dst->stack_size != src->stack_size)
-            return INT_MAX;
+        if dst.stack_size != src.stack_size {
+            return usize::MAX;
+        }
 
-        if (dst->sp_offset != src->sp_offset)
-            return INT_MAX;
+        if dst.sp_offset != src.sp_offset {
+            return usize::MAX;
+        }
 
         // Difference sum
-        int diff = 0;
+        let mut diff = 0;
 
         // Check the type of self
-        int self_diff = type_diff(src->self_type, dst->self_type);
+        let self_diff = src.self_type.diff(dst.self_type);
 
-        if (self_diff == INT_MAX)
-            return INT_MAX;
+        if self_diff == usize::MAX {
+            return usize::MAX;
+        }
 
         diff += self_diff;
 
         // For each local type we track
-        for (size_t i = 0; i < MAX_LOCAL_TYPES; ++i)
-        {
-            val_type_t t_src = src->local_types[i];
-            val_type_t t_dst = dst->local_types[i];
-            int temp_diff = type_diff(t_src, t_dst);
+        for i in 0..src.local_types.len() {
+            let t_src = src.local_types[i];
+            let t_dst = dst.local_types[i];
+            let temp_diff = t_src.diff(t_dst);
 
-            if (temp_diff == INT_MAX)
-                return INT_MAX;
+            if temp_diff == usize::MAX {
+                return usize::MAX;
+            }
 
             diff += temp_diff;
         }
 
+
+
+
+        /*
         // For each value on the temp stack
         for (size_t i = 0; i < src->stack_size; ++i)
         {
@@ -675,28 +665,26 @@ impl Context {
                     diff += 1;
                 }
                 else {
-                    return INT_MAX;
+                    return usize::MAX;
                 }
             }
             else if (m_dst.mapping.idx != m_src.mapping.idx) {
-                return INT_MAX;
+                return usize::MAX;
             }
 
             int temp_diff = type_diff(m_src.type, m_dst.type);
 
             if (temp_diff == INT_MAX)
-                return INT_MAX;
+                return usize::MAX;
 
             diff += temp_diff;
         }
-
-        return diff;
         */
 
-        unreachable!();
 
 
 
+        return diff;
     }
 }
 
