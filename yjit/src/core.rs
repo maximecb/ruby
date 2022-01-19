@@ -107,15 +107,15 @@ impl Type {
 // self, a local variable or constant so that we can track its type
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TempMapping {
-    StackMapping,               // Normal stack value
-    SelfMapping,                // Temp maps to the self operand
-    LocalMapping { idx: u8 },   // Temp maps to a local variable with index
+    MapToStack,               // Normal stack value
+    MapToSelf,                // Temp maps to the self operand
+    MapToLocal { idx: u8 },   // Temp maps to a local variable with index
     //ConstMapping,             // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
 }
 
 impl Default for TempMapping {
     fn default() -> Self {
-        StackMapping
+        MapToStack
     }
 }
 
@@ -424,13 +424,13 @@ impl Context {
                 let mapping = self.temp_mapping[stack_idx];
 
                 match mapping {
-                    SelfMapping => {
+                    MapToSelf => {
                         self.self_type
                     },
-                    StackMapping => {
+                    MapToStack => {
                         self.temp_types[(self.stack_size - 1 - idx) as usize]
                     },
-                    LocalMapping{idx} => {
+                    MapToLocal{idx} => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
                         return self.local_types[idx as usize]
                     },
@@ -470,13 +470,13 @@ impl Context {
                 let mapping = self.temp_mapping[stack_idx];
 
                 match mapping {
-                    SelfMapping => {
+                    MapToSelf => {
                         self.self_type.upgrade(opnd_type)
                     },
-                    StackMapping => {
+                    MapToStack => {
                         self.temp_types[stack_idx].upgrade(opnd_type)
                     },
-                    LocalMapping{idx} => {
+                    MapToLocal{idx} => {
                         let idx = idx as usize;
                         assert!(idx < MAX_LOCAL_TYPES);
                         self.local_types[idx].upgrade(opnd_type);
@@ -488,7 +488,7 @@ impl Context {
 
     /*
     Get both the type and mapping (where the value originates) of an operand.
-    This is can be used with ctx_stack_push_mapping or ctx_set_opnd_mapping to copy
+    This is can be used with stack_push_mapping or set_opnd_mapping to copy
     a stack value's type while maintaining the mapping.
     */
     fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
@@ -497,7 +497,7 @@ impl Context {
 
         match opnd {
             SelfOpnd => {
-                (SelfMapping, opnd_type)
+                (MapToSelf, opnd_type)
             },
             StackOpnd{ idx } => {
                 let idx = idx as u16;
@@ -511,42 +511,43 @@ impl Context {
                     // We can't know the source of this stack operand, so we assume it is
                     // a stack-only temporary. type will be UNKNOWN
                     assert!(opnd_type == Type::Unknown);
-                    (StackMapping, opnd_type)
+                    (MapToStack, opnd_type)
                 }
             }
         }
     }
 
-    /*
-    /*
-    Overwrite both the type and mapping of a stack operand.
-    */
-    static void
-    ctx_set_opnd_mapping(ctx_t *ctx, insn_opnd_t opnd, temp_type_mapping_t type_mapping)
+    /// Overwrite both the type and mapping of a stack operand.
+    fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
     {
-        // self is always MAP_SELF
-        RUBY_ASSERT(!opnd.is_self);
+        match opnd {
+            SelfOpnd => unreachable!("self always maps to self"),
+            StackOpnd{ idx } => {
+                assert!(idx < self.stack_size);
+                let stack_idx = (self.stack_size - 1 - idx) as usize;
 
-        RUBY_ASSERT(opnd.idx < ctx->stack_size);
-        int stack_idx = ctx->stack_size - 1 - opnd.idx;
+                // FIXME
+                // If type propagation is disabled, store no types
+                //if (rb_yjit_opts.no_type_prop)
+                //    return;
 
-        // If type propagation is disabled, store no types
-        if (rb_yjit_opts.no_type_prop)
-            return;
+                // If outside of tracked range, do nothing
+                if stack_idx >= MAX_TEMP_TYPES {
+                    return;
+                }
 
-        // If outside of tracked range, do nothing
-        if (stack_idx >= MAX_TEMP_TYPES)
-            return;
+                self.temp_mapping[stack_idx] = mapping;
 
-        ctx->temp_mapping[stack_idx] = type_mapping.mapping;
-
-        // Only used when mapping == MAP_STACK
-        ctx->temp_types[stack_idx] = type_mapping.type;
+                // Only used when mapping == MAP_STACK
+                self.temp_types[stack_idx] = opnd_type;
+            }
+        }
     }
-    */
 
     /// Set the type of a local variable
-    fn set_local_type(ctx: &mut Self, local_idx: usize, local_type: Type) {
+    fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
+        let ctx = self;
+
         // FIXME:
         // If type propagation is disabled, store no types
         //if (rb_yjit_opts.no_type_prop)
@@ -559,14 +560,14 @@ impl Context {
         // If any values on the stack map to this local we must detach them
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
-                StackMapping => StackMapping,
-                SelfMapping => SelfMapping,
-                LocalMapping{idx} => {
+                MapToStack => MapToStack,
+                MapToSelf => MapToSelf,
+                MapToLocal{idx} => {
                     if idx as usize == local_idx {
                         ctx.temp_types[i] = ctx.local_types[idx as usize];
-                        StackMapping
+                        MapToStack
                     } else {
-                        LocalMapping{idx}
+                        MapToLocal{idx}
                     }
                 },
             }
@@ -582,11 +583,11 @@ impl Context {
         // locals. Even if local values may have changed, stack values will not.
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
-                StackMapping => StackMapping,
-                SelfMapping => SelfMapping,
-                LocalMapping{idx} => {
+                MapToStack => MapToStack,
+                MapToSelf => MapToSelf,
+                MapToLocal{idx} => {
                     ctx.temp_types[i] = ctx.local_types[idx as usize];
-                    StackMapping
+                    MapToStack
                 },
             }
         }
@@ -648,18 +649,14 @@ impl Context {
             diff += temp_diff;
         }
 
-
-
-
-        /*
         // For each value on the temp stack
-        for (size_t i = 0; i < src->stack_size; ++i)
-        {
-            temp_type_mapping_t m_src = ctx_get_opnd_mapping(src, OPND_STACK(i));
-            temp_type_mapping_t m_dst = ctx_get_opnd_mapping(dst, OPND_STACK(i));
+        for i in 0..src.stack_size {
+            let (src_mapping, src_type) = src.get_opnd_mapping(StackOpnd{idx: i});
+            let (dst_mapping, dst_type) = dst.get_opnd_mapping(StackOpnd{idx: i});
 
-            if (m_dst.mapping.kind != m_src.mapping.kind) {
-                if (m_dst.mapping.kind == TEMP_STACK) {
+            // If the two mappings aren't the same
+            if src_mapping != dst_mapping {
+                if dst_mapping == MapToStack {
                     // We can safely drop information about the source of the temp
                     // stack operand.
                     diff += 1;
@@ -668,21 +665,15 @@ impl Context {
                     return usize::MAX;
                 }
             }
-            else if (m_dst.mapping.idx != m_src.mapping.idx) {
+
+            let temp_diff = src_type.diff(dst_type);
+
+            if temp_diff == usize::MAX {
                 return usize::MAX;
             }
 
-            int temp_diff = type_diff(m_src.type, m_dst.type);
-
-            if (temp_diff == INT_MAX)
-                return usize::MAX;
-
             diff += temp_diff;
         }
-        */
-
-
-
 
         return diff;
     }
@@ -1612,6 +1603,11 @@ mod tests {
     }
 
     fn context() {
-        // TODO: tests for the Context object
+        // Valid src => dst
+        assert_eq!(Context::default().diff(&Context::default()), 0);
+
+
+
+
     }
 }
