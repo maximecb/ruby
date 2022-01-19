@@ -35,6 +35,8 @@ struct dump_config {
     const char *root_category;
     VALUE cur_obj;
     VALUE cur_obj_klass;
+    uintptr_t cur_page;
+    size_t cur_page_slot_size;
     size_t cur_obj_references;
     unsigned int roots: 1;
     unsigned int full_heap: 1;
@@ -336,6 +338,7 @@ dump_object(VALUE obj, struct dump_config *dc)
     rb_io_t *fptr;
     ID flags[RB_OBJ_GC_FLAGS_MAX];
     size_t n, i;
+    struct heap_page *page = (struct heap_page *)dc->cur_page;
 
     if (SPECIAL_CONST_P(obj)) {
         dump_append_special_const(dc, obj);
@@ -359,6 +362,12 @@ dump_object(VALUE obj, struct dump_config *dc)
     dump_append(dc, ", \"type\":\"");
     dump_append(dc, obj_type(obj));
     dump_append(dc, "\"");
+
+    dump_append(dc, ", \"page\":");
+    dump_append_ref(dc, (VALUE)page);
+
+    dump_append(dc, ", \"slot_size\":");
+    dump_append_sizet(dc, dc->cur_page_slot_size);
 
     if (dc->cur_obj_klass) {
         dump_append(dc, ", \"class\":");
@@ -535,9 +544,11 @@ static int
 heap_i(void *vstart, void *vend, size_t stride, void * page, void *data)
 {
     struct dump_config *dc = (struct dump_config *)data;
-    struct heap_page *heap_page = (struct heap_page *)page;
+
     VALUE v = (VALUE)vstart;
     for (; v != (VALUE)vend; v += stride) {
+        dc->cur_page = (uintptr_t)page;
+        dc->cur_page_slot_size = stride;
         void *ptr = asan_poisoned_object_p(v);
         asan_unpoison_object(v, false);
 
