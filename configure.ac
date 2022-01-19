@@ -3707,6 +3707,38 @@ AC_ARG_ENABLE(jit-support,
 
 AC_SUBST(MJIT_SUPPORT)
 
+AC_ARG_ENABLE(yjit,
+        AS_HELP_STRING([--enable-yjit],
+        [enable experimental in-process JIT compiler that requires Rust build tools [default=no]]),
+        [YJIT_SUPPORT=$enableval], [YJIT_SUPPORT=no])
+
+CARGO_BUILD_ARGS=
+YJIT_LIBS=
+AS_CASE(["${YJIT_SUPPORT}"],
+[yes|dev], [
+    AS_IF([test x"$enable_jit_support" = "xno"],
+        AC_MSG_ERROR([--disable-jit-support but --enable-yjit. YJIT requires JIT support])
+    )
+    AC_CHECK_TOOL(CARGO, [cargo], [no])
+    AS_IF([test x"$CARGO" = "xno"],
+        AC_MSG_ERROR([cargo is required. Installation instructions available at https://www.rust-lang.org/tools/install])
+    )
+    AC_CHECK_TOOL(RUSTC, [rustc], [no])
+    AS_IF([test x"$RUSTC" = "xno"],
+        AC_MSG_ERROR([rustc is required. Installation instructions available at https://www.rust-lang.org/tools/install])
+    )
+    AS_IF([test x"$YJIT_SUPPORT" = "xyes"],
+            [rb_rust_target_subdir=release
+             CARGO_BUILD_ARGS=--offline --release],
+            [rb_rust_target_subdir=debug])
+    YJIT_LIBS="yjit/target/${rb_rust_target_subdir}/libyjit.a"
+], [])
+
+AC_SUBST(CARGO)
+AC_SUBST(YJIT_SUPPORT)
+AC_SUBST(CARGO_BUILD_ARGS)
+AC_SUBST(YJIT_LIBS)
+
 AC_ARG_ENABLE(install-static-library,
 	AS_HELP_STRING([--disable-install-static-library], [do not install static ruby library]),
 	[INSTALL_STATIC_LIBRARY=$enableval
@@ -4355,6 +4387,7 @@ config_summary "warnflags"           "$warnflags"
 config_summary "strip command"       "$STRIP"
 config_summary "install doc"         "$DOCTARGETS"
 config_summary "JIT support"         "$MJIT_SUPPORT"
+config_summary "YJIT support"        "$YJIT_SUPPORT"
 config_summary "man page type"       "$MANTYPE"
 config_summary "search path"         "$search_path"
 config_summary "static-linked-ext"   ${EXTSTATIC:+"yes"}

@@ -1237,6 +1237,11 @@ rb_yjit_init(struct rb_yjit_options *options)
         return;
     }
 
+    if (0) {
+        void hello_from_rust(void);
+        hello_from_rust();
+    }
+
     rb_yjit_opts = *options;
     rb_yjit_opts.yjit_enabled = true;
 

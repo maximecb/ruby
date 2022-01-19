@@ -82,6 +82,18 @@ ENC_MK        = enc.mk
 MAKE_ENC      = -f $(ENC_MK) V="$(V)" UNICODE_HDR_DIR="$(UNICODE_HDR_DIR)" \
 		RUBY="$(MINIRUBY)" MINIRUBY="$(MINIRUBY)" $(mflags)
 
+# It's a bit annoying to maintain this list, but seems to be necessary
+# to support different Make implementations?
+# Possible alternative: make libyjit.a rule POHNY and rely on cargo to
+# figure out what's out of date. It seems fast when nothing changes.
+RUST_SOURCE = $(srcdir)/yjit/Cargo.lock $(srcdir)/yjit/Cargo.toml \
+	$(srcdir)/yjit/src/asm/x64/mod.rs \
+	$(srcdir)/yjit/src/codegen.rs \
+	$(srcdir)/yjit/src/core.rs \
+	$(srcdir)/yjit/src/cruby.rs \
+	$(srcdir)/yjit/src/lib.rs \
+	$(empty)
+
 COMMONOBJS    = array.$(OBJEXT) \
 		ast.$(OBJEXT) \
 		bignum.$(OBJEXT) \
@@ -318,7 +330,9 @@ programs: $(PROGRAM) $(WPROGRAM) $(arch)-fake.rb
 
 $(PREP): $(MKFILES)
 
-miniruby$(EXEEXT): config.status $(ALLOBJS) $(ARCHFILE)
+miniruby$(EXEEXT): config.status $(ALLOBJS) $(ARCHFILE) $(YJIT_LIBS)
+
+$(YJIT_LIBS): $(RUST_SOURCE)
 
 objs: $(ALLOBJS)
 
