@@ -2,6 +2,7 @@ use std::rc::{Rc, Weak};
 use crate::cruby::*;
 use crate::asm::x64::*;
 use crate::codegen::*;
+use crate::options::*;
 use InsnOpnd::*;
 use TempMapping::*;
 
@@ -265,6 +266,7 @@ pub struct Block
     // Offsets for GC managed objects in the mainline code block
     gc_object_offsets: Vec<u32>,
 
+    // TODO
     // CME dependencies of this block, to help to remove all pointers to this
     // block in the system.
     //cme_dependency_array_t cme_dependencies;
@@ -445,13 +447,10 @@ impl Context {
     /// propagated back to its source.
     fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
     {
-        // TODO: we need a global for the YJIT options, maybe on options.rs ?
-        /*
         // If type propagation is disabled, store no types
-        if rb_yjit_opts.no_type_prop {
+        if get_option!(no_type_prop) {
             return;
         }
-        */
 
         match opnd {
             SelfOpnd => {
