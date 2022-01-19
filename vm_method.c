@@ -280,7 +280,7 @@ rb_clear_method_cache(VALUE klass_or_module, ID mid)
 void rb_cc_table_free(VALUE klass);
 
 static int
-invalidate_all_cc(void *vstart, void *vend, size_t stride, void *data)
+invalidate_all_cc(void *vstart, void *vend, size_t stride, void * page, void *data)
 {
     VALUE v = (VALUE)vstart;
     for (; v != (VALUE)vend; v += stride) {

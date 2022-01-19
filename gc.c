@@ -3501,7 +3501,8 @@ Init_gc_stress(void)
     gc_stress_set(objspace, ruby_initial_gc_stress);
 }
 
-typedef int each_obj_callback(void *, void *, size_t, void *);
+// this is heap start, heap end, slot size, and data struct pointer
+typedef int each_obj_callback(void *, void *, size_t, void *, void *);
 
 static void objspace_each_objects(rb_objspace_t *objspace, each_obj_callback *callback, void *data, bool protected);
 static void objspace_reachable_objects_from_root(rb_objspace_t *, void (func)(const char *, VALUE, void *), void *);
@@ -3588,7 +3589,7 @@ objspace_each_objects_try(VALUE arg)
             uintptr_t pstart = (uintptr_t)page->start;
             uintptr_t pend = pstart + (page->total_slots * size_pool->slot_size);
 
-            if ((*data->callback)((void *)pstart, (void *)pend, size_pool->slot_size, data->data)) {
+            if ((*data->callback)((void *)pstart, (void *)pend, size_pool->slot_size, page, data->data)) {
                 break;
             }
 
@@ -10256,7 +10257,7 @@ reachable_object_check_moved_i(VALUE ref, void *data)
 }
 
 static int
-heap_check_moved_i(void *vstart, void *vend, size_t stride, void *data)
+heap_check_moved_i(void *vstart, void *vend, size_t stride, void * page, void *data)
 {
     VALUE v = (VALUE)vstart;
     for (; v != (VALUE)vend; v += stride) {

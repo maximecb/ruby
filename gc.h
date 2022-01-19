@@ -129,11 +129,11 @@ int rb_objspace_internal_object_p(VALUE obj);
 int rb_objspace_marked_object_p(VALUE obj);
 
 void rb_objspace_each_objects(
-    int (*callback)(void *start, void *end, size_t stride, void *data),
+    int (*callback)(void *start, void *end, size_t stride, void * page, void *data),
     void *data);
 
 void rb_objspace_each_objects_without_setup(
-    int (*callback)(void *, void *, size_t, void *),
+    int (*callback)(void *, void *, size_t, void *, void *),
     void *data);
 
 RUBY_SYMBOL_EXPORT_END

@@ -4880,7 +4880,7 @@ gen_opt_invokebuiltin_delegate(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static int tracing_invalidate_all_i(void *vstart, void *vend, size_t stride, void *data);
+static int tracing_invalidate_all_i(void *vstart, void *vend, size_t stride, void *page, void *data);
 static void invalidate_all_blocks_for_tracing(const rb_iseq_t *iseq);
 
 // Invalidate all generated code and patch C method return code to contain
@@ -4939,7 +4939,7 @@ rb_yjit_tracing_invalidate_all(void)
 }
 
 static int
-tracing_invalidate_all_i(void *vstart, void *vend, size_t stride, void *data)
+tracing_invalidate_all_i(void *vstart, void *vend, size_t stride, void *page, void *data)
 {
     VALUE v = (VALUE)vstart;
     for (; v != (VALUE)vend; v += stride) {
