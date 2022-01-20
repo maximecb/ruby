@@ -1,10 +1,8 @@
 const YJIT_DEFAULT_CALL_THRESHOLD: usize = 10;
 
-// NOTE: we may want packed storage or some way to specify storage that maps to C?
-// Or we may actually want to use bindgen to export rb_yjit_options from C
-
 // Command-line options
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct Options {
     // Enable compilation with YJIT
     pub yjit_enabled: bool,
@@ -44,9 +42,10 @@ pub static mut OPTIONS: Options = Options {
 
 /// Macro to get an option value by name
 macro_rules! get_option {
+    // Unsafe is ok here because options are initialized
+    // once before any Ruby code executes
     ($option_name:ident) => {
-        unsafe
-        {
+        unsafe {
             OPTIONS.$option_name
         }
     };

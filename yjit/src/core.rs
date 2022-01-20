@@ -38,6 +38,52 @@ impl Default for Type {
 }
 
 impl Type {
+    /// This returns an appropriate Type based on a known value
+    fn from(val: VALUE) -> Type
+    {
+        unreachable!();
+
+        /*
+        if (SPECIAL_CONST_P(val)) {
+            if (FIXNUM_P(val)) {
+                return TYPE_FIXNUM;
+            }
+            else if (NIL_P(val)) {
+                return TYPE_NIL;
+            }
+            else if (val == Qtrue) {
+                return TYPE_TRUE;
+            }
+            else if (val == Qfalse) {
+                return TYPE_FALSE;
+            }
+            else if (STATIC_SYM_P(val)) {
+                return TYPE_STATIC_SYMBOL;
+            }
+            else if (FLONUM_P(val)) {
+                return TYPE_FLONUM;
+            }
+            else {
+                RUBY_ASSERT(false);
+                UNREACHABLE_RETURN(TYPE_IMM);
+            }
+        }
+        else {
+            switch (BUILTIN_TYPE(val)) {
+            case T_ARRAY:
+                return TYPE_ARRAY;
+            case T_HASH:
+                return TYPE_HASH;
+            case T_STRING:
+                return TYPE_STRING;
+            default:
+                // generic heap object
+                return TYPE_HEAP;
+            }
+        }
+        */
+    }
+
     fn is_imm(&self) -> bool {
         match self {
             Type::UnknownImm => true,
@@ -134,7 +180,7 @@ pub enum InsnOpnd {
 Code generation context
 Contains information we can use to optimize code
 */
-#[derive(Default)]
+#[derive(Copy, Clone, Default, Debug)]
 pub struct Context
 {
     // Number of values currently on the temporary stack
@@ -187,9 +233,9 @@ impl CodePtr {
 /// Branch code shape enumeration
 enum BranchShape
 {
-    NEXT0,  // Target 0 is next
-    NEXT1,  // Target 1 is next
-    DEFAULT // Neither target is next
+    Next0,  // Target 0 is next
+    Next1,  // Target 1 is next
+    Default // Neither target is next
 }
 
 // Branch code generation function signature
@@ -275,6 +321,13 @@ pub struct Block
     // Used for block invalidation.
     entry_exit: CodePtr,
 }
+
+/// List of block versions for a given blockid
+type VersionList = Vec<Rc<Block>>;
+
+/// Map from iseq indices to lists of versions for that give blockid
+/// An instance of this is stored on each iseq
+type VersionMap = Vec<VersionList>;
 
 //===========================================================================
 // I put the implementation of traits for core.rs types below
@@ -525,10 +578,10 @@ impl Context {
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
 
-                // FIXME
                 // If type propagation is disabled, store no types
-                //if (rb_yjit_opts.no_type_prop)
-                //    return;
+                if get_option!(no_type_prop) {
+                    return;
+                }
 
                 // If outside of tracked range, do nothing
                 if stack_idx >= MAX_TEMP_TYPES {
@@ -547,10 +600,10 @@ impl Context {
     fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
         let ctx = self;
 
-        // FIXME:
         // If type propagation is disabled, store no types
-        //if (rb_yjit_opts.no_type_prop)
-        //    return;
+        if get_option!(no_type_prop) {
+            return;
+        }
 
         if local_idx < MAX_LOCAL_TYPES {
             return;
@@ -678,62 +731,12 @@ impl Context {
     }
 }
 
-
-
-
-
-
-
-
-
-/*
-/* This returns an appropriate val_type_t based on a known value */
-static val_type_t
-yjit_type_of_value(VALUE val)
-{
-    if (SPECIAL_CONST_P(val)) {
-        if (FIXNUM_P(val)) {
-            return TYPE_FIXNUM;
-        }
-        else if (NIL_P(val)) {
-            return TYPE_NIL;
-        }
-        else if (val == Qtrue) {
-            return TYPE_TRUE;
-        }
-        else if (val == Qfalse) {
-            return TYPE_FALSE;
-        }
-        else if (STATIC_SYM_P(val)) {
-            return TYPE_STATIC_SYMBOL;
-        }
-        else if (FLONUM_P(val)) {
-            return TYPE_FLONUM;
-        }
-        else {
-            RUBY_ASSERT(false);
-            UNREACHABLE_RETURN(TYPE_IMM);
-        }
-    }
-    else {
-        switch (BUILTIN_TYPE(val)) {
-          case T_ARRAY:
-            return TYPE_ARRAY;
-          case T_HASH:
-            return TYPE_HASH;
-          case T_STRING:
-            return TYPE_STRING;
-          default:
-            // generic heap object
-            return TYPE_HEAP;
-        }
-    }
-}
-
 // Get all blocks for a particular place in an iseq.
-static rb_yjit_block_array_t
-yjit_get_version_array(const rb_iseq_t *iseq, unsigned idx)
+fn get_version_list(blockid: BlockId) -> VersionList
 {
+    unimplemented!();
+
+    /*
     struct rb_iseq_constant_body *body = iseq->body;
 
     if (rb_darray_size(body->yjit_blocks) == 0) {
@@ -742,18 +745,21 @@ yjit_get_version_array(const rb_iseq_t *iseq, unsigned idx)
 
     RUBY_ASSERT((unsigned)rb_darray_size(body->yjit_blocks) == body->iseq_size);
     return rb_darray_get(body->yjit_blocks, idx);
+    */
 }
 
 // Count the number of block versions matching a given blockid
-static size_t get_num_versions(blockid_t blockid)
+fn get_num_versions(blockid: BlockId) -> usize
 {
-    return rb_darray_size(yjit_get_version_array(blockid.iseq, blockid.idx));
+    return get_version_list(blockid).len();
 }
 
 // Keep track of a block version. Block should be fully constructed.
-static void
-add_block_version(block_t *block)
+fn add_block_version(block: &mut Block)
 {
+    unimplemented!();
+
+    /*
     const blockid_t blockid = block->blockid;
     const rb_iseq_t *iseq = blockid.iseq;
     struct rb_iseq_constant_body *body = iseq->body;
@@ -810,8 +816,10 @@ add_block_version(block_t *block)
 #if YJIT_STATS
     yjit_runtime_counters.compiled_block_count++;
 #endif
+    */
 }
 
+/*
 static ptrdiff_t
 branch_code_size(const branch_t *branch)
 {
@@ -857,79 +865,102 @@ regenerate_branch(codeblock_t *cb, branch_t *branch)
         // Keep cb->write_pos.
     }
 }
+*/
 
 // Create a new outgoing branch entry for a block
-static branch_t*
-make_branch_entry(block_t *block, const ctx_t *src_ctx, branchgen_fn gen_fn)
-{
-    RUBY_ASSERT(block != NULL);
+fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
 
-    // Allocate and zero-initialize
-    branch_t *branch = calloc(1, sizeof(branch_t));
+    unimplemented!();
 
-    branch->block = block;
-    branch->src_ctx = *src_ctx;
-    branch->gen_fn = gen_fn;
-    branch->shape = SHAPE_DEFAULT;
+    /*
+    let branch = Branch {
+        block: Weak::new(block),
+        src_ctx: *src_ctx,
 
+        gen_fn: gen_fn,
+
+        shape: BranchShape::Default
+
+        // Block this is attached to
+        block: Weak<Block>,
+
+        // Positions where the generated code starts and ends
+        start_addr: CodePtr,
+        end_addr: CodePtr,
+
+        // Context right after the branch instruction
+        src_ctx : Context,
+
+        // Branch target blocks and their contexts
+        targets: [BlockId; 2],
+        target_ctxs: [Context; 2],
+        blocks: [Weak<Block>; 2],
+
+        // Jump target addresses
+        dst_addrs: [CodePtr; 2],
+    };
+    */
+
+    // TODO
     // Add to the list of outgoing branches for the block
-    rb_darray_append(&block->outgoing, branch);
+    //rb_darray_append(&block->outgoing, branch);
 
-    return branch;
+    //return branch;
 }
 
-// Retrieve a basic block version for an (iseq, idx) tuple
-static block_t *
-find_block_version(blockid_t blockid, const ctx_t *ctx)
+/// Retrieve a basic block version for an (iseq, idx) tuple
+/// This will return None if no version is found
+fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<Rc<Block>>
 {
-    rb_yjit_block_array_t versions = yjit_get_version_array(blockid.iseq, blockid.idx);
+    let versions = get_version_list(blockid);
 
     // Best match found
-    block_t *best_version = NULL;
-    int best_diff = INT_MAX;
+    let mut best_version: Option<Rc<Block>> = None;
+    let mut best_diff = usize::MAX;
 
     // For each version matching the blockid
-    rb_darray_for(versions, idx) {
-        block_t *version = rb_darray_get(versions, idx);
-        int diff = ctx_diff(ctx, &version->ctx);
+    for version in versions {
+        let diff = ctx.diff(&version.ctx);
 
         // Note that we always prefer the first matching
-        // version because of inline-cache chains
-        if (diff < best_diff) {
-            best_version = version;
+        // version found because of inline-cache chains
+        if diff < best_diff {
+            best_version = Some(version);
             best_diff = diff;
         }
     }
 
+    // FIXME
+    /*
     // If greedy versioning is enabled
-    if (rb_yjit_opts.greedy_versioning)
-    {
+    if get_option!(greedy_versioning) {
         // If we're below the version limit, don't settle for an imperfect match
-        if ((uint32_t)rb_darray_size(versions) + 1 < rb_yjit_opts.max_versions && best_diff > 0) {
-            return NULL;
+        if versions.len() + 1 < get_option!(max_versions) && best_diff > 0 {
+            return None;
         }
     }
+    */
 
     return best_version;
 }
 
 // Produce a generic context when the block version limit is hit for a blockid
 // Note that this will mutate the ctx argument
-static ctx_t
-limit_block_versions(blockid_t blockid, const ctx_t *ctx)
+fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 {
     // Guard chains implement limits separately, do nothing
-    if (ctx->chain_depth > 0)
+    if ctx.chain_depth > 0 {
         return *ctx;
+    }
 
     // If this block version we're about to add will hit the version limit
-    if (get_num_versions(blockid) + 1 >= rb_yjit_opts.max_versions) {
+    if get_num_versions(blockid) + 1 >= get_option!(max_versions) {
         // Produce a generic context that stores no type information,
         // but still respects the stack_size and sp_offset constraints.
         // This new context will then match all future requests.
-        ctx_t generic_ctx = DEFAULT_CTX;
-        generic_ctx.stack_size = ctx->stack_size;
-        generic_ctx.sp_offset = ctx->sp_offset;
+        let mut generic_ctx = Context::default();
+        generic_ctx.stack_size = ctx.stack_size;
+        generic_ctx.sp_offset = ctx.sp_offset;
 
         // Mutate the incoming context
         return generic_ctx;
@@ -938,9 +969,7 @@ limit_block_versions(blockid_t blockid, const ctx_t *ctx)
     return *ctx;
 }
 
-static void yjit_free_block(block_t *block);
-static void block_array_remove(rb_yjit_block_array_t block_array, block_t *block);
-
+/*
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
 static block_t *
@@ -1027,7 +1056,7 @@ gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_contex
             block_t *const to_free = batch[block_idx];
 
             // Undo add_block_version()
-            rb_yjit_block_array_t versions = yjit_get_version_array(to_free->blockid.iseq, to_free->blockid.idx);
+            rb_yjit_block_array_t versions = yjit_get_version_list(to_free->blockid.iseq, to_free->blockid.idx);
             block_array_remove(versions, to_free);
 
             // Deallocate
@@ -1452,7 +1481,7 @@ invalidate_block_version(block_t *block)
     //fprintf(stderr, "block=%p\n", block);
 
     // Remove this block from the version array
-    rb_yjit_block_array_t versions = yjit_get_version_array(iseq, block->blockid.idx);
+    rb_yjit_block_array_t versions = yjit_get_version_list(iseq, block->blockid.idx);
     block_array_remove(versions, block);
 
     // Get a pointer to the generated code for this block
@@ -1571,16 +1600,12 @@ invalidate_block_version(block_t *block)
 
     // fprintf(stderr, "invalidation done\n");
 }
-
-static void
-yjit_init_core(void)
-{
-    gen_code_for_exit_from_stub();
-}
 */
 
-
-
+fn init_core() {
+    //gen_code_for_exit_from_stub();
+    unimplemented!();
+}
 
 #[cfg(test)]
 mod tests {
@@ -1605,8 +1630,6 @@ mod tests {
         // Valid src => dst
         assert_eq!(Context::default().diff(&Context::default()), 0);
 
-
-
-
+        // TODO: write more tests for Context type diff
     }
 }

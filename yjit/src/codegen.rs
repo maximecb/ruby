@@ -2,8 +2,7 @@ use crate::cruby::*;
 use crate::asm::x64::*;
 use crate::core::*;
 
-
-
+// TODO
 // Callee-saved registers
 //#define REG_CFP R13
 //#define REG_EC R12
@@ -15,8 +14,6 @@ use crate::core::*;
 //#define REG0_8 AL
 //#define REG1 RCX
 //#define REG1_32 ECX
-
-
 
 // Code generation state
 pub struct JITState
@@ -65,15 +62,11 @@ enum CodegenStatus {
 // Code generation function signature
 type CodeGenFn = fn(jit: &JITState, ctx: &Context, cb: &Assembler) -> CodegenStatus;
 
+// TODO: I think we may need an init_codegen method
+// It looks as though the gen_fns array is dynamic,
+// so we may want to use a hash table
+//static codegen_fn gen_fns[VM_INSTRUCTION_SIZE] = { NULL };
 
-
-
-//static void jit_ensure_block_entry_exit(jitstate_t *jit);
-
-//static uint8_t *yjit_entry_prologue(codeblock_t *cb, const rb_iseq_t *iseq);
-
-//static block_t *gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context_t *ec);
-
-//static void gen_code_for_exit_from_stub(void);
-
-//static void yjit_init_codegen(void);
+fn init_codegen()
+{
+}
