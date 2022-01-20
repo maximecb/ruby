@@ -5,21 +5,23 @@
 // RBasic
 // ... and more!
 
-// FIXME: I don't know what the actual value of this constant is
-// I suspect it gets defined while CRuby is being built
-pub const VM_INSTRUCTION_SIZE: usize = 128;
-
-pub struct VALUE(usize);
+pub struct VALUE(pub usize);
 
 // TODO: need constants for
 // Qtrue
 // Qfalse
 // Qnil
 
-// TODO: these could be in a trait for VALUE
+// TODO: these could be in a trait for VALUE ?
 // SPECIAL_CONST_P(val)
 // STATIC_SYM_P(val)
 // FIXNUM_P(val)
 // FLONUM_P(val)
 // NIL_P(val)
 // BUILTIN_TYPE(val)
+
+// TODO: need constants for all the YARV opcodes
+pub const OP_NOP: usize = 0;
+
+// TODO: need the actual value of VM_INSTRUCTION_SIZE
+pub const VM_INSTRUCTION_SIZE: usize = 128;
