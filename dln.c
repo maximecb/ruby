@@ -25,6 +25,20 @@ static void dln_loaderror(const char *format, ...);
 #include "internal.h"
 #include "internal/compilers.h"
 
+/* Only check ABI version for development Ruby. Released versions of Ruby
+ * should guarantee ABI compatibility between patch versions. */
+/* Windows does not support weak symbols so ruby_abi_version will not exist
+ * in the shared library. */
+#if defined(RUBY_DEVEL) && !defined(_WIN32) && !defined(__MINGW32__)
+# define RUBY_DLN_CHECK_ABI
+
+/* Include header files as dependency for dln.c */
+# include "ruby/atomic.h"
+# include "ruby/debug.h"
+# include "ruby/encoding.h"
+# include "ruby/fiber/scheduler.h"
+#endif
+
 #ifdef HAVE_STDLIB_H
 # include <stdlib.h>
 #endif
@@ -394,6 +408,14 @@ dln_load(const char *file)
 {
 #if defined(_WIN32) || defined(USE_DLN_DLOPEN)
     void *handle = dln_open(file);
+
+#ifdef RUBY_DLN_CHECK_ABI
+    unsigned long long (*abi_version_fct)(void) = (unsigned long long(*)(void))dln_sym(handle, "ruby_abi_version");
+    unsigned long long binary_abi_version = (*abi_version_fct)();
+    if (binary_abi_version != ruby_abi_version()) {
+        dln_loaderror("ABI version of binary is incompatible with this Ruby. Try rebuilding this binary.");
+    }
+#endif
 
     char *init_fct_name;
     init_funcname(&init_fct_name, file);
