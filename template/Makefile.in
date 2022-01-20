@@ -388,6 +388,11 @@ prereq: $(srcdir)/$(CONFIGURE)
 incs: id.h
 all-incs: probes.h
 
+generate-abi: PHONY
+	$(Q) $(BASERUBY) $(tooldir)/abi.rb --srcdir="$(srcdir)" --arch_hdrdir="$(arch_hdrdir)"
+
+internal/abi.h: $(tooldir)/abi.rb $(ORDER_ONLY_PREREQ) generate-abi
+
 # Things which should be considered:
 # * with gperf v.s. without gperf
 # * committers may have various versions of gperf

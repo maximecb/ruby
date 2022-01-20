@@ -1108,6 +1108,11 @@ s,@ruby_pc@,$(ruby_pc),;t t
 s,@MJIT_SUPPORT@,$(MJIT_SUPPORT),;t t
 <<KEEP
 
+$(hdrdir)/ruby/internal/abi.h:
+		@echo Creating dummy $@
+		@if not exist $@ touch $@
+internal/abi.h: $(hdrdir)/ruby/internal/abi.h
+
 miniruby: miniruby$(EXEEXT)
 
 miniruby$(EXEEXT):

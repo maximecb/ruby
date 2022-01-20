@@ -95,6 +95,7 @@ lcov*.info
 /exts.mk
 /goruby
 /id.[ch]
+/include/ruby/internal/abi.h
 /largefile.h
 /lcov-c-out
 /lcov-rb-out

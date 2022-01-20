@@ -5,6 +5,8 @@
 # information for ruby (compiler flags, paths, etc.) and is used e.g. by
 # mkmf to build compatible native extensions.
 
+require_relative "abi"
+
 # avoid warnings with -d.
 $install_name ||= nil
 $so_name ||= nil
@@ -339,6 +341,16 @@ print <<EOS
   CONFIG.each_value do |val|
     RbConfig::expand(val)
   end
+
+  #{
+    if versions["PATCHLEVEL"] == "-1"
+      arch_hdrdir = vars.expand("#{vars["EXTOUT"]}/include/#{arch}")
+      abi_version = ABI.new(srcdir: srcdir, arch_hdrdir: arch_hdrdir).version
+      "CONFIG[\"ruby_version\"] << \"+#{abi_version}\""
+    else
+      nil
+    end
+  }
 
   # :nodoc:
   # call-seq:

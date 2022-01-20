@@ -1,4 +1,5 @@
 gnumake = yes
+ORDER_ONLY_PRERREQ = |
 
 ifeq ($(filter Makefile,$(MAKEFILE_LIST)),)
 include Makefile
