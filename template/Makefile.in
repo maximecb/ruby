@@ -392,7 +392,6 @@ generate-abi: PHONY
 	$(Q) $(BASERUBY) $(tooldir)/abi.rb --srcdir="$(srcdir)"
 
 $(hdrdir)/ruby/internal/abi.h: $(tooldir)/abi.rb | generate-abi
-internal/abi.h: $(hdrdir)/ruby/internal/abi.h
 
 # Things which should be considered:
 # * with gperf v.s. without gperf
