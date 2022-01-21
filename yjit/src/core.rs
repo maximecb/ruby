@@ -1,4 +1,5 @@
 use std::rc::{Rc, Weak};
+use std::cell::*;
 use crate::cruby::*;
 use crate::asm::x64::*;
 use crate::codegen::*;
@@ -209,18 +210,15 @@ pub struct Context
 // Tuple of (iseq, idx) used to identify basic blocks
 pub struct BlockId
 {
-    // FIXME: we need a proper pointer type here
-
     // Instruction sequence
-    //const rb_iseq_t *iseq;
-    iseq: usize,
+    pub iseq: IseqPtr,
 
     // Index in the iseq where the block starts
-    idx: usize,
+    pub idx: usize,
 }
 
 // Null block id constant
-pub const BLOCKID_NULL: BlockId = BlockId { iseq: 0, idx: 0 };
+pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
 
 /// Pointer to a piece of machine code
 /// We may later change this to wrap an u32
@@ -246,7 +244,7 @@ type BranchGenFn = fn(cb: &Assembler, target0: CodePtr, target1: CodePtr, shape:
 struct Branch
 {
     // Block this is attached to
-    block: Weak<Block>,
+    block: BlockRef,
 
     // Positions where the generated code starts and ends
     start_addr: CodePtr,
@@ -258,7 +256,7 @@ struct Branch
     // Branch target blocks and their contexts
     targets: [BlockId; 2],
     target_ctxs: [Context; 2],
-    blocks: [Weak<Block>; 2],
+    blocks: [BlockRef; 2],
 
     // Jump target addresses
     dst_addrs: [CodePtr; 2],
@@ -303,10 +301,10 @@ pub struct Block
 
     // List of incoming branches (from predecessors)
     // These are reference counted (ownership shared between predecessor and successors)
-    incoming: Vec<Weak<Branch>>,
+    incoming: Vec<BranchRef>,
 
     // List of outgoing branches (to successors)
-    outgoing: Vec<Rc<Branch>>,
+    outgoing: Vec<BranchRef>,
 
     // FIXME: should these be code pointers instead?
     // Offsets for GC managed objects in the mainline code block
@@ -322,12 +320,51 @@ pub struct Block
     entry_exit: CodePtr,
 }
 
+/// Reference-counted pointer to a branch that can be borrowed mutably
+type BranchRef = Rc<RefCell<Branch>>;
+
+/// Reference-counted pointer to a block that can be borrowed mutably
+type BlockRef = Rc<RefCell<Block>>;
+
 /// List of block versions for a given blockid
-type VersionList = Vec<Rc<Block>>;
+type VersionList = Vec<BlockRef>;
 
 /// Map from iseq indices to lists of versions for that give blockid
 /// An instance of this is stored on each iseq
 type VersionMap = Vec<VersionList>;
+
+/// This is all the data YJIT stored on an iseq
+struct IseqPayload
+{
+    version_map: VersionMap
+}
+
+fn get_version_map(iseq: IseqPtr) -> &'static VersionMap
+{
+    // TODO: add black magic unsafe {} incantation here
+    // Need to access the iseq payload
+    unimplemented!();
+}
+
+// Get all blocks for a particular place in an iseq.
+fn get_version_list(blockid: BlockId) -> &'static VersionList
+{
+    unimplemented!();
+}
+
+// Count the number of block versions matching a given blockid
+fn get_num_versions(blockid: BlockId) -> usize
+{
+    unimplemented!();
+}
+
+
+
+
+
+
+
+
 
 //===========================================================================
 // I put the implementation of traits for core.rs types below
@@ -731,29 +768,6 @@ impl Context {
     }
 }
 
-// Get all blocks for a particular place in an iseq.
-fn get_version_list(blockid: BlockId) -> VersionList
-{
-    unimplemented!();
-
-    /*
-    struct rb_iseq_constant_body *body = iseq->body;
-
-    if (rb_darray_size(body->yjit_blocks) == 0) {
-        return NULL;
-    }
-
-    RUBY_ASSERT((unsigned)rb_darray_size(body->yjit_blocks) == body->iseq_size);
-    return rb_darray_get(body->yjit_blocks, idx);
-    */
-}
-
-// Count the number of block versions matching a given blockid
-fn get_num_versions(blockid: BlockId) -> usize
-{
-    return get_version_list(blockid).len();
-}
-
 // Keep track of a block version. Block should be fully constructed.
 fn add_block_version(block: &mut Block)
 {
@@ -910,28 +924,27 @@ fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -
 
 /// Retrieve a basic block version for an (iseq, idx) tuple
 /// This will return None if no version is found
-fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<Rc<Block>>
+fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
 {
     let versions = get_version_list(blockid);
 
     // Best match found
-    let mut best_version: Option<Rc<Block>> = None;
+    let mut best_version: Option<BlockRef> = None;
     let mut best_diff = usize::MAX;
 
     // For each version matching the blockid
-    for version in versions {
-        let diff = ctx.diff(&version.ctx);
+    for blockref in versions {
+        let block = blockref.borrow();
+        let diff = ctx.diff(&block.ctx);
 
         // Note that we always prefer the first matching
         // version found because of inline-cache chains
         if diff < best_diff {
-            best_version = Some(version);
+            best_version = Some(blockref.clone());
             best_diff = diff;
         }
     }
 
-    // FIXME
-    /*
     // If greedy versioning is enabled
     if get_option!(greedy_versioning) {
         // If we're below the version limit, don't settle for an imperfect match
@@ -939,7 +952,6 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<Rc<Block>>
             return None;
         }
     }
-    */
 
     return best_version;
 }

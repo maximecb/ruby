@@ -7,6 +7,9 @@
 
 pub struct VALUE(pub usize);
 
+/// Pointer to an ISEQ
+pub struct IseqPtr(pub usize);
+
 // TODO: need constants for
 // Qtrue
 // Qfalse
