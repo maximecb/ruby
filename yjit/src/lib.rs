@@ -6,6 +6,8 @@
 
 pub mod asm {
     pub mod x64;
+
+    pub mod x86_64;
 }
 
 // Types we expose from CRuby
