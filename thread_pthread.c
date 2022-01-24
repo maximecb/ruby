@@ -101,6 +101,37 @@
 #  endif
 #endif
 
+static gvl_hook_t * rb_gvl_hooks = NULL;
+
+void
+rb_gvl_event_new(void *callback, uint32_t event) {
+    gvl_hook_t *hook = ALLOC_N(gvl_hook_t, 1);
+    hook->callback = callback;
+    hook->event = event;
+
+    if(!rb_gvl_hooks) {
+        rb_gvl_hooks = hook;
+    } else {
+        hook->next = rb_gvl_hooks;
+        rb_gvl_hooks = hook;
+    }
+}
+
+void
+rb_gvl_execute_hooks(uint32_t event) {
+    if (!rb_gvl_hooks) {
+        return;
+    }
+    gvl_hook_t *h = rb_gvl_hooks;
+    struct gvl_hook_event_args args = {};
+
+    do {
+        if (h->event & event) {
+            (*h->callback)(event, args);
+        }
+    } while((h = h->next));
+}
+
 enum rtimer_state {
     /* alive, after timer_create: */
     RTIMER_DISARM,

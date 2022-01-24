@@ -1,5 +1,6 @@
 #include "ruby/ruby.h"
 #include "ruby/thread.h"
+#include "ruby/thread_native.h"
 
 static void*
 native_sleep_callback(void *data)
@@ -69,10 +70,31 @@ thread_ubf_async_safe(VALUE thread, VALUE notify_fd)
 }
 
 void
+ex_callback(uint32_t e, struct gvl_hook_event_args args) {
+    fprintf(stderr, "calling callback\n");
+}
+
+static VALUE
+thread_register_gvl_callback(VALUE thread) {
+    rb_gvl_event_new(*ex_callback, 0x12);
+
+
+    return Qnil;
+}
+
+static VALUE
+thread_call_gvl_callback(VALUE thread) {
+    rb_gvl_execute_hooks(0x12); 
+    return Qnil;
+}
+
+void
 Init_call_without_gvl(void)
 {
     VALUE mBug = rb_define_module("Bug");
     VALUE klass = rb_define_module_under(mBug, "Thread");
     rb_define_singleton_method(klass, "runnable_sleep", thread_runnable_sleep, 1);
     rb_define_singleton_method(klass, "ubf_async_safe", thread_ubf_async_safe, 1);
+    rb_define_singleton_method(klass, "register_callback", thread_register_gvl_callback, 0);
+    rb_define_singleton_method(klass, "call_callbacks", thread_call_gvl_callback, 0);
 }

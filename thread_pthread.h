@@ -69,6 +69,17 @@ typedef struct rb_global_vm_lock_struct {
     int wait_yield;
 } rb_global_vm_lock_t;
 
+#include <stdint.h>
+
+// TODO: this is going to be the same on Windows so move it somewhere sensible
+typedef struct gvl_hook {
+    rb_gvl_callback callback;
+    uint32_t event;
+
+    struct gvl_hook *next;
+} gvl_hook_t;
+
+#include "ruby/internal/memory.h"
 
 #if __STDC_VERSION__ >= 201112
   #define RB_THREAD_LOCAL_SPECIFIER _Thread_local

@@ -18,5 +18,12 @@ class TestLastThread < Test::Unit::TestCase
       assert_in_delta(1.0, t, 0.16)
     end;
   end
+
+  def test_gvl_instrumentation
+    require '-test-/gvl/call_without_gvl'
+    Bug::Thread::register_callback
+
+    Bug::Thread::call_callbacks
+  end
 end
 
