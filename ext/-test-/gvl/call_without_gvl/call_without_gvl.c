@@ -78,7 +78,7 @@ static gvl_hook_t * single_hook = NULL;
 
 static VALUE
 thread_register_gvl_callback(VALUE thread) {
-    single_hook = rb_gvl_event_new(*ex_callback, 0x12);
+    single_hook = rb_gvl_event_new(*ex_callback, RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER);
 
     return Qnil;
 }
@@ -95,7 +95,7 @@ thread_unregister_gvl_callback(VALUE thread) {
 
 static VALUE
 thread_call_gvl_callback(VALUE thread) {
-    rb_gvl_execute_hooks(0x12);
+    rb_gvl_execute_hooks(RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER, 1);
     return Qnil;
 }
 
@@ -103,7 +103,7 @@ static VALUE
 thread_register_and_unregister_gvl_callback(VALUE thread) {
     gvl_hook_t * hooks[5];
     for (int i = 0; i < 5; i++) {
-        hooks[i] = rb_gvl_event_new(*ex_callback, 0x12);
+        hooks[i] = rb_gvl_event_new(*ex_callback, RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER);
     }
 
     if (!rb_gvl_event_delete(hooks[4])) return Qfalse;

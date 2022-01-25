@@ -201,26 +201,24 @@ void rb_native_cond_initialize(rb_nativethread_cond_t *cond);
  */
 void rb_native_cond_destroy(rb_nativethread_cond_t *cond);
 
-#include <stdint.h>
-struct gvl_hook_event_args {
-    //
-};
-#include <stdint.h>
+typedef struct gvl_hook_event_args {
+    unsigned long waiting;
+} gvl_hook_event_args_t;
 
-typedef void (*rb_gvl_callback)(uint32_t event, struct gvl_hook_event_args args);
+typedef void (*rb_gvl_callback)(uint32_t event, gvl_hook_event_args_t args);
 
 // TODO: this is going to be the same on Windows so move it somewhere sensible
 typedef struct gvl_hook {
     rb_gvl_callback callback;
-    uint32_t event;
+    rb_event_flag_t event;
 
     struct gvl_hook *next;
 } gvl_hook_t;
 
 #include "ruby/internal/memory.h"
 
-gvl_hook_t * rb_gvl_event_new(void *callback, uint32_t event);
+gvl_hook_t * rb_gvl_event_new(void *callback, rb_event_flag_t event);
 bool rb_gvl_event_delete(gvl_hook_t * hook);
-void rb_gvl_execute_hooks(uint32_t event);
+void rb_gvl_execute_hooks(rb_event_flag_t event, unsigned long waiting);
 RBIMPL_SYMBOL_EXPORT_END()
 #endif
