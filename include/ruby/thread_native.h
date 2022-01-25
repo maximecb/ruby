@@ -205,8 +205,22 @@ void rb_native_cond_destroy(rb_nativethread_cond_t *cond);
 struct gvl_hook_event_args {
     //
 };
+#include <stdint.h>
+
 typedef void (*rb_gvl_callback)(uint32_t event, struct gvl_hook_event_args args);
-void rb_gvl_event_new(void *callback, uint32_t event);
+
+// TODO: this is going to be the same on Windows so move it somewhere sensible
+typedef struct gvl_hook {
+    rb_gvl_callback callback;
+    uint32_t event;
+
+    struct gvl_hook *next;
+} gvl_hook_t;
+
+#include "ruby/internal/memory.h"
+
+gvl_hook_t * rb_gvl_event_new(void *callback, uint32_t event);
+bool rb_gvl_event_delete(gvl_hook_t * hook);
 void rb_gvl_execute_hooks(uint32_t event);
 RBIMPL_SYMBOL_EXPORT_END()
 #endif

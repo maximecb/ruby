@@ -103,7 +103,7 @@
 
 static gvl_hook_t * rb_gvl_hooks = NULL;
 
-void
+gvl_hook_t *
 rb_gvl_event_new(void *callback, uint32_t event) {
     gvl_hook_t *hook = ALLOC_N(gvl_hook_t, 1);
     hook->callback = callback;
@@ -115,6 +115,28 @@ rb_gvl_event_new(void *callback, uint32_t event) {
         hook->next = rb_gvl_hooks;
         rb_gvl_hooks = hook;
     }
+    return hook;
+}
+
+bool
+rb_gvl_event_delete(gvl_hook_t * hook) {
+    if (rb_gvl_hooks == hook) {
+        rb_gvl_hooks = hook->next;
+        ruby_xfree(hook);
+        return TRUE;
+    }
+    
+    gvl_hook_t *h = rb_gvl_hooks;
+
+    do {
+        if (h->next == hook) {
+            h->next = hook->next;
+            ruby_xfree(hook);
+            return TRUE;
+        }
+    } while ((h = h->next));
+
+    return FALSE;
 }
 
 void

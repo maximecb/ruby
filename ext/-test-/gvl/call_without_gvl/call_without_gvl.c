@@ -74,18 +74,44 @@ ex_callback(uint32_t e, struct gvl_hook_event_args args) {
     fprintf(stderr, "calling callback\n");
 }
 
+static gvl_hook_t * single_hook = NULL;
+
 static VALUE
 thread_register_gvl_callback(VALUE thread) {
-    rb_gvl_event_new(*ex_callback, 0x12);
+    single_hook = rb_gvl_event_new(*ex_callback, 0x12);
 
+    return Qnil;
+}
+
+static VALUE
+thread_unregister_gvl_callback(VALUE thread) {
+    if (single_hook) {
+        rb_gvl_event_delete(single_hook);
+        single_hook = NULL;
+    }
 
     return Qnil;
 }
 
 static VALUE
 thread_call_gvl_callback(VALUE thread) {
-    rb_gvl_execute_hooks(0x12); 
+    rb_gvl_execute_hooks(0x12);
     return Qnil;
+}
+
+static VALUE
+thread_register_and_unregister_gvl_callback(VALUE thread) {
+    gvl_hook_t * hooks[5];
+    for (int i = 0; i < 5; i++) {
+        hooks[i] = rb_gvl_event_new(*ex_callback, 0x12);
+    }
+
+    if (!rb_gvl_event_delete(hooks[4])) return Qfalse;
+    if (!rb_gvl_event_delete(hooks[0])) return Qfalse;
+    if (!rb_gvl_event_delete(hooks[3])) return Qfalse;
+    if (!rb_gvl_event_delete(hooks[2])) return Qfalse;
+    if (!rb_gvl_event_delete(hooks[1])) return Qfalse;
+    return Qtrue;
 }
 
 void
@@ -96,5 +122,7 @@ Init_call_without_gvl(void)
     rb_define_singleton_method(klass, "runnable_sleep", thread_runnable_sleep, 1);
     rb_define_singleton_method(klass, "ubf_async_safe", thread_ubf_async_safe, 1);
     rb_define_singleton_method(klass, "register_callback", thread_register_gvl_callback, 0);
+    rb_define_singleton_method(klass, "unregister_callback", thread_unregister_gvl_callback, 0);
+    rb_define_singleton_method(klass, "register_and_unregister_callbacks", thread_register_and_unregister_gvl_callback, 0);
     rb_define_singleton_method(klass, "call_callbacks", thread_call_gvl_callback, 0);
 }

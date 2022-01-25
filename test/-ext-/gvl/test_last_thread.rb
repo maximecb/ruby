@@ -23,7 +23,16 @@ class TestLastThread < Test::Unit::TestCase
     require '-test-/gvl/call_without_gvl'
     Bug::Thread::register_callback
 
-    Bug::Thread::call_callbacks
+    begin
+      Bug::Thread::call_callbacks
+    ensure
+      Bug::Thread::unregister_callback
+    end
+  end
+
+  def test_gvl_instrumentation_unregister
+    require '-test-/gvl/call_without_gvl'
+    assert Bug::Thread::register_and_unregister_callbacks
   end
 end
 
