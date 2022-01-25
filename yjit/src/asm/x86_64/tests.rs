@@ -458,3 +458,342 @@ int main(int argc, char** argv)
     return 0;
 }
 */
+
+
+
+
+
+/*
+#[cfg(test)]
+mod tests {
+    use crate::asm::x64::*;
+
+    impl Assembler {
+        fn byte_string(&self) -> String {
+            self.encoded()
+                .into_iter()
+                .map(|byte| format!("{:02x}", byte))
+                .collect::<Vec<_>>()
+                .join(" ")
+        }
+    }
+
+    macro_rules! test_encoding {
+        ($bytes:literal $($disasm:literal, $mnemonic:ident ($args:expr))+) => {{
+            let mut asm = Assembler::new();
+
+            $( asm.$mnemonic($args); )*
+
+            assert_eq!($bytes, asm.byte_string());
+
+            // In case we have a disassembler, compare against a disassembly expectation
+            #[cfg(feature = "disassembly")]
+            {
+                extern crate capstone;
+                use capstone::prelude::*;
+                let cs = Capstone::new()
+                    .x86()
+                    .mode(arch::x86::ArchMode::Mode64)
+                    .syntax(arch::x86::ArchSyntax::Intel)
+                    .build()
+                    .expect("Failed to create Capstone object");
+
+                let insns = cs
+                    .disasm_all(asm.encoded(), 0x1000)
+                    .expect("Failed to disassemble");
+
+                let mut insn_idx = 0;
+                $(
+                    match insns.as_ref().get(insn_idx).map(|insn| (insn.mnemonic(), insn.op_str())) {
+                        Some((Some(mnemonic), op_str)) => {
+                            let mut capstone_disasm = mnemonic.to_owned();
+                            if let Some(op_str) = op_str {
+                                capstone_disasm.push_str(" ");
+                                capstone_disasm.push_str(op_str);
+                            }
+                            assert_eq!($disasm, capstone_disasm, "instruction_index={}", insn_idx);
+                        },
+                        _ => panic!("Failed to disassemble to a instruction at instruction_index={}", insn_idx),
+                    };
+                    insn_idx += 1;
+                    let _ = insn_idx; // Address unused warning from the last iteration
+                )*
+
+            }
+        }};
+    }
+
+    /*
+    #[test]
+    fn reg_to_reg_movs() {
+        let mut asm = Assembler::new();
+
+        // 64b
+        asm.mov(RAX.into(), RBX.into());
+        asm.mov(R8.into(), RBX.into());
+        asm.mov(RDI.into(), R14.into());
+        asm.mov(R13.into(), R15.into());
+
+        // 32b
+        asm.mov(EBP.into(), EDI.into());
+        asm.mov(R8D.into(), EBX.into());
+        asm.mov(EBP.into(), R9D.into());
+        asm.mov(R8D.into(), R11D.into());
+
+        // 16b (panics at the moment)
+        // asm.mov(AX.into(), CX.into());
+
+        let bytes = asm.byte_string();
+        assert_eq!(
+            "48 8b c3 4c 8b c3 49 8b fe 4d 8b ef 8b ef 44 8b c3 41 8b e9 45 8b c3",
+            bytes
+        );
+    }
+
+    #[test]
+    fn sar() {
+        let mut asm = Assembler::new();
+
+        // 64b
+        asm.sar(RAX.into(), 1.into());
+        asm.sar(R9.into(), 1.into());
+
+        // 32b
+        asm.sar(RDI.into(), 1.into());
+        asm.sar(R10D.into(), 1.into());
+
+        // TODO: write panic tests
+
+        assert_eq!("48 d1 f8 49 d1 f9 48 d1 ff 41 d1 fa", asm.byte_string());
+    }
+    */
+
+    #[test]
+    fn shl_and_sal() {
+        test_encoding!(
+            "48 c1 e0 02 48 d1 e1 49 d1 e7 49 c1 e3 03 49 d1 e4 49 c1 e4 02 49 d1 e5 49 c1 e5 03"
+            "shl rax, 2",  shl((RAX, 2))
+            "shl rcx, 1",  shl((RCX, 1))
+
+            "shl r15, 1",  shl((R15, 1))
+            "shl r11, 3",  shl((R11, 3))
+
+            "shl r12, 1",  shl((R12, 1))
+            "shl r12, 2",  shl((R12, 2))
+
+            "shl r13, 1",  shl((R13, 1))
+            "shl r13, 3",  shl((R13, 3))
+        );
+    }
+
+    #[test]
+    fn test() {
+        // reg64, imm32
+        test_encoding!(
+            "48 a9 ff ff ff 7f 49 f7 c3 fe ca ab 0f 48 f7 c7 02 35 54 f0 49 f7 c0 ff ff ff ff"
+            "test rax, 0x7fffffff",  test((RAX, i32::MAX))
+            "test r11, 0xfabcafe",   test((R11, 0xFABCAFE))
+            "test rdi, -0xfabcafe",  test((RDI, -0xFABCAFE))
+            "test r8, -1",           test((R8, -1))
+        );
+
+        // reg32, imm32
+        test_encoding!(
+            "f7 c7 ff ff ff ff 41 f7 c1 fe ca ab 0f f7 c7 ef be ad de 41 f7 c1 ff ff ff ff"
+            "test edi, 0xffffffff", test((EDI, u32::MAX))
+            "test r9d, 0xfabcafe", test((R9D, 0xFABCAFE))
+            "test edi, 0xdeadbeef", test((EDI, 0xDEADBEEF))
+            "test r9d, 0xffffffff", test((R9D, u32::MAX))
+        );
+
+        // reg64, reg64
+        test_encoding!(
+            "48 85 d0 4c 85 d9 49 85 dc 4d 85 f7"
+            "test rax, rdx", test((RAX, RDX))
+            "test rcx, r11", test((RCX, R11))
+            "test r12, rbx", test((R12, RBX))
+            "test r15, r14", test((R15, R14))
+        );
+
+        // reg32, reg32
+        test_encoding!(
+            "85 d0 44 85 d9 41 85 dc 45 85 f7"
+            "test eax, edx", test((EAX, EDX))
+            "test ecx, r11d", test((ECX, R11D))
+            "test r12d, ebx", test((R12D, EBX))
+            "test r15d, r14d", test((R15D, R14D))
+        )
+
+        // TODO: write panic tests
+    }
+
+    #[test]
+    fn test_rmm_r() {
+        test_encoding!(
+            "48 85 40 80"
+            "test qword ptr [rax - 0x80], rax",
+            test((mem64(RAX, i8::MIN.into()), RAX))
+        );
+
+        test_encoding!(
+            "49 85 44 24 80"
+            "test qword ptr [r12 - 0x80], rax",
+            test((mem64(R12, i8::MIN.into()), RAX))
+        );
+
+        test_encoding!(
+            "4d 85 6d 80"
+            "test qword ptr [r13 - 0x80], r13",
+            test((mem64(R13, i8::MIN.into()), R13))
+        );
+
+        // FIXME: Buggy encoding. These registers require a REX prefix.
+        test_encoding!(
+            "84 f0 84 f8 84 e8 84 e0"
+            "test al, sil", test((AL, SIL))
+            "test al, dil", test((AL, DIL))
+            "test al, bpl", test((AL, BPL))
+            "test al, spl", test((AL, SPL))
+        );
+    }
+
+    #[test]
+    fn test_with_memory() {
+        test_encoding!(
+            "48 f7 40 80 ff ff ff 7f"
+            "test qword ptr [rax - 0x80], 0x7fffffff",
+            test((mem64(RAX, i8::MIN.into()), i32::MAX))
+        );
+
+        test_encoding!(
+            "49 f7 45 7f ff ff ff 7f"
+            "test qword ptr [r13 + 0x7f], 0x7fffffff",
+            test((mem64(R13, i8::MAX.into()), i32::MAX))
+        );
+
+        test_encoding!(
+            "48 f7 44 24 80 00 00 00 80"
+            "test qword ptr [rsp - 0x80], -0x80000000",
+            test((mem64(RSP, i8::MIN.into()), i32::MIN))
+        );
+
+        // RSP, RBP, R12 and R13 are special because the lower part of their regiser id
+        // are escape codes in the ModR/M byte.
+        test_encoding!(
+            "48 f7 04 24 ff ff ff 7f 49 f7 04 24 00 00 00 80 \
+             48 f7 45 00 ff ff ff 7f 49 f7 45 00 00 00 00 80"
+
+            "test qword ptr [rsp], 0x7fffffff", test((mem64(RSP, 0), i32::MAX))
+            "test qword ptr [r12], -0x80000000", test((mem64(R12, 0), i32::MIN))
+
+            "test qword ptr [rbp], 0x7fffffff", test((mem64(RBP, 0), i32::MAX))
+            "test qword ptr [r13], -0x80000000", test((mem64(R13, 0), i32::MIN))
+        );
+
+        test_encoding!(
+            "49 f7 84 24 80 00 00 00 01 00 00 00"
+            "test qword ptr [r12 + 0x80], 1",
+            test((mem64(R12, 1 + i32::from(i8::MAX)), 1))
+        );
+
+        test_encoding!(
+            "48 f7 84 24 7f ff ff ff fe ca ab 0f"
+            "test qword ptr [rsp - 0x81], 0xfabcafe",
+            test((mem64(RSP, i32::from(i8::MIN) - 1), 0xfabcafe))
+        );
+    }
+
+    #[test]
+    fn push() {
+        test_encoding!(
+            "50 41 54 41 55"
+            "push rax", push(RAX)
+            "push r12", push(R12)
+            "push r13", push(R13)
+        );
+    }
+
+    #[test]
+    fn pop() {
+        test_encoding!(
+            "58 41 5c 41 5d"
+            "pop rax", pop(RAX)
+            "pop r12", pop(R12)
+            "pop r13", pop(R13)
+        );
+    }
+
+    #[test]
+    fn randoms() {
+        test_encoding!(
+            "ff e0 41 ff e0 ff 21 41 ff 63 f6"
+            "jmp rax", jmp(RAX)
+            "jmp r8", jmp(R8)
+            "jmp qword ptr [rcx]", jmp(mem64(RCX, 0))
+            "jmp qword ptr [r11 - 0xa]", jmp(mem64(R11, -0xa))
+        );
+
+        test_encoding!(
+            "f6 d0 f7 d0 48 f7 d0 49 f7 d0"
+            "not al", not(AL)
+            "not eax", not(EAX)
+            "not rax", not(RAX)
+            "not r8", not(R8)
+        );
+
+        test_encoding!(
+            "ff d0 41 ff d0 ff 11 41 ff 53 f6"
+            "call rax", call(RAX)
+            "call r8", call(R8)
+            "call qword ptr [rcx]", call(mem64(RCX, 0))
+            "call qword ptr [r11 - 0xa]", call(mem64(R11, -0xa))
+        );
+    }
+
+    #[test]
+    fn mov() {
+        test_encoding!(
+            "b0 00 b8 fe ca ab 0f 41 b8 fe ca ab 0f 48 b8 ff ff ff ff ff ff ff ff 49 bf 00 00 00 00 01 00 00 00"
+            "mov al, 0", mov((AL, 0))
+            "mov eax, 0xfabcafe", mov((EAX, 0xfabcafe))
+            "mov r8d, 0xfabcafe", mov((R8D, 0xfabcafe))
+            "movabs rax, 0xffffffffffffffff", mov((RAX, u64::MAX))
+            "movabs r15, 0x100000000", mov((R15, u64::from(u32::MAX)+1))
+        );
+    }
+
+    #[test]
+    fn mov_load_8b() {
+        test_encoding!(
+            "45 88 bf 00 ff ff ff"
+
+            "mov byte ptr [r15 - 0x100], r15b", mov((mem8(R15, -0x100), R15B))
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "disassembly")]
+    fn basic_capstone_usage() -> Result<(), capstone::Error> {
+        // Test drive Capstone with simple input
+        extern crate capstone;
+        use capstone::prelude::*;
+        let cs = Capstone::new()
+            .x86()
+            .mode(arch::x86::ArchMode::Mode64)
+            .syntax(arch::x86::ArchSyntax::Intel)
+            .build()?;
+
+        let insns = cs.disasm_all(&[0xCC], 0x1000)?;
+
+        match insns.as_ref() {
+            [insn] => {
+                assert_eq!(Some("int3"), insn.mnemonic());
+                Ok(())
+            }
+            _ => Err(capstone::Error::CustomError(
+                "expected to disassemble to int3",
+            )),
+        }
+    }
+}
+*/

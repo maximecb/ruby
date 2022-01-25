@@ -5,8 +5,6 @@
 #![allow(unused_assignments)]
 
 pub mod asm {
-    pub mod x64;
-
     pub mod x86_64;
 }
 
