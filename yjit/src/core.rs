@@ -15,7 +15,7 @@ const MAX_LOCAL_TYPES: usize = 8;
 
 // Represent the type of a value (local/stack/self) in YJIT
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
-pub enum Type {
+pub enum ValType {
     Unknown,
     UnknownImm,
     UnknownHeap,
@@ -32,15 +32,15 @@ pub enum Type {
 }
 
 // Default initialization
-impl Default for Type {
+impl Default for ValType {
     fn default() -> Self {
-        Type::Unknown
+        ValType::Unknown
     }
 }
 
-impl Type {
-    /// This returns an appropriate Type based on a known value
-    fn from(val: VALUE) -> Type
+impl ValType {
+    /// This returns an appropriate ValType based on a known value
+    fn from(val: VALUE) -> ValType
     {
         todo!();
 
@@ -87,24 +87,24 @@ impl Type {
 
     fn is_imm(&self) -> bool {
         match self {
-            Type::UnknownImm => true,
-            Type::Nil => true,
-            Type::True => true,
-            Type::False => true,
-            Type::Fixnum => true,
-            Type::Flonum => true,
-            Type::ImmSymbol => true,
+            ValType::UnknownImm => true,
+            ValType::Nil => true,
+            ValType::True => true,
+            ValType::False => true,
+            ValType::Fixnum => true,
+            ValType::Flonum => true,
+            ValType::ImmSymbol => true,
             _ => false,
         }
     }
 
     fn is_heap(&self) -> bool {
         match self {
-            Type::UnknownHeap => true,
-            Type::Array => true,
-            Type::Hash => true,
-            Type::HeapSymbol => true,
-            Type::String => true,
+            ValType::UnknownHeap => true,
+            ValType::Array => true,
+            ValType::Hash => true,
+            ValType::HeapSymbol => true,
+            ValType::String => true,
             _ => false,
         }
     }
@@ -123,17 +123,17 @@ impl Type {
         }
 
         // Any type can flow into an unknown type
-        if dst == Type::Unknown {
+        if dst == ValType::Unknown {
             return 1;
         }
 
         // Specific heap type into unknown heap type is imperfect but valid
-        if self.is_heap() && dst == Type::UnknownHeap {
+        if self.is_heap() && dst == ValType::UnknownHeap {
             return 1;
         }
 
         // Specific type into unknown immediate type is imperfect but valid
-        if self.is_imm() && dst == Type::UnknownImm {
+        if self.is_imm() && dst == ValType::UnknownImm {
             return 1;
         }
 
@@ -195,13 +195,13 @@ pub struct Context
     chain_depth: u8,
 
     // Local variable types we keep track of
-    local_types: [Type; MAX_LOCAL_TYPES],
+    local_types: [ValType; MAX_LOCAL_TYPES],
 
     // Temporary variable types we keep track of
-    temp_types: [Type; MAX_TEMP_TYPES],
+    temp_types: [ValType; MAX_TEMP_TYPES],
 
-    // Type we track for self
-    self_type: Type,
+    // ValType we track for self
+    self_type: ValType,
 
     // Mapping of temp stack entries to types we track
     temp_mapping: [TempMapping; MAX_TEMP_TYPES],
@@ -444,103 +444,85 @@ impl Context {
         return mem_opnd(64, REG_SP, offset);
     }
 
-    /*
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
-    static x86opnd_t
-    ctx_stack_push_mapping(ctx_t *ctx, temp_type_mapping_t mapping)
+    fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, ValType)) -> X86Opnd
     {
         // If type propagation is disabled, store no types
-        if (rb_yjit_opts.no_type_prop) {
-            mapping.type = TYPE_UNKNOWN;
+        if get_option!(no_type_prop) {
+            return self.stack_push_mapping((mapping, ValType::Unknown));
         }
+
+        let stack_size = self.stack_size as usize;
 
         // Keep track of the type and mapping of the value
-        if (ctx->stack_size < MAX_TEMP_TYPES) {
-            ctx->temp_mapping[ctx->stack_size] = mapping.mapping;
-            ctx->temp_types[ctx->stack_size] = mapping.type;
+        if stack_size < MAX_TEMP_TYPES {
+            self.temp_mapping[stack_size] = mapping;
+            self.temp_types[stack_size] = temp_type;
 
-            RUBY_ASSERT(mapping.mapping.kind != TEMP_LOCAL || mapping.mapping.idx < MAX_LOCAL_TYPES);
-            RUBY_ASSERT(mapping.mapping.kind != TEMP_STACK || mapping.mapping.idx == 0);
-            RUBY_ASSERT(mapping.mapping.kind != TEMP_SELF || mapping.mapping.idx == 0);
-        }
-
-        ctx->stack_size += 1;
-        ctx->sp_offset += 1;
-
-        // SP points just above the topmost value
-        int32_t offset = (ctx->sp_offset - 1) * sizeof(VALUE);
-        return mem_opnd(64, REG_SP, offset);
-    }
-
-    /*
-    Push one new value on the temp stack
-    Return a pointer to the new stack top
-    */
-    static x86opnd_t
-    ctx_stack_push(ctx_t *ctx, val_type_t type)
-    {
-        temp_type_mapping_t mapping = { MAP_STACK, type };
-        return ctx_stack_push_mapping(ctx, mapping);
-    }
-
-    /*
-    Push the self value on the stack
-    */
-    static x86opnd_t
-    ctx_stack_push_self(ctx_t *ctx)
-    {
-        temp_type_mapping_t mapping = { MAP_SELF, TYPE_UNKNOWN };
-        return ctx_stack_push_mapping(ctx, mapping);
-    }
-
-    /*
-    Push a local variable on the stack
-    */
-    static x86opnd_t
-    ctx_stack_push_local(ctx_t *ctx, size_t local_idx)
-    {
-        if (local_idx >= MAX_LOCAL_TYPES) {
-            return ctx_stack_push(ctx, TYPE_UNKNOWN);
-        }
-
-        temp_type_mapping_t mapping = {
-            (temp_mapping_t){ .kind = TEMP_LOCAL, .idx = local_idx },
-            TYPE_UNKNOWN
-        };
-
-        return ctx_stack_push_mapping(ctx, mapping);
-    }
-
-    /*
-    Pop N values off the stack
-    Return a pointer to the stack top before the pop operation
-    */
-    static x86opnd_t
-    ctx_stack_pop(ctx_t *ctx, size_t n)
-    {
-        RUBY_ASSERT(n <= ctx->stack_size);
-
-        // SP points just above the topmost value
-        int32_t offset = (ctx->sp_offset - 1) * sizeof(VALUE);
-        x86opnd_t top = mem_opnd(64, REG_SP, offset);
-
-        // Clear the types of the popped values
-        for (size_t i = 0; i < n; ++i)
-        {
-            size_t idx = ctx->stack_size - i - 1;
-            if (idx < MAX_TEMP_TYPES) {
-                ctx->temp_types[idx] = TYPE_UNKNOWN;
-                ctx->temp_mapping[idx] = MAP_STACK;
+            if let MapToLocal { idx } = mapping {
+                assert!((idx as usize) < MAX_LOCAL_TYPES);
             }
         }
 
-        ctx->stack_size -= n;
-        ctx->sp_offset -= n;
+        self.stack_size += 1;
+        self.sp_offset += 1;
+
+        // SP points just above the topmost value
+        let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
+        return mem_opnd(64, REG_SP, offset);
+    }
+
+    /// Push one new value on the temp stack
+    /// Return a pointer to the new stack top
+    fn stack_push(&mut self, val_type: ValType) -> X86Opnd
+    {
+        return self.stack_push_mapping((MapToStack, val_type));
+    }
+
+    /// Push the self value on the stack
+    fn stack_push_self(&mut self) -> X86Opnd
+    {
+        return self.stack_push_mapping((MapToSelf, ValType::Unknown));
+    }
+
+    /// Push a local variable on the stack
+    fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd
+    {
+        if local_idx >= MAX_LOCAL_TYPES {
+            return self.stack_push(ValType::Unknown);
+        }
+
+        return self.stack_push_mapping(
+            (MapToLocal{ idx: local_idx as u8 }, ValType::Unknown)
+        );
+    }
+
+    // Pop N values off the stack
+    // Return a pointer to the stack top before the pop operation
+    fn stack_pop(&mut self, n: usize) -> X86Opnd
+    {
+        assert!(n <= self.stack_size.into());
+
+        // SP points just above the topmost value
+        let offset = ((self.sp_offset as i32) - 1) * (SIZEOF_VALUE as i32);
+        let top = mem_opnd(64, REG_SP, offset);
+
+        // Clear the types of the popped values
+        for i in 0..n {
+            let idx = ((self.stack_size as usize) - i - 1) as usize;
+
+            if idx < MAX_TEMP_TYPES {
+                self.temp_types[idx] = ValType::Unknown;
+                self.temp_mapping[idx] = MapToStack;
+            }
+        }
+
+        self.stack_size -= n as u16;
+        self.sp_offset -= n as i16;
 
         return top;
     }
-    */
 
     /// Get an operand pointing to a slot on the temp stack
     fn stack_opnd(&self, idx: i32) -> X86Opnd
@@ -552,7 +534,7 @@ impl Context {
     }
 
     /// Get the type of an instruction operand
-    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
+    fn get_opnd_type(&self, opnd: InsnOpnd) -> ValType
     {
         match opnd {
             SelfOpnd => {
@@ -565,7 +547,7 @@ impl Context {
 
                 // If outside of tracked range, do nothing
                 if stack_idx >= MAX_TEMP_TYPES {
-                    return Type::Unknown;
+                    return ValType::Unknown;
                 }
 
                 let mapping = self.temp_mapping[stack_idx];
@@ -590,7 +572,7 @@ impl Context {
     /// This value must be compatible and at least as specific as the previously known type.
     /// If this value originated from self, or an lvar, the learned type will be
     /// propagated back to its source.
-    fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
+    fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: ValType)
     {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
@@ -635,7 +617,7 @@ impl Context {
     This is can be used with stack_push_mapping or set_opnd_mapping to copy
     a stack value's type while maintaining the mapping.
     */
-    fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
+    fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, ValType)
     {
         let opnd_type = self.get_opnd_type(opnd);
 
@@ -654,7 +636,7 @@ impl Context {
                 else {
                     // We can't know the source of this stack operand, so we assume it is
                     // a stack-only temporary. type will be UNKNOWN
-                    assert!(opnd_type == Type::Unknown);
+                    assert!(opnd_type == ValType::Unknown);
                     (MapToStack, opnd_type)
                 }
             }
@@ -662,7 +644,7 @@ impl Context {
     }
 
     /// Overwrite both the type and mapping of a stack operand.
-    fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
+    fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, ValType))
     {
         match opnd {
             SelfOpnd => unreachable!("self always maps to self"),
@@ -689,7 +671,7 @@ impl Context {
     }
 
     /// Set the type of a local variable
-    fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
+    fn set_local_type(&mut self, local_idx: usize, local_type: ValType) {
         let ctx = self;
 
         // If type propagation is disabled, store no types
@@ -737,7 +719,7 @@ impl Context {
         }
 
         // Clear the local types
-        ctx.local_types = [Type::default(); MAX_LOCAL_TYPES];
+        ctx.local_types = [ValType::default(); MAX_LOCAL_TYPES];
     }
 
     /// Compute a difference score for two context objects
@@ -1622,16 +1604,16 @@ mod tests {
     #[test]
     fn types() {
         // Valid src => dst
-        assert_eq!(Type::Unknown.diff(Type::Unknown), 0);
-        assert_eq!(Type::UnknownImm.diff(Type::UnknownImm), 0);
-        assert_ne!(Type::UnknownImm.diff(Type::Unknown), usize::MAX);
-        assert_ne!(Type::Fixnum.diff(Type::Unknown), usize::MAX);
-        assert_ne!(Type::Fixnum.diff(Type::UnknownImm), usize::MAX);
+        assert_eq!(ValType::Unknown.diff(ValType::Unknown), 0);
+        assert_eq!(ValType::UnknownImm.diff(ValType::UnknownImm), 0);
+        assert_ne!(ValType::UnknownImm.diff(ValType::Unknown), usize::MAX);
+        assert_ne!(ValType::Fixnum.diff(ValType::Unknown), usize::MAX);
+        assert_ne!(ValType::Fixnum.diff(ValType::UnknownImm), usize::MAX);
 
         // Invalid src => dst
-        assert_eq!(Type::Unknown.diff(Type::UnknownImm), usize::MAX);
-        assert_eq!(Type::Unknown.diff(Type::Fixnum), usize::MAX);
-        assert_eq!(Type::Fixnum.diff(Type::UnknownHeap), usize::MAX);
+        assert_eq!(ValType::Unknown.diff(ValType::UnknownImm), usize::MAX);
+        assert_eq!(ValType::Unknown.diff(ValType::Fixnum), usize::MAX);
+        assert_eq!(ValType::Fixnum.diff(ValType::UnknownHeap), usize::MAX);
     }
 
     fn context() {
