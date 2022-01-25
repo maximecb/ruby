@@ -1443,6 +1443,8 @@ st_update(st_table *tab, st_data_t key,
         }
         break;
     }
+    RB_GC_GUARD(key);
+    RB_GC_GUARD(value);
     return existing;
 }
 

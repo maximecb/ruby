@@ -1050,6 +1050,10 @@ ar_update(VALUE hash, st_data_t key,
         }
         break;
     }
+
+    RB_GC_GUARD(key);
+    RB_GC_GUARD(value);
+
     return existing;
 }
 
