@@ -102,6 +102,7 @@
 #endif
 
 static gvl_hook_t * rb_gvl_hooks = NULL;
+static pthread_rwlock_t rb_gvl_hooks_rw_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 gvl_hook_t *
 rb_gvl_event_new(void *callback, uint32_t event) {
@@ -109,34 +110,48 @@ rb_gvl_event_new(void *callback, uint32_t event) {
     hook->callback = callback;
     hook->event = event;
 
-    if(!rb_gvl_hooks) {
-        rb_gvl_hooks = hook;
-    } else {
-        hook->next = rb_gvl_hooks;
-        rb_gvl_hooks = hook;
+    if (pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock)) {
+        // TODO: better way to deal with error?
+        ruby_xfree(hook);
+        return NULL;
     }
+
+    hook->next = rb_gvl_hooks;
+    ATOMIC_PTR_EXCHANGE(rb_gvl_hooks, hook);
+
+    pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock);
     return hook;
 }
 
 bool
 rb_gvl_event_delete(gvl_hook_t * hook) {
-    if (rb_gvl_hooks == hook) {
-        rb_gvl_hooks = hook->next;
-        ruby_xfree(hook);
-        return TRUE;
+    if (pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock)) {
+        // TODO: better way to deal with error?
+        return FALSE;
     }
-    
-    gvl_hook_t *h = rb_gvl_hooks;
 
-    do {
-        if (h->next == hook) {
-            h->next = hook->next;
-            ruby_xfree(hook);
-            return TRUE;
-        }
-    } while ((h = h->next));
+    bool success = FALSE;
 
-    return FALSE;
+    if (rb_gvl_hooks == hook) {
+        ATOMIC_PTR_EXCHANGE(rb_gvl_hooks, hook->next);
+        success = TRUE;
+    } else {
+        gvl_hook_t *h = rb_gvl_hooks;
+
+        do {
+            if (h->next == hook) {
+                h->next = hook->next;
+                success = TRUE;
+            }
+        } while ((h = h->next));
+    }
+
+    pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock);
+
+    if (success) {
+        ruby_xfree(hook);
+    }
+    return success;
 }
 
 void
@@ -144,6 +159,12 @@ rb_gvl_execute_hooks(uint32_t event) {
     if (!rb_gvl_hooks) {
         return;
     }
+
+    if (pthread_rwlock_rdlock(&rb_gvl_hooks_rw_lock)) {
+        // TODO: better way to deal with error?
+        return;
+    }
+
     gvl_hook_t *h = rb_gvl_hooks;
     struct gvl_hook_event_args args = {};
 
@@ -152,6 +173,8 @@ rb_gvl_execute_hooks(uint32_t event) {
             (*h->callback)(event, args);
         }
     } while((h = h->next));
+
+    pthread_rwlock_unlock(&rb_gvl_hooks_rw_lock);
 }
 
 enum rtimer_state {
@@ -697,6 +720,8 @@ static void native_thread_init(rb_thread_t *th);
 void
 Init_native_thread(rb_thread_t *th)
 {
+    pthread_rwlock_init(&rb_gvl_hooks_rw_lock, NULL);
+
 #if defined(HAVE_PTHREAD_CONDATTR_SETCLOCK)
     if (condattr_monotonic) {
         int r = pthread_condattr_init(condattr_monotonic);
