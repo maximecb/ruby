@@ -13,8 +13,8 @@ struct LabelRef
     label_idx: usize,
 }
 
-// Block of executable memory into which instructions can be written
-struct CodeBlock
+// Block of memory into which instructions can be written
+pub struct Assembler
 {
     // TODO: can we use some kind of vec mapped to a memory region?
 
@@ -49,7 +49,7 @@ struct CodeBlock
     dropped_bytes: bool
 }
 
-enum RegType
+pub enum RegType
 {
     GP,
     //FP,
@@ -57,7 +57,7 @@ enum RegType
     IP,
 }
 
-struct X86Reg
+pub struct X86Reg
 {
     // Size in bits
     num_bits: u8,
@@ -69,7 +69,7 @@ struct X86Reg
     reg_no: u8,
 }
 
-struct X86Mem
+pub struct X86Mem
 {
     // Size in bits
     num_bits: u8,
@@ -83,22 +83,14 @@ struct X86Mem
     /// SIB scale exponent value (power of two, two bits)
     scale_exp: u8,
 
-    // TODO: should this be here, or should we have an extra operand type?
-    // Probably should have an X86IPRel type
-    /// IP-relative addressing flag
-    //bool is_iprel;
-
     /// Constant displacement from the base, not scaled
     disp: u32,
 }
 
-enum X86Opnd
+pub enum X86Opnd
 {
     // Dummy operand
     None,
-
-    // Memory location
-    Mem(X86Mem),
 
     // Signed immediate
     Imm(i64),
@@ -108,33 +100,39 @@ enum X86Opnd
 
     // General-purpose register
     Reg(X86Reg),
+
+    // Memory location
+    Mem(X86Mem),
+
+    // IP-relative memory location
+    IPRel(i32)
 }
 
 // Dummy none/null operand
-//static const x86opnd_t NO_OPND = { OPND_NONE, 0, .as.imm = 0 };
+//pub const x86opnd_t NO_OPND = { OPND_NONE, 0, .as.imm = 0 };
 
 // Instruction pointer
-const RIP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::IP, reg_no:5 });
+pub const RIP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::IP, reg_no:5 });
+
+// 64-bit GP registers
+pub const RAX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:0 });
+pub const RCX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:1 });
+pub const RDX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:2 });
+pub const RBX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:3 });
+pub const RSP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:4 });
+pub const RBP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:5 });
+pub const RSI: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:6 });
+pub const RDI: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:7 });
+pub const R8: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:8 });
+pub const R9: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:9 });
+pub const R10: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:10 });
+pub const R11: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:11 });
+pub const R12: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:12 });
+pub const R13: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:13 });
+pub const R14: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:14 });
+pub const R15: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:15 });
 
 /*
-// 64-bit GP registers
-static const x86opnd_t RAX = { OPND_REG, 64, .as.reg = { REG_GP, 0 }};
-static const x86opnd_t RCX = { OPND_REG, 64, .as.reg = { REG_GP, 1 }};
-static const x86opnd_t RDX = { OPND_REG, 64, .as.reg = { REG_GP, 2 }};
-static const x86opnd_t RBX = { OPND_REG, 64, .as.reg = { REG_GP, 3 }};
-static const x86opnd_t RSP = { OPND_REG, 64, .as.reg = { REG_GP, 4 }};
-static const x86opnd_t RBP = { OPND_REG, 64, .as.reg = { REG_GP, 5 }};
-static const x86opnd_t RSI = { OPND_REG, 64, .as.reg = { REG_GP, 6 }};
-static const x86opnd_t RDI = { OPND_REG, 64, .as.reg = { REG_GP, 7 }};
-static const x86opnd_t R8  = { OPND_REG, 64, .as.reg = { REG_GP, 8 }};
-static const x86opnd_t R9  = { OPND_REG, 64, .as.reg = { REG_GP, 9 }};
-static const x86opnd_t R10 = { OPND_REG, 64, .as.reg = { REG_GP, 10 }};
-static const x86opnd_t R11 = { OPND_REG, 64, .as.reg = { REG_GP, 11 }};
-static const x86opnd_t R12 = { OPND_REG, 64, .as.reg = { REG_GP, 12 }};
-static const x86opnd_t R13 = { OPND_REG, 64, .as.reg = { REG_GP, 13 }};
-static const x86opnd_t R14 = { OPND_REG, 64, .as.reg = { REG_GP, 14 }};
-static const x86opnd_t R15 = { OPND_REG, 64, .as.reg = { REG_GP, 15 }};
-
 // 32-bit GP registers
 static const x86opnd_t EAX  = { OPND_REG, 32, .as.reg = { REG_GP, 0 }};
 static const x86opnd_t ECX  = { OPND_REG, 32, .as.reg = { REG_GP, 1 }};
@@ -188,19 +186,12 @@ static const x86opnd_t R12B = { OPND_REG, 8, .as.reg = { REG_GP, 12 }};
 static const x86opnd_t R13B = { OPND_REG, 8, .as.reg = { REG_GP, 13 }};
 static const x86opnd_t R14B = { OPND_REG, 8, .as.reg = { REG_GP, 14 }};
 static const x86opnd_t R15B = { OPND_REG, 8, .as.reg = { REG_GP, 15 }};
-
-// C argument registers
-#define C_ARG_REGS ( (x86opnd_t[]){ RDI, RSI, RDX, RCX, R8, R9 } )
 */
 
+// C argument registers
+pub const C_ARG_REGS: [X86Opnd; 6] = [RDI, RSI, RDX, RCX, R8, R9];
+
 /*
-// Compute the number of bits needed to store a signed or unsigned value
-static uint32_t sig_imm_size(int64_t imm);
-static uint32_t unsig_imm_size(uint64_t imm);
-
-// Memory operand with base register and displacement/offset
-static x86opnd_t mem_opnd(uint32_t num_bits, x86opnd_t base_reg, int32_t disp);
-
 // Scale-index-base memory operand
 //static x86opnd_t mem_opnd_sib(uint32_t num_bits, x86opnd_t base_reg, x86opnd_t index_reg, int32_t scale, int32_t disp);
 
@@ -237,7 +228,7 @@ static x86opnd_t const_ptr_opnd(const void *ptr);
 */
 
 // Compute the number of bits needed to encode a signed value
-fn sig_imm_size(imm: i64) -> usize
+pub fn sig_imm_size(imm: i64) -> usize
 {
     // Compute the smallest size this immediate fits in
     if imm >= i8::MIN.into() && imm <= i8::MAX.into() {
@@ -253,23 +244,28 @@ fn sig_imm_size(imm: i64) -> usize
     return 64;
 }
 
-/*
 // Compute the number of bits needed to encode an unsigned value
-uint32_t unsig_imm_size(uint64_t imm)
+pub fn unsig_imm_size(imm: u64) -> usize
 {
     // Compute the smallest size this immediate fits in
-    if (imm <= UINT8_MAX)
+    if imm <= u8::MAX.into() {
         return 8;
-    else if (imm <= UINT16_MAX)
+    }
+    else if imm <= u16::MAX.into() {
         return 16;
-    else if (imm <= UINT32_MAX)
+    }
+    else if imm <= u32::MAX.into() {
         return 32;
+    }
 
     return 64;
 }
 
-x86opnd_t mem_opnd(uint32_t num_bits, x86opnd_t base_reg, int32_t disp)
+pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
 {
+    todo!();
+
+    /*
     bool is_iprel = base_reg.as.reg.reg_type == REG_IP;
 
     x86opnd_t opnd = {
@@ -279,8 +275,10 @@ x86opnd_t mem_opnd(uint32_t num_bits, x86opnd_t base_reg, int32_t disp)
     };
 
     return opnd;
+    */
 }
 
+/*
 static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 {
     assert (num_bits % 8 == 0);
@@ -288,9 +286,13 @@ static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
     sub.num_bits = num_bits;
     return sub;
 }
+*/
 
-x86opnd_t imm_opnd(int64_t imm)
+fn imm_opnd(imm: i64) -> X86Opnd
 {
+    todo!();
+
+    /*
     x86opnd_t opnd = {
         OPND_IMM,
         sig_imm_size(imm),
@@ -298,8 +300,10 @@ x86opnd_t imm_opnd(int64_t imm)
     };
 
     return opnd;
+    */
 }
 
+/*
 x86opnd_t const_ptr_opnd(const void *ptr)
 {
     x86opnd_t opnd = {
@@ -409,210 +413,217 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
     return NULL;
 #endif
 }
+*/
 
-// Initialize a code block object
-void cb_init(codeblock_t *cb, uint8_t *mem_block, uint32_t mem_size)
+impl Assembler
 {
-    assert (mem_block);
-    cb->mem_block_ = mem_block;
-    cb->mem_size = mem_size;
-    cb->write_pos = 0;
-    cb->num_labels = 0;
-    cb->num_refs = 0;
-    cb->current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
-}
-
-// Set the current write position
-void cb_set_pos(codeblock_t *cb, uint32_t pos)
-{
-    // Assert here since while assembler functions do bounds checking, there is
-    // nothing stopping users from taking out an out-of-bounds pointer and
-    // doing bad accesses with it.
-    assert (pos < cb->mem_size);
-    cb->write_pos = pos;
-}
-
-// Align the current write position to a multiple of bytes
-void cb_align_pos(codeblock_t *cb, uint32_t multiple)
-{
-    // Compute the pointer modulo the given alignment boundary
-    uint8_t *ptr = cb_get_write_ptr(cb);
-    uint8_t *aligned_ptr = align_ptr(ptr, multiple);
-    const uint32_t write_pos = cb->write_pos;
-
-    // Pad the pointer by the necessary amount to align it
-    ptrdiff_t pad = aligned_ptr - ptr;
-    cb_set_pos(cb, write_pos + (int32_t)pad);
-}
-
-// Set the current write position from a pointer
-void cb_set_write_ptr(codeblock_t *cb, uint8_t *code_ptr)
-{
-    intptr_t pos = code_ptr - cb->mem_block_;
-    assert (pos < cb->mem_size);
-    cb_set_pos(cb, (uint32_t)pos);
-}
-
-// Get a direct pointer into the executable memory block
-uint8_t *cb_get_ptr(const codeblock_t *cb, uint32_t index)
-{
-    if (index < cb->mem_size) {
-        return &cb->mem_block_[index];
-    }
-    else {
-        return NULL;
-    }
-}
-
-// Get a direct pointer to the current write position
-uint8_t *cb_get_write_ptr(const codeblock_t *cb)
-{
-    return cb_get_ptr(cb, cb->write_pos);
-}
-
-// Write a byte at the current position
-void cb_write_byte(codeblock_t *cb, uint8_t byte)
-{
-    assert (cb->mem_block_);
-    if (cb->write_pos < cb->mem_size) {
-        cb_mark_position_writeable(cb, cb->write_pos);
-        cb->mem_block_[cb->write_pos] = byte;
-        cb->write_pos++;
-    }
-    else {
-        cb->dropped_bytes = true;
-    }
-}
-
-// Write multiple bytes starting from the current position
-void cb_write_bytes(codeblock_t *cb, uint32_t num_bytes, ...)
-{
-    va_list va;
-    va_start(va, num_bytes);
-
-    for (uint32_t i = 0; i < num_bytes; ++i)
+    /*
+    // Initialize a code block object
+    void cb_init(codeblock_t *cb, uint8_t *mem_block, uint32_t mem_size)
     {
-        uint8_t byte = va_arg(va, int);
-        cb_write_byte(cb, byte);
+        assert (mem_block);
+        cb->mem_block_ = mem_block;
+        cb->mem_size = mem_size;
+        cb->write_pos = 0;
+        cb->num_labels = 0;
+        cb->num_refs = 0;
+        cb->current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
     }
 
-    va_end(va);
-}
+    // Set the current write position
+    void cb_set_pos(codeblock_t *cb, uint32_t pos)
+    {
+        // Assert here since while assembler functions do bounds checking, there is
+        // nothing stopping users from taking out an out-of-bounds pointer and
+        // doing bad accesses with it.
+        assert (pos < cb->mem_size);
+        cb->write_pos = pos;
+    }
 
-// Write a signed integer over a given number of bits at the current position
-void cb_write_int(codeblock_t *cb, uint64_t val, uint32_t num_bits)
-{
-    assert (num_bits > 0);
-    assert (num_bits % 8 == 0);
+    // Align the current write position to a multiple of bytes
+    void cb_align_pos(codeblock_t *cb, uint32_t multiple)
+    {
+        // Compute the pointer modulo the given alignment boundary
+        uint8_t *ptr = cb_get_write_ptr(cb);
+        uint8_t *aligned_ptr = align_ptr(ptr, multiple);
+        const uint32_t write_pos = cb->write_pos;
 
-    // Switch on the number of bits
-    switch (num_bits) {
-      case 8:
-        cb_write_byte(cb, (uint8_t)val);
-        break;
+        // Pad the pointer by the necessary amount to align it
+        ptrdiff_t pad = aligned_ptr - ptr;
+        cb_set_pos(cb, write_pos + (int32_t)pad);
+    }
 
-      case 16:
-        cb_write_bytes(
-            cb,
-            2,
-            (uint8_t)((val >> 0) & 0xFF),
-            (uint8_t)((val >> 8) & 0xFF)
-        );
-        break;
+    // Set the current write position from a pointer
+    void cb_set_write_ptr(codeblock_t *cb, uint8_t *code_ptr)
+    {
+        intptr_t pos = code_ptr - cb->mem_block_;
+        assert (pos < cb->mem_size);
+        cb_set_pos(cb, (uint32_t)pos);
+    }
 
-      case 32:
-        cb_write_bytes(
-            cb,
-            4,
-            (uint8_t)((val >>  0) & 0xFF),
-            (uint8_t)((val >>  8) & 0xFF),
-            (uint8_t)((val >> 16) & 0xFF),
-            (uint8_t)((val >> 24) & 0xFF)
-        );
-        break;
+    // Get a direct pointer into the executable memory block
+    uint8_t *cb_get_ptr(const codeblock_t *cb, uint32_t index)
+    {
+        if (index < cb->mem_size) {
+            return &cb->mem_block_[index];
+        }
+        else {
+            return NULL;
+        }
+    }
 
-      default:
+    // Get a direct pointer to the current write position
+    uint8_t *cb_get_write_ptr(const codeblock_t *cb)
+    {
+        return cb_get_ptr(cb, cb->write_pos);
+    }
+
+    // Write a byte at the current position
+    void cb_write_byte(codeblock_t *cb, uint8_t byte)
+    {
+        assert (cb->mem_block_);
+        if (cb->write_pos < cb->mem_size) {
+            cb_mark_position_writeable(cb, cb->write_pos);
+            cb->mem_block_[cb->write_pos] = byte;
+            cb->write_pos++;
+        }
+        else {
+            cb->dropped_bytes = true;
+        }
+    }
+
+    // Write multiple bytes starting from the current position
+    void cb_write_bytes(codeblock_t *cb, uint32_t num_bytes, ...)
+    {
+        va_list va;
+        va_start(va, num_bytes);
+
+        for (uint32_t i = 0; i < num_bytes; ++i)
         {
-            // Compute the size in bytes
-            uint32_t num_bytes = num_bits / 8;
+            uint8_t byte = va_arg(va, int);
+            cb_write_byte(cb, byte);
+        }
 
-            // Write out the bytes
-            for (uint32_t i = 0; i < num_bytes; ++i)
+        va_end(va);
+    }
+
+    // Write a signed integer over a given number of bits at the current position
+    void cb_write_int(codeblock_t *cb, uint64_t val, uint32_t num_bits)
+    {
+        assert (num_bits > 0);
+        assert (num_bits % 8 == 0);
+
+        // Switch on the number of bits
+        switch (num_bits) {
+        case 8:
+            cb_write_byte(cb, (uint8_t)val);
+            break;
+
+        case 16:
+            cb_write_bytes(
+                cb,
+                2,
+                (uint8_t)((val >> 0) & 0xFF),
+                (uint8_t)((val >> 8) & 0xFF)
+            );
+            break;
+
+        case 32:
+            cb_write_bytes(
+                cb,
+                4,
+                (uint8_t)((val >>  0) & 0xFF),
+                (uint8_t)((val >>  8) & 0xFF),
+                (uint8_t)((val >> 16) & 0xFF),
+                (uint8_t)((val >> 24) & 0xFF)
+            );
+            break;
+
+        default:
             {
-                uint8_t byte_val = (uint8_t)(val & 0xFF);
-                cb_write_byte(cb, byte_val);
-                val >>= 8;
+                // Compute the size in bytes
+                uint32_t num_bytes = num_bits / 8;
+
+                // Write out the bytes
+                for (uint32_t i = 0; i < num_bytes; ++i)
+                {
+                    uint8_t byte_val = (uint8_t)(val & 0xFF);
+                    cb_write_byte(cb, byte_val);
+                    val >>= 8;
+                }
             }
         }
     }
-}
 
-// Allocate a new label with a given name
-uint32_t cb_new_label(codeblock_t *cb, const char *name)
-{
-    //if (hasASM)
-    //    writeString(to!string(label) ~ ":");
-
-    assert (cb->num_labels < MAX_LABELS);
-
-    // Allocate the new label
-    uint32_t label_idx = cb->num_labels++;
-
-    // This label doesn't have an address yet
-    cb->label_addrs[label_idx] = 0;
-    cb->label_names[label_idx] = name;
-
-    return label_idx;
-}
-
-// Write a label at the current address
-void cb_write_label(codeblock_t *cb, uint32_t label_idx)
-{
-    assert (label_idx < MAX_LABELS);
-    cb->label_addrs[label_idx] = cb->write_pos;
-}
-
-// Add a label reference at the current write position
-void cb_label_ref(codeblock_t *cb, uint32_t label_idx)
-{
-    assert (label_idx < MAX_LABELS);
-    assert (cb->num_refs < MAX_LABEL_REFS);
-
-    // Keep track of the reference
-    cb->label_refs[cb->num_refs] = (labelref_t){ cb->write_pos, label_idx };
-    cb->num_refs++;
-}
-
-// Link internal label references
-void cb_link_labels(codeblock_t *cb)
-{
-    uint32_t orig_pos = cb->write_pos;
-
-    // For each label reference
-    for (uint32_t i = 0; i < cb->num_refs; ++i)
+    // Allocate a new label with a given name
+    uint32_t cb_new_label(codeblock_t *cb, const char *name)
     {
-        uint32_t ref_pos = cb->label_refs[i].pos;
-        uint32_t label_idx = cb->label_refs[i].label_idx;
-        assert (ref_pos < cb->mem_size);
-        assert (label_idx < MAX_LABELS);
+        //if (hasASM)
+        //    writeString(to!string(label) ~ ":");
 
-        uint32_t label_addr = cb->label_addrs[label_idx];
-        assert (label_addr < cb->mem_size);
+        assert (cb->num_labels < MAX_LABELS);
 
-        // Compute the offset from the reference's end to the label
-        int64_t offset = (int64_t)label_addr - (int64_t)(ref_pos + 4);
+        // Allocate the new label
+        uint32_t label_idx = cb->num_labels++;
 
-        cb_set_pos(cb, ref_pos);
-        cb_write_int(cb, offset, 32);
+        // This label doesn't have an address yet
+        cb->label_addrs[label_idx] = 0;
+        cb->label_names[label_idx] = name;
+
+        return label_idx;
     }
 
-    cb->write_pos = orig_pos;
+    // Write a label at the current address
+    void cb_write_label(codeblock_t *cb, uint32_t label_idx)
+    {
+        assert (label_idx < MAX_LABELS);
+        cb->label_addrs[label_idx] = cb->write_pos;
+    }
 
-    // Clear the label positions and references
-    cb->num_labels = 0;
-    cb->num_refs = 0;
+    // Add a label reference at the current write position
+    void cb_label_ref(codeblock_t *cb, uint32_t label_idx)
+    {
+        assert (label_idx < MAX_LABELS);
+        assert (cb->num_refs < MAX_LABEL_REFS);
+
+        // Keep track of the reference
+        cb->label_refs[cb->num_refs] = (labelref_t){ cb->write_pos, label_idx };
+        cb->num_refs++;
+    }
+
+    // Link internal label references
+    void cb_link_labels(codeblock_t *cb)
+    {
+        uint32_t orig_pos = cb->write_pos;
+
+        // For each label reference
+        for (uint32_t i = 0; i < cb->num_refs; ++i)
+        {
+            uint32_t ref_pos = cb->label_refs[i].pos;
+            uint32_t label_idx = cb->label_refs[i].label_idx;
+            assert (ref_pos < cb->mem_size);
+            assert (label_idx < MAX_LABELS);
+
+            uint32_t label_addr = cb->label_addrs[label_idx];
+            assert (label_addr < cb->mem_size);
+
+            // Compute the offset from the reference's end to the label
+            int64_t offset = (int64_t)label_addr - (int64_t)(ref_pos + 4);
+
+            cb_set_pos(cb, ref_pos);
+            cb_write_int(cb, offset, 32);
+        }
+
+        cb->write_pos = orig_pos;
+
+        // Clear the label positions and references
+        cb->num_labels = 0;
+        cb->num_refs = 0;
+    }
+    */
 }
 
+/*
 // Check if an operand needs a REX byte to be encoded
 static bool rex_needed(x86opnd_t opnd)
 {
@@ -1275,15 +1286,16 @@ void cqo(codeblock_t *cb)
     cb_write_bytes(cb, 2, 0x48, 0x99);
 }
 #endif
+*/
 
-#if 0
 /// Interrupt 3 - trap to debugger
-void int3(codeblock_t *cb)
+fn int3(cb: &Assembler)
 {
+    todo!();
+
     //cb.writeASM("INT 3");
-    cb_write_byte(cb, 0xCC);
+    //cb_write_byte(cb, 0xCC);
 }
-#endif
 
 /*
 // div - Unsigned integer division
@@ -1383,6 +1395,7 @@ void imul(CodeBlock cb, X86Opnd opnd0, X86Opnd opnd1, X86Opnd opnd2)
 }
 */
 
+/*
 /// jcc - relative jumps to a label
 //void ja_label  (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "ja"  , 0x0F, 0x87, label_idx); }
 //void jae_label (codeblock_t *cb, uint32_t label_idx) { cb_write_jcc(cb, "jae" , 0x0F, 0x83, label_idx); }

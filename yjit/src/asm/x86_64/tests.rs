@@ -2,11 +2,37 @@
 
 use crate::asm::x86_64::*;
 
-// use crate::asm::x64::*;
+#[test]
+#[cfg(feature = "disassembly")]
+fn basic_capstone_usage() -> Result<(), capstone::Error> {
+    // Test drive Capstone with simple input
+    extern crate capstone;
+    use capstone::prelude::*;
+    let cs = Capstone::new()
+        .x86()
+        .mode(arch::x86::ArchMode::Mode64)
+        .syntax(arch::x86::ArchSyntax::Intel)
+        .build()?;
+
+    let insns = cs.disasm_all(&[0xCC], 0x1000)?;
+
+    match insns.as_ref() {
+        [insn] => {
+            assert_eq!(Some("int3"), insn.mnemonic());
+            Ok(())
+        }
+        _ => Err(capstone::Error::CustomError(
+            "expected to disassemble to int3",
+        )),
+    }
+}
 
 /// just as a sandbox for playing around
 #[test]
-fn sandbox() {}
+fn sandbox() {
+
+
+}
 
 /*
 // Print the bytes in a code block
@@ -367,7 +393,9 @@ void run_assembler_tests(void)
 
     printf("Assembler tests done\n");
 }
+*/
 
+/*
 void assert_equal(int expected, int actual)
 {
     if (expected != actual) {

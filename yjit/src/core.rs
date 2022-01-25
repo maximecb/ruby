@@ -1,7 +1,7 @@
 use std::rc::{Rc, Weak};
 use std::cell::*;
 use crate::cruby::*;
-use crate::asm::x64::*;
+use crate::asm::x86_64::*;
 use crate::codegen::*;
 use crate::options::*;
 use InsnOpnd::*;
@@ -333,17 +333,39 @@ type VersionList = Vec<BlockRef>;
 /// An instance of this is stored on each iseq
 type VersionMap = Vec<VersionList>;
 
-/// This is all the data YJIT stored on an iseq
+/// This is all the data YJIT stores on an iseq
+/// This will be dynamically allocated by C code
+/// C code should pass an &mut IseqPayload to us
+/// when calling into YJIT
 struct IseqPayload
 {
     version_map: VersionMap
 }
 
-fn get_version_map(iseq: IseqPtr) -> &'static VersionMap
+impl IseqPayload {
+    fn get_version_map(&self) -> &VersionMap {
+        &self.version_map
+    }
+}
+
+/*
+// Alan says, C code can just pass us a borrowed IseqPayload mutably
+fn get_iseq_payload(iseq: IseqPtr) -> &'static IseqPayload
 {
     // TODO: add black magic unsafe {} incantation here
     // Need to access the iseq payload
     unimplemented!();
+}
+*/
+
+// Alan says 'static should go on the lifetime of IseqPayload
+// and these should be methods on IseqPayload
+
+fn get_version_map(iseq: IseqPtr) -> &'static VersionMap
+{
+    // TODO: add black magic unsafe {} incantation here
+    // Need to access the iseq payload
+    todo!();
 }
 
 // Get all blocks for a particular place in an iseq.
@@ -376,14 +398,13 @@ fn get_num_versions(blockid: BlockId) -> usize
 //static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Context {
-    /*
     /// Get an operand for the adjusted stack pointer address
-    sp_opnd(ctx_t *ctx, int32_t offset_bytes) -> x86opnd
+    fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {
-        int32_t offset = (ctx->sp_offset * sizeof(VALUE)) + offset_bytes;
+        let offset = ((self.sp_offset as usize) * SIZEOF_VALUE) + offset_bytes;
+        let offset = offset as i32;
         return mem_opnd(64, REG_SP, offset);
     }
-    */
 
     /*
     /// Push one new value on the temp stack with an explicit mapping

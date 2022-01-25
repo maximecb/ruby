@@ -1,18 +1,18 @@
 use crate::cruby::*;
-use crate::asm::x64::*;
+use crate::asm::x86_64::*;
 use crate::core::*;
 use CodegenStatus::*;
 
-// TODO
 // Callee-saved registers
-//#define REG_CFP R13
-//#define REG_EC R12
-//#define REG_SP RBX
+pub const REG_CFP: X86Opnd = R13;
+pub const REG_EC: X86Opnd = R12;
+pub const REG_SP: X86Opnd = RBX;
 
 // Scratch registers used by YJIT
-//#define REG0 RAX
+pub const REG0: X86Opnd = RAX;
 //#define REG0_32 EAX
 //#define REG0_8 AL
+pub const REG1: X86Opnd = RCX;
 //#define REG1 RCX
 //#define REG1_32 ECX
 
@@ -28,18 +28,16 @@ pub struct JITState
     block: Block,
 
     // Instruction sequence this is associated with
-    //const rb_iseq_t *iseq;
+    iseq: IseqPtr,
 
     // Index of the current instruction being compiled
     insn_idx: u32,
 
-    /*
     // Opcode for the instruction being compiled
-    int opcode;
+    opcode: usize,
 
     // PC of the instruction being compiled
-    VALUE *pc;
-    */
+    //VALUE *pc;
 
     // Side exit to the instruction being compiled. See :side-exit:.
     side_exit_for_pc: CodePtr,

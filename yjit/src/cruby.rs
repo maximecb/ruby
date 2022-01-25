@@ -10,11 +10,6 @@ pub struct VALUE(pub usize);
 /// Pointer to an ISEQ
 pub struct IseqPtr(pub usize);
 
-// TODO: need constants for
-// Qtrue
-// Qfalse
-// Qnil
-
 // TODO: these could be in a trait for VALUE ?
 // SPECIAL_CONST_P(val)
 // STATIC_SYM_P(val)
@@ -22,6 +17,13 @@ pub struct IseqPtr(pub usize);
 // FLONUM_P(val)
 // NIL_P(val)
 // BUILTIN_TYPE(val)
+
+// TODO: need constants for
+// Qtrue
+// Qfalse
+// Qnil
+
+pub const SIZEOF_VALUE: usize = 8;
 
 // TODO: need constants for all the YARV opcodes
 pub const OP_NOP: usize = 0;
