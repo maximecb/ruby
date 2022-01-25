@@ -42,7 +42,7 @@ impl Type {
     /// This returns an appropriate Type based on a known value
     fn from(val: VALUE) -> Type
     {
-        unreachable!();
+        todo!();
 
         /*
         if (SPECIAL_CONST_P(val)) {
@@ -342,51 +342,89 @@ struct IseqPayload
     version_map: VersionMap
 }
 
-impl IseqPayload {
-    fn get_version_map(&self) -> &VersionMap {
-        &self.version_map
-    }
-}
-
-/*
-// Alan says, C code can just pass us a borrowed IseqPayload mutably
+/// Get the payload object associated with an iseq
 fn get_iseq_payload(iseq: IseqPtr) -> &'static IseqPayload
 {
-    // TODO: add black magic unsafe {} incantation here
-    // Need to access the iseq payload
-    unimplemented!();
-}
-*/
-
-// Alan says 'static should go on the lifetime of IseqPayload
-// and these should be methods on IseqPayload
-
-fn get_version_map(iseq: IseqPtr) -> &'static VersionMap
-{
-    // TODO: add black magic unsafe {} incantation here
-    // Need to access the iseq payload
     todo!();
+
+    // TODO: add black magic unsafe {} incantation here
+    // Need to read the iseq payload from the iseq
+    //unsafe {
+    //}
 }
 
 // Get all blocks for a particular place in an iseq.
 fn get_version_list(blockid: BlockId) -> &'static VersionList
 {
-    unimplemented!();
+    let payload = get_iseq_payload(blockid.iseq);
+    return &payload.version_map[blockid.idx];
 }
 
 // Count the number of block versions matching a given blockid
 fn get_num_versions(blockid: BlockId) -> usize
 {
-    unimplemented!();
+    let payload = get_iseq_payload(blockid.iseq);
+    return payload.version_map[blockid.idx].len();
 }
 
+/// Retrieve a basic block version for an (iseq, idx) tuple
+/// This will return None if no version is found
+fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
+{
+    let versions = get_version_list(blockid);
 
+    // Best match found
+    let mut best_version: Option<BlockRef> = None;
+    let mut best_diff = usize::MAX;
 
+    // For each version matching the blockid
+    for blockref in versions {
+        let block = blockref.borrow();
+        let diff = ctx.diff(&block.ctx);
 
+        // Note that we always prefer the first matching
+        // version found because of inline-cache chains
+        if diff < best_diff {
+            best_version = Some(blockref.clone());
+            best_diff = diff;
+        }
+    }
 
+    // If greedy versioning is enabled
+    if get_option!(greedy_versioning) {
+        // If we're below the version limit, don't settle for an imperfect match
+        if versions.len() + 1 < get_option!(max_versions) && best_diff > 0 {
+            return None;
+        }
+    }
 
+    return best_version;
+}
 
+// Produce a generic context when the block version limit is hit for a blockid
+// Note that this will mutate the ctx argument
+fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
+{
+    // Guard chains implement limits separately, do nothing
+    if ctx.chain_depth > 0 {
+        return *ctx;
+    }
 
+    // If this block version we're about to add will hit the version limit
+    if get_num_versions(blockid) + 1 >= get_option!(max_versions) {
+        // Produce a generic context that stores no type information,
+        // but still respects the stack_size and sp_offset constraints.
+        // This new context will then match all future requests.
+        let mut generic_ctx = Context::default();
+        generic_ctx.stack_size = ctx.stack_size;
+        generic_ctx.sp_offset = ctx.sp_offset;
+
+        // Mutate the incoming context
+        return generic_ctx;
+    }
+
+    return *ctx;
+}
 
 //===========================================================================
 // I put the implementation of traits for core.rs types below
@@ -502,20 +540,16 @@ impl Context {
 
         return top;
     }
-
-    /**
-    Get an operand pointing to a slot on the temp stack
     */
-    static x86opnd_t
-    ctx_stack_opnd(ctx_t *ctx, int32_t idx)
+
+    /// Get an operand pointing to a slot on the temp stack
+    fn stack_opnd(&self, idx: i32) -> X86Opnd
     {
         // SP points just above the topmost value
-        int32_t offset = (ctx->sp_offset - 1 - idx) * sizeof(VALUE);
-        x86opnd_t opnd = mem_opnd(64, REG_SP, offset);
-
+        let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
+        let opnd = mem_opnd(64, REG_SP, offset);
         return opnd;
     }
-    */
 
     /// Get the type of an instruction operand
     fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
@@ -789,10 +823,10 @@ impl Context {
     }
 }
 
-// Keep track of a block version. Block should be fully constructed.
+/// Keep track of a block version. Block should be fully constructed.
 fn add_block_version(block: &mut Block)
 {
-    unimplemented!();
+    todo!();
 
     /*
     const blockid_t blockid = block->blockid;
@@ -905,7 +939,7 @@ regenerate_branch(codeblock_t *cb, branch_t *branch)
 // Create a new outgoing branch entry for a block
 fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
 
-    unimplemented!();
+    todo!();
 
     /*
     let branch = Branch {
@@ -941,65 +975,6 @@ fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -
     //rb_darray_append(&block->outgoing, branch);
 
     //return branch;
-}
-
-/// Retrieve a basic block version for an (iseq, idx) tuple
-/// This will return None if no version is found
-fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
-{
-    let versions = get_version_list(blockid);
-
-    // Best match found
-    let mut best_version: Option<BlockRef> = None;
-    let mut best_diff = usize::MAX;
-
-    // For each version matching the blockid
-    for blockref in versions {
-        let block = blockref.borrow();
-        let diff = ctx.diff(&block.ctx);
-
-        // Note that we always prefer the first matching
-        // version found because of inline-cache chains
-        if diff < best_diff {
-            best_version = Some(blockref.clone());
-            best_diff = diff;
-        }
-    }
-
-    // If greedy versioning is enabled
-    if get_option!(greedy_versioning) {
-        // If we're below the version limit, don't settle for an imperfect match
-        if versions.len() + 1 < get_option!(max_versions) && best_diff > 0 {
-            return None;
-        }
-    }
-
-    return best_version;
-}
-
-// Produce a generic context when the block version limit is hit for a blockid
-// Note that this will mutate the ctx argument
-fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
-{
-    // Guard chains implement limits separately, do nothing
-    if ctx.chain_depth > 0 {
-        return *ctx;
-    }
-
-    // If this block version we're about to add will hit the version limit
-    if get_num_versions(blockid) + 1 >= get_option!(max_versions) {
-        // Produce a generic context that stores no type information,
-        // but still respects the stack_size and sp_offset constraints.
-        // This new context will then match all future requests.
-        let mut generic_ctx = Context::default();
-        generic_ctx.stack_size = ctx.stack_size;
-        generic_ctx.sp_offset = ctx.sp_offset;
-
-        // Mutate the incoming context
-        return generic_ctx;
-    }
-
-    return *ctx;
 }
 
 /*
@@ -1637,7 +1612,7 @@ invalidate_block_version(block_t *block)
 
 fn init_core() {
     //gen_code_for_exit_from_stub();
-    unimplemented!();
+    todo!();
 }
 
 #[cfg(test)]

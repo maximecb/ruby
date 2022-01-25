@@ -5069,7 +5069,7 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(setclassvariable), gen_setclassvariable);
         */
 
-        // Unimplemented opcode
+        // Unimplemented opcode, YJIT won't generate code for this yet
         _ => None
     }
 }

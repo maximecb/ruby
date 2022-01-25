@@ -1,3 +1,10 @@
+// For mmapp(), sysconf()
+//#ifndef _WIN32
+//#include <unistd.h>
+//#include <sys/mman.h>
+//#endif
+
+// Import the assembler tests module
 mod tests;
 
 // 1 is not aligned so this won't match any pages
@@ -108,9 +115,6 @@ pub enum X86Opnd
     IPRel(i32)
 }
 
-// Dummy none/null operand
-//pub const x86opnd_t NO_OPND = { OPND_NONE, 0, .as.imm = 0 };
-
 // Instruction pointer
 pub const RIP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::IP, reg_no:5 });
 
@@ -191,41 +195,7 @@ static const x86opnd_t R15B = { OPND_REG, 8, .as.reg = { REG_GP, 15 }};
 // C argument registers
 pub const C_ARG_REGS: [X86Opnd; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 
-/*
-// Scale-index-base memory operand
-//static x86opnd_t mem_opnd_sib(uint32_t num_bits, x86opnd_t base_reg, x86opnd_t index_reg, int32_t scale, int32_t disp);
-
-// Immediate number operand
-static x86opnd_t imm_opnd(int64_t val);
-
-// Constant pointer operand
-static x86opnd_t const_ptr_opnd(const void *ptr);
-
-// Struct member operand
-#define member_opnd(base_reg, struct_type, member_name) mem_opnd( \
-    8 * sizeof(((struct_type*)0)->member_name), \
-    base_reg,                                   \
-    offsetof(struct_type, member_name)          \
-)
-
-// Struct member operand with an array index
-#define member_opnd_idx(base_reg, struct_type, member_name, idx) mem_opnd( \
-    8 * sizeof(((struct_type*)0)->member_name[0]),     \
-    base_reg,                                       \
-    (offsetof(struct_type, member_name) +           \
-     sizeof(((struct_type*)0)->member_name[0]) * idx)  \
-)
-*/
-
 //===========================================================================
-
-/*
-// For mmapp(), sysconf()
-//#ifndef _WIN32
-//#include <unistd.h>
-//#include <sys/mman.h>
-//#endif
-*/
 
 // Compute the number of bits needed to encode a signed value
 pub fn sig_imm_size(imm: i64) -> usize
@@ -279,6 +249,23 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
 }
 
 /*
+// Struct member operand
+#define member_opnd(base_reg, struct_type, member_name) mem_opnd( \
+    8 * sizeof(((struct_type*)0)->member_name), \
+    base_reg,                                   \
+    offsetof(struct_type, member_name)          \
+)
+
+// Struct member operand with an array index
+#define member_opnd_idx(base_reg, struct_type, member_name, idx) mem_opnd( \
+    8 * sizeof(((struct_type*)0)->member_name[0]),     \
+    base_reg,                                       \
+    (offsetof(struct_type, member_name) +           \
+     sizeof(((struct_type*)0)->member_name[0]) * idx)  \
+)
+*/
+
+/*
 static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 {
     assert (num_bits % 8 == 0);
@@ -290,7 +277,7 @@ static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 
 fn imm_opnd(imm: i64) -> X86Opnd
 {
-    todo!();
+    return X86Opnd::Imm(imm);
 
     /*
     x86opnd_t opnd = {
@@ -303,18 +290,27 @@ fn imm_opnd(imm: i64) -> X86Opnd
     */
 }
 
-/*
-x86opnd_t const_ptr_opnd(const void *ptr)
+fn uimm_opnd(uimm: u64) -> X86Opnd
 {
+    return X86Opnd::UImm(uimm);
+
+    /*
     x86opnd_t opnd = {
         OPND_IMM,
-        64,
-        .as.unsig_imm = (uint64_t)ptr
+        unsig_imm_size(uimm),
+        .as.imm = imm
     };
 
     return opnd;
+    */
 }
 
+fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
+{
+    return X86Opnd::UImm(ptr as u64);
+}
+
+/*
 // Align the current write position to a multiple of bytes
 static uint8_t *align_ptr(uint8_t *ptr, uint32_t multiple)
 {
