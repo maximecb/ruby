@@ -8,15 +8,11 @@ pub mod asm {
     pub mod x86_64;
 }
 
-// Types we expose from CRuby
 mod cruby;
-
-// Core BBV logic
 mod core;
-
 mod codegen;
-
 mod options;
+mod utils;
 
 #[no_mangle]
 pub extern "C" fn hello_from_rust() {
@@ -25,9 +21,8 @@ pub extern "C" fn hello_from_rust() {
 
 #[cfg(test)]
 mod tests {
-    // use crate::asm::x64::*;
-
-    /// just as a sandbox for playing around
+    /// Just as a sandbox for playing around
     #[test]
-    fn sandbox() {}
+    fn sandbox() {
+    }
 }
