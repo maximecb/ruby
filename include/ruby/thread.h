@@ -190,7 +190,6 @@ void *rb_nogvl(void *(*func)(void *), void *data1,
  */
 #define RUBY_CALL_WO_GVL_FLAG_SKIP_CHECK_INTS_
 
-
 RBIMPL_SYMBOL_EXPORT_END()
 
 #endif /* RUBY_THREAD_H */
