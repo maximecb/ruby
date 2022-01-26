@@ -1124,10 +1124,14 @@ void add(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd1
     );
 }
+*/
 
 /// and - Bitwise AND
-void and(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
+fn and(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd)
 {
+    todo!();
+
+    /*
     cb_write_rm_multi(
         cb,
         "and",
@@ -1142,8 +1146,10 @@ void and(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd0,
         opnd1
     );
+    */
 }
 
+/*
 // call - Call to a pointer with a 32-bit displacement offset
 static void call_rel32(codeblock_t *cb, int32_t rel32)
 {
@@ -1231,10 +1237,14 @@ void cmovnz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "
 //void cmovpo(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovpo", 0x4B, dst, src); }
 //void cmovs(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovs", 0x48, dst, src); }
 void cmovz(codeblock_t *cb, x86opnd_t dst, x86opnd_t src) { cb_write_cmov(cb, "cmovz", 0x44, dst, src); }
+*/
 
 /// cmp - Compare and set flags
-void cmp(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
+fn cmp(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd)
 {
+    todo!();
+
+    /*
     cb_write_rm_multi(
         cb,
         "cmp",
@@ -1249,8 +1259,10 @@ void cmp(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd0,
         opnd1
     );
+    */
 }
 
+/*
 #if 0
 /// cdq - Convert doubleword to quadword
 void cdq(codeblock_t *cb)
@@ -1458,15 +1470,20 @@ void jmp32(codeblock_t *cb, int32_t offset)
     cb_write_byte(cb, 0xE9);
     cb_write_int(cb, offset, 32);
 }
+*/
 
 /// lea - Load Effective Address
-void lea(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
+fn lea(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
 {
+    todo!();
+
     //cb.writeASM("lea", dst, src);
-    assert (dst.num_bits == 64);
-    cb_write_rm(cb, false, true, dst, src, 0xFF, 1, 0x8D);
+    //assert (dst.num_bits == 64);
+    //cb_write_rm(cb, false, true, dst, src, 0xFF, 1, 0x8D);
 }
 
+/*
+// TODO: move this function to utils.rs
 // Does this number fit in 32 bits and stays the same if you zero extend it to 64 bit?
 // If the sign bit is clear, sign extension and zero extension yield the same
 // result.
@@ -1475,10 +1492,14 @@ zero_extendable_32bit(uint64_t number)
 {
     return number <= UINT32_MAX && (number & (1ull << 31ull)) == 0;
 }
+*/
 
 /// mov - Data move operation
-void mov(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
+fn mov(cb: &mut CodeBlock, dst: X86Opnd, src: X86Opnd)
 {
+    todo!();
+
+    /*
     // R/M + Imm
     if (src.type == OPND_IMM)
     {
@@ -1550,8 +1571,10 @@ void mov(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
             src
         );
     }
+    */
 }
 
+/*
 /// movsx - Move with sign extension (signed integers)
 void movsx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
 {
@@ -1731,10 +1754,14 @@ void or(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
         opnd1
     );
 }
+*/
 
 /// pop - Pop a register off the stack
-void pop(codeblock_t *cb, x86opnd_t opnd)
+fn pop(cb: &mut CodeBlock, opnd: X86Opnd)
 {
+    todo!();
+
+    /*
     assert (opnd.num_bits == 64);
 
     //cb.writeASM("pop", opnd);
@@ -1750,8 +1777,10 @@ void pop(codeblock_t *cb, x86opnd_t opnd)
     else {
         assert(false && "unexpected operand type");
     }
+    */
 }
 
+/*
 /// popfq - Pop the flags register (64-bit)
 void popfq(codeblock_t *cb)
 {
@@ -1760,10 +1789,14 @@ void popfq(codeblock_t *cb)
     // REX.W + 0x9D
     cb_write_bytes(cb, 2, 0x48, 0x9D);
 }
+*/
 
 /// push - Push an operand on the stack
-void push(codeblock_t *cb, x86opnd_t opnd)
+fn push(cb: &mut CodeBlock, opnd: X86Opnd)
 {
+    todo!();
+
+    /*
     assert (opnd.num_bits == 64);
 
     //cb.writeASM("push", opnd);
@@ -1779,22 +1812,28 @@ void push(codeblock_t *cb, x86opnd_t opnd)
     else {
       assert(false && "unexpected operand type");
     }
+    */
 }
 
+/*
 /// pushfq - Push the flags register (64-bit)
 void pushfq(codeblock_t *cb)
 {
     //cb.writeASM("pushfq");
     cb_write_byte(cb, 0x9C);
 }
+*/
 
 /// ret - Return from call, popping only the return address
-void ret(codeblock_t *cb)
+fn ret(cb: &mut CodeBlock)
 {
+    todo!();
+
     //cb.writeASM("ret");
-    cb_write_byte(cb, 0xC3);
+    //cb_write_byte(cb, 0xC3);
 }
 
+/*
 #if 0
 // sal - Shift arithmetic left
 void sal(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1)
