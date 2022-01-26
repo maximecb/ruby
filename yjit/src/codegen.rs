@@ -58,7 +58,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &Context, cb: &Assembler) -> CodegenStatus;
+type CodeGenFn = fn(jit: &JITState, ctx: &Context, cb: &CodeBlock) -> CodegenStatus;
 
 
 
@@ -838,7 +838,7 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &Context, cb: &Assembler) -> CodegenStatus
+fn gen_nop(jit: &JITState, ctx: &Context, cb: &CodeBlock) -> CodegenStatus
 {
     // Do nothing
     return KeepCompiling;

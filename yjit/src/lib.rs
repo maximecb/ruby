@@ -11,8 +11,9 @@ pub mod asm {
 mod cruby;
 mod core;
 mod codegen;
-mod options;
 mod utils;
+mod options;
+mod stats;
 
 #[no_mangle]
 pub extern "C" fn hello_from_rust() {

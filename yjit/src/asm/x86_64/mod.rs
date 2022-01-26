@@ -4,13 +4,13 @@
 //#include <sys/mman.h>
 //#endif
 
-// Import the assembler tests module
+// Import the CodeBlock tests module
 mod tests;
 
 // 1 is not aligned so this won't match any pages
 const ALIGNED_WRITE_POSITION_NONE: usize = 1;
 
-// Reference to an ASM label
+/// Reference to an ASM label
 struct LabelRef
 {
     // Position in the code block where the label reference exists
@@ -20,19 +20,21 @@ struct LabelRef
     label_idx: usize,
 }
 
-// Block of memory into which instructions can be written
-pub struct Assembler
+// TODO:
+// TODO: we will later rename this to Assembler, but for now, keep the name the same for easier porting
+// TODO
+//
+/// Block of memory into which instructions can be written
+pub struct CodeBlock
 {
     // TODO: can we use some kind of vec mapped to a memory region?
 
-    /*
     // Memory block
     // Users are advised to not use this directly.
-    uint8_t *mem_block_;
+    //uint8_t *mem_block_;
 
     // Memory block size
-    uint32_t mem_size;
-    */
+    mem_size: usize,
 
     // Current writing position
     write_pos: usize,
@@ -48,9 +50,9 @@ pub struct Assembler
 
     // Keep track of the current aligned write position.
     // Used for changing protection when writing to the JIT buffer
-    //uint32_t current_aligned_write_pos;
+    current_aligned_write_pos: usize,
 
-    // Set if the assembler is unable to output some instructions,
+    // Set if the CodeBlock is unable to output some instructions,
     // for example, when there is not enough space or when a jump
     // target is too far away.
     dropped_bytes: bool
@@ -311,22 +313,6 @@ fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
 }
 
 /*
-// Align the current write position to a multiple of bytes
-static uint8_t *align_ptr(uint8_t *ptr, uint32_t multiple)
-{
-    // Compute the pointer modulo the given alignment boundary
-    uint32_t rem = ((uint32_t)(uintptr_t)ptr) % multiple;
-
-    // If the pointer is already aligned, stop
-    if (rem == 0)
-        return ptr;
-
-    // Pad the pointer by the necessary amount to align it
-    uint32_t pad = multiple - rem;
-
-    return ptr + pad;
-}
-
 // Allocate a block of executable memory
 static uint8_t *alloc_exec_mem(uint32_t mem_size)
 {
@@ -411,7 +397,7 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
 }
 */
 
-impl Assembler
+impl CodeBlock
 {
     /*
     // Initialize a code block object
@@ -429,7 +415,7 @@ impl Assembler
     // Set the current write position
     void cb_set_pos(codeblock_t *cb, uint32_t pos)
     {
-        // Assert here since while assembler functions do bounds checking, there is
+        // Assert here since while CodeBlock functions do bounds checking, there is
         // nothing stopping users from taking out an out-of-bounds pointer and
         // doing bad accesses with it.
         assert (pos < cb->mem_size);
@@ -1285,7 +1271,7 @@ void cqo(codeblock_t *cb)
 */
 
 /// Interrupt 3 - trap to debugger
-fn int3(cb: &Assembler)
+fn int3(cb: &CodeBlock)
 {
     todo!();
 

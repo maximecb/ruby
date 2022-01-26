@@ -237,7 +237,7 @@ enum BranchShape
 }
 
 // Branch code generation function signature
-type BranchGenFn = fn(cb: &Assembler, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
+type BranchGenFn = fn(cb: &CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch_t objects
