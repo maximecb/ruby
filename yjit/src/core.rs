@@ -268,18 +268,13 @@ struct Branch
     shape: BranchShape,
 }
 
-/*
 // In case this block is invalidated, these two pieces of info
 // help to remove all pointers to this block in the system.
-typedef struct {
-    VALUE receiver_klass;
-    VALUE callee_cme;
-} cme_dependency_t;
-
-typedef rb_darray(cme_dependency_t) cme_dependency_array_t;
-
-typedef rb_darray(branch_t*) branch_array_t;
-*/
+struct CmeDependency
+{
+    receiver_klass: VALUE,
+    callee_cme : VALUE,
+}
 
 /// Basic block version
 /// Represents a portion of an iseq compiled with a given context
@@ -310,10 +305,9 @@ pub struct Block
     // Offsets for GC managed objects in the mainline code block
     gc_object_offsets: Vec<u32>,
 
-    // TODO
     // CME dependencies of this block, to help to remove all pointers to this
     // block in the system.
-    //cme_dependency_array_t cme_dependencies;
+    cme_dependencies: Vec<CmeDependency>,
 
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.

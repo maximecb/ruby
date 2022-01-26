@@ -333,41 +333,6 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
 
 #endif // if YJIT_STATS
 
-#if YJIT_STATS
-
-// Increment a profiling counter with counter_name
-#define GEN_COUNTER_INC(cb, counter_name) _gen_counter_inc(cb, &(yjit_runtime_counters . counter_name))
-static void
-_gen_counter_inc(codeblock_t *cb, int64_t *counter)
-{
-    if (!rb_yjit_opts.gen_stats) return;
-
-    // Use REG1 because there might be return value in REG0
-    mov(cb, REG1, const_ptr_opnd(counter));
-    cb_write_lock_prefix(cb); // for ractors.
-    add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
-}
-
-// Increment a counter then take an existing side exit.
-#define COUNTED_EXIT(jit, side_exit, counter_name) _counted_side_exit(jit, side_exit, &(yjit_runtime_counters . counter_name))
-static uint8_t *
-_counted_side_exit(jitstate_t* jit, uint8_t *existing_side_exit, int64_t *counter)
-{
-    if (!rb_yjit_opts.gen_stats) return existing_side_exit;
-
-    uint8_t *start = cb_get_ptr(jit->ocb, jit->ocb->write_pos);
-    _gen_counter_inc(jit->ocb, counter);
-    jmp_ptr(jit->ocb, existing_side_exit);
-    return start;
-}
-
-#else
-
-#define GEN_COUNTER_INC(cb, counter_name) ((void)0)
-#define COUNTED_EXIT(jit, side_exit, counter_name) side_exit
-
-#endif // if YJIT_STATS
-
 // Generate an exit to return to the interpreter
 static uint32_t
 yjit_gen_exit(VALUE *exit_pc, ctx_t *ctx, codeblock_t *cb)
