@@ -155,7 +155,7 @@ rb_gvl_event_delete(gvl_hook_t * hook) {
 }
 
 void
-rb_gvl_execute_hooks(rb_event_flag_t event, unsigned long waiting) {
+rb_gvl_execute_hooks(rb_event_flag_t event, rb_atomic_t waiting) {
     if (pthread_rwlock_rdlock(&rb_gvl_hooks_rw_lock)) {
         // TODO: better way to deal with error?
         return;
@@ -362,7 +362,7 @@ gvl_acquire_common(rb_global_vm_lock_t *gvl, rb_thread_t *th)
 	          "we must not be in ubf_list and GVL waitq at the same time");
 
         list_add_tail(&gvl->waitq, &nd->node.gvl);
-        gvl->waiting++;
+        ATOMIC_INC(gvl->waiting);
         if (rb_gvl_hooks) {
             rb_gvl_execute_hooks(RUBY_INTERNAL_EVENT_GVL_ACQUIRE_ENTER, gvl->waiting);
         }
@@ -377,7 +377,7 @@ gvl_acquire_common(rb_global_vm_lock_t *gvl, rb_thread_t *th)
         } while (gvl->owner);
 
         list_del_init(&nd->node.gvl);
-        gvl->waiting--;
+        ATOMIC_DEC(gvl->waiting);
 
         if (gvl->need_yield) {
             gvl->need_yield = 0;

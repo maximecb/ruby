@@ -216,9 +216,10 @@ typedef struct gvl_hook {
 } gvl_hook_t;
 
 #include "ruby/internal/memory.h"
+#include "ruby/atomic.h"
 
 gvl_hook_t * rb_gvl_event_new(void *callback, rb_event_flag_t event);
 bool rb_gvl_event_delete(gvl_hook_t * hook);
-void rb_gvl_execute_hooks(rb_event_flag_t event, unsigned long waiting);
+void rb_gvl_execute_hooks(rb_event_flag_t event, rb_atomic_t waiting);
 RBIMPL_SYMBOL_EXPORT_END()
 #endif
