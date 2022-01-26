@@ -1,4 +1,11 @@
-// TODO: put everything related to --yjit-stats in here!
+//! Everything related to the collection of runtime stats in YJIT
+//! See the stats feature and the --yjit-stats command-line option
+
+
+// Maxime says: I added a stats feature so we can conditionally
+// enable/disable the stats code:
+// #[cfg(feature = "stats")]
+
 
 
 

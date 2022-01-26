@@ -23,8 +23,17 @@ capstone = { version = "0.10.0", optional = true }
 # building without needing to install it, but then I have to run
 # `cargo test --features disassembly` for tests...
 disassembly = ["capstone"]
+stats = []
+asm_comments = []
+
+[profile.dev]
+opt-level = 0
+debug = true
+debug-assertions = true
+overflow-checks = true
 
 [profile.release]
+opt-level = 3
 # The extra robustness that comes from checking for arithmetic overflow is
 # worth the performance cost for the compiler.
 overflow-checks = true
