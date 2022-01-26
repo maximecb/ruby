@@ -93,7 +93,7 @@ pub struct X86Mem
     scale_exp: u8,
 
     /// Constant displacement from the base, not scaled
-    disp: u32,
+    disp: i32,
 }
 
 pub enum X86Opnd
@@ -233,21 +233,23 @@ pub fn unsig_imm_size(imm: u64) -> usize
     return 64;
 }
 
+/// Shorthand for memory operand with base register and displacement
 pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
 {
-    todo!();
-
-    /*
-    bool is_iprel = base_reg.as.reg.reg_type == REG_IP;
-
-    x86opnd_t opnd = {
-        OPND_MEM,
-        num_bits,
-        .as.mem = { base_reg.as.reg.reg_no, 0, 0, false, is_iprel, disp }
+    let base_reg = match base_reg {
+        X86Opnd::Reg(reg) => reg,
+        _ => unreachable!()
     };
 
-    return opnd;
-    */
+    return X86Opnd::Mem(
+        X86Mem {
+            num_bits: num_bits,
+            base_reg_no: base_reg.reg_no,
+            idx_reg_no: None,
+            scale_exp: 0,
+            disp: disp,
+        }
+    );
 }
 
 /*
