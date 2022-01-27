@@ -111,9 +111,7 @@ rb_gvl_event_new(void *callback, rb_event_flag_t event) {
     hook->event = event;
 
     if (pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock)) {
-        // TODO: better way to deal with error?
-        ruby_xfree(hook);
-        return NULL;
+        rb_bug("GVL hooks deadlock");
     }
 
     hook->next = rb_gvl_hooks;
@@ -126,8 +124,7 @@ rb_gvl_event_new(void *callback, rb_event_flag_t event) {
 bool
 rb_gvl_event_delete(gvl_hook_t * hook) {
     if (pthread_rwlock_wrlock(&rb_gvl_hooks_rw_lock)) {
-        // TODO: better way to deal with error?
-        return FALSE;
+        rb_bug("GVL hooks deadlock");
     }
 
     bool success = FALSE;
@@ -157,8 +154,7 @@ rb_gvl_event_delete(gvl_hook_t * hook) {
 void
 rb_gvl_execute_hooks(rb_event_flag_t event, rb_atomic_t waiting) {
     if (pthread_rwlock_rdlock(&rb_gvl_hooks_rw_lock)) {
-        // TODO: better way to deal with error?
-        return;
+        rb_bug("GVL hooks deadlock");
     }
 
     if (rb_gvl_hooks) {
