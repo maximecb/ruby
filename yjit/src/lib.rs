@@ -4,10 +4,7 @@
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
 
-pub mod asm {
-    pub mod x86_64;
-}
-
+mod asm;
 mod cruby;
 mod core;
 mod codegen;
