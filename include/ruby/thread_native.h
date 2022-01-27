@@ -214,7 +214,7 @@ typedef struct gvl_hook {
     struct gvl_hook *next;
 } gvl_hook_t;
 
-gvl_hook_t * rb_gvl_event_new(void *callback, rb_event_flag_t event);
+gvl_hook_t * rb_gvl_event_new(rb_gvl_callback callback, rb_event_flag_t event);
 bool rb_gvl_event_delete(gvl_hook_t * hook);
 RBIMPL_SYMBOL_EXPORT_END()
 #endif

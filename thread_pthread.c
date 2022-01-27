@@ -105,7 +105,7 @@ static gvl_hook_t * rb_gvl_hooks = NULL;
 static pthread_rwlock_t rb_gvl_hooks_rw_lock = PTHREAD_RWLOCK_INITIALIZER;
 
 gvl_hook_t *
-rb_gvl_event_new(void *callback, rb_event_flag_t event) {
+rb_gvl_event_new(rb_gvl_callback callback, rb_event_flag_t event) {
     gvl_hook_t *hook = ALLOC_N(gvl_hook_t, 1);
     hook->callback = callback;
     hook->event = event;

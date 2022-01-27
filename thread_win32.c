@@ -36,7 +36,7 @@ static volatile DWORD ruby_native_thread_key = TLS_OUT_OF_INDEXES;
 static int w32_wait_events(HANDLE *events, int count, DWORD timeout, rb_thread_t *th);
 
 gvl_hook_t *
-rb_gvl_event_new(void *callback, rb_event_flag_t event) {
+rb_gvl_event_new(rb_gvl_callback callback, rb_event_flag_t event) {
     // not implemented yet
 }
 
