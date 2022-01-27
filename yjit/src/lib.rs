@@ -14,11 +14,7 @@ mod codegen;
 mod utils;
 mod options;
 mod stats;
-
-#[no_mangle]
-pub extern "C" fn hello_from_rust() {
-    println!("Hello from Rust!");
-}
+mod yjit;
 
 #[cfg(test)]
 mod tests {
