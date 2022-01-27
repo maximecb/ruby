@@ -71,5 +71,6 @@ name = "yjit"
 version = "0.1.0"
 dependencies = [
  "capstone",
+ "libc",
  "memmap",
 ]

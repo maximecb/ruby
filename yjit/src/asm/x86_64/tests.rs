@@ -9,6 +9,26 @@ use crate::asm::x86_64::*;
 fn sandbox() {
 }
 
+#[test]
+fn test_ret() {
+    let mut cb = CodeBlock::new();
+
+    cb.ret();
+
+    let byte = cb.mem_block.get_mut(0).unwrap();
+    assert_eq!(0xC3, *byte);
+}
+
+#[test]
+fn test_push() {
+    let mut cb = CodeBlock::new();
+
+    cb.push(RAX);
+
+    let byte = cb.mem_block.get_mut(0).unwrap();
+    assert_eq!(0x50, *byte);
+}
+
 
 
 

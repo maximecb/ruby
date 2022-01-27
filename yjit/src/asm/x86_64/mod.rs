@@ -4,6 +4,7 @@
 //#include <sys/mman.h>
 //#endif
 
+use libc;
 use memmap::MmapMut;
 
 // Import the CodeBlock tests module
@@ -117,6 +118,19 @@ pub enum X86Opnd
 
     // IP-relative memory location
     IPRel(i32)
+}
+
+impl X86Opnd {
+    fn rex_needed(&self) -> bool {
+        match self {
+            X86Opnd::None => false,
+            X86Opnd::Imm(_) => false,
+            X86Opnd::UImm(_) => false,
+            X86Opnd::Reg(reg) => (reg.reg_no > 7 || (reg.num_bits == 8 && reg.reg_no >= 4 && reg.reg_no <= 7)),
+            X86Opnd::Mem(mem) => (mem.base_reg_no > 7 || (mem.idx_reg_no.unwrap_or(0) > 7)),
+            X86Opnd::IPRel(_) => false
+        }
+    }
 }
 
 // Instruction pointer
@@ -420,24 +434,12 @@ impl CodeBlock
             label_addrs: Vec::new(),
             label_names: Vec::new(),
             label_refs: Vec::new(),
-            current_aligned_write_pos: 0,
+            current_aligned_write_pos: ALIGNED_WRITE_POSITION_NONE,
             dropped_bytes: false
         }
     }
 
     /*
-    // Initialize a code block object
-    void cb_init(codeblock_t *cb, uint8_t *mem_block, uint32_t mem_size)
-    {
-        assert (mem_block);
-        cb->mem_block_ = mem_block;
-        cb->mem_size = mem_size;
-        cb->write_pos = 0;
-        cb->num_labels = 0;
-        cb->num_refs = 0;
-        cb->current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
-    }
-
     // Set the current write position
     void cb_set_pos(codeblock_t *cb, uint32_t pos)
     {
@@ -468,38 +470,31 @@ impl CodeBlock
         assert (pos < cb->mem_size);
         cb_set_pos(cb, (uint32_t)pos);
     }
-
+*/
     // Get a direct pointer into the executable memory block
-    uint8_t *cb_get_ptr(const codeblock_t *cb, uint32_t index)
-    {
-        if (index < cb->mem_size) {
-            return &cb->mem_block_[index];
+    fn get_ptr(&mut self, index: usize) -> *mut u8 {
+        if let Some(ptr) = self.mem_block.get_mut(index) {
+            return ptr;
         }
-        else {
-            return NULL;
-        }
+        panic!("Attempting to get a raw pointer outside the memory block");
     }
 
     // Get a direct pointer to the current write position
-    uint8_t *cb_get_write_ptr(const codeblock_t *cb)
-    {
-        return cb_get_ptr(cb, cb->write_pos);
+    fn get_write_ptr(&mut self) -> *mut u8 {
+        self.get_ptr(self.write_pos)
     }
 
-    // Write a byte at the current position
-    void cb_write_byte(codeblock_t *cb, uint8_t byte)
-    {
-        assert (cb->mem_block_);
-        if (cb->write_pos < cb->mem_size) {
-            cb_mark_position_writeable(cb, cb->write_pos);
-            cb->mem_block_[cb->write_pos] = byte;
-            cb->write_pos++;
-        }
-        else {
-            cb->dropped_bytes = true;
+    pub fn write_byte(&mut self, byte: u8) {
+        if self.write_pos < self.mem_size {
+            self.mark_position_writeable(self.write_pos);
+            self.mem_block[self.write_pos] = byte;
+            self.write_pos += 1;
+        } else {
+            self.dropped_bytes = true;
         }
     }
 
+/*
     // Write multiple bytes starting from the current position
     void cb_write_bytes(codeblock_t *cb, uint32_t num_bytes, ...)
     {
@@ -629,33 +624,74 @@ impl CodeBlock
         cb->num_refs = 0;
     }
     */
+
+    fn mark_position_writeable(&mut self, write_pos: usize) {
+        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
+        let aligned_position = (self.write_pos / pagesize) * pagesize;
+
+        if self.current_aligned_write_pos != aligned_position {
+            self.current_aligned_write_pos = aligned_position;
+            let page_addr = self.get_ptr(aligned_position) as *mut libc::c_void;
+
+            unsafe {
+                libc::mprotect(page_addr, pagesize, libc::PROT_READ | libc::PROT_WRITE);
+            }
+        }
+    }
+
+    /// Write the REX byte
+    fn write_rex(&mut self, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
+        // 0 1 0 0 w r x b
+        // w - 64-bit operand size flag
+        // r - MODRM.reg extension
+        // x - SIB.index extension
+        // b - MODRM.rm or SIB.base extension
+        let w: u8 = if w_flag { 1 } else { 0 };
+        let r: u8 = if (reg_no & 8) > 0 { 1 } else { 0 };
+        let x: u8 = if (idx_reg_no & 8) > 0 { 1 } else { 0 };
+        let b: u8 = if (rm_reg_no & 8) > 0 { 1 } else { 0 };
+
+        // Encode and write the REX byte
+        self.write_byte(0x40 + (w << 3) + (r << 2) + (x << 1) + (b));
+    }
+
+    /// Write an opcode byte with an embedded register operand
+    fn write_opcode(&mut self, opcode: u8, reg: &X86Reg) {
+        let op_byte: u8 = opcode | (reg.reg_no & 7);
+        self.write_byte(op_byte);
+    }
+}
+
+trait Assembler {
+    fn push(&mut self, opnd: X86Opnd) -> ();
+    fn ret(&mut self) -> ();
+}
+
+impl Assembler for CodeBlock {
+    /// push - Push an operand on the stack
+    fn push(&mut self, opnd: X86Opnd) {
+        match opnd {
+            X86Opnd::Reg(ref reg) => {
+                if opnd.rex_needed() {
+                    self.write_rex(false, 0, 0, reg.reg_no);
+                }
+                self.write_opcode(0x50, reg);
+            },
+            X86Opnd::Mem(mem) => {
+                todo!();
+                // cb_write_rm(cb, false, false, NO_OPND, opnd, 6, 1, 0xFF);
+            },
+            _ => unreachable!()
+        }
+    }
+
+    /// ret - Return from call, popping only the return address
+    fn ret(&mut self) {
+        self.write_byte(0xC3);
+    }
 }
 
 /*
-// Check if an operand needs a REX byte to be encoded
-static bool rex_needed(x86opnd_t opnd)
-{
-    if (opnd.type == OPND_NONE || opnd.type == OPND_IMM)
-    {
-        return false;
-    }
-
-    if (opnd.type == OPND_REG)
-    {
-        return (
-            opnd.as.reg.reg_no > 7 ||
-            (opnd.num_bits == 8 && opnd.as.reg.reg_no >= 4 && opnd.as.reg.reg_no <= 7)
-        );
-    }
-
-    if (opnd.type == OPND_MEM)
-    {
-        return (opnd.as.mem.base_reg_no > 7) || (opnd.as.mem.has_idx && opnd.as.mem.idx_reg_no > 7);
-    }
-
-    rb_bug("unreachable");
-}
-
 // Check if an SIB byte is needed to encode this operand
 static bool sib_needed(x86opnd_t opnd)
 {
@@ -701,38 +737,6 @@ static uint32_t disp_size(x86opnd_t opnd)
     }
 
     return 0;
-}
-
-// Write the REX byte
-static void cb_write_rex(
-    codeblock_t *cb,
-    bool w_flag,
-    uint8_t reg_no,
-    uint8_t idx_reg_no,
-    uint8_t rm_reg_no
-)
-{
-    // 0 1 0 0 w r x b
-    // w - 64-bit operand size flag
-    // r - MODRM.reg extension
-    // x - SIB.index extension
-    // b - MODRM.rm or SIB.base extension
-    uint8_t w = w_flag? 1:0;
-    uint8_t r = (reg_no & 8)? 1:0;
-    uint8_t x = (idx_reg_no & 8)? 1:0;
-    uint8_t b = (rm_reg_no & 8)? 1:0;
-
-    // Encode and write the REX byte
-    uint8_t rexByte = 0x40 + (w << 3) + (r << 2) + (x << 1) + (b);
-    cb_write_byte(cb, rexByte);
-}
-
-// Write an opcode byte with an embedded register operand
-static void cb_write_opcode(codeblock_t *cb, uint8_t opcode, x86opnd_t reg)
-{
-    // Write the reg field into the opcode byte
-    uint8_t op_byte = opcode | (reg.as.reg.reg_no & 7);
-    cb_write_byte(cb, op_byte);
 }
 
 // Encode an RM instruction
@@ -1815,33 +1819,7 @@ void popfq(codeblock_t *cb)
     // REX.W + 0x9D
     cb_write_bytes(cb, 2, 0x48, 0x9D);
 }
-*/
 
-/// push - Push an operand on the stack
-fn push(cb: &mut CodeBlock, opnd: X86Opnd)
-{
-    todo!();
-
-    /*
-    assert (opnd.num_bits == 64);
-
-    //cb.writeASM("push", opnd);
-
-    if (opnd.type == OPND_REG) {
-      if (rex_needed(opnd))
-          cb_write_rex(cb, false, 0, 0, opnd.as.reg.reg_no);
-      cb_write_opcode(cb, 0x50, opnd);
-    }
-    else if (opnd.type == OPND_MEM) {
-      cb_write_rm(cb, false, false, NO_OPND, opnd, 6, 1, 0xFF);
-    }
-    else {
-      assert(false && "unexpected operand type");
-    }
-    */
-}
-
-/*
 /// pushfq - Push the flags register (64-bit)
 void pushfq(codeblock_t *cb)
 {
@@ -1849,15 +1827,6 @@ void pushfq(codeblock_t *cb)
     cb_write_byte(cb, 0x9C);
 }
 */
-
-/// ret - Return from call, popping only the return address
-fn ret(cb: &mut CodeBlock)
-{
-    todo!();
-
-    //cb.writeASM("ret");
-    //cb_write_byte(cb, 0xC3);
-}
 
 /*
 #if 0
@@ -2061,21 +2030,6 @@ void cb_mark_all_writeable(codeblock_t * cb)
     if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_WRITE)) {
         fprintf(stderr, "Couldn't make JIT page (%p) writeable, errno: %s", (void *)cb->mem_block_, strerror(errno));
         abort();
-    }
-}
-
-void cb_mark_position_writeable(codeblock_t * cb, uint32_t write_pos)
-{
-    uint32_t pagesize = (uint32_t)sysconf(_SC_PAGESIZE);
-    uint32_t aligned_position = (write_pos / pagesize) * pagesize;
-
-    if (cb->current_aligned_write_pos != aligned_position) {
-        cb->current_aligned_write_pos = aligned_position;
-        void *const page_addr = cb_get_ptr(cb, aligned_position);
-        if (mprotect(page_addr, pagesize, PROT_READ | PROT_WRITE)) {
-            fprintf(stderr, "Couldn't make JIT page (%p) writeable, errno: %s", page_addr, strerror(errno));
-            abort();
-        }
     }
 }
 
