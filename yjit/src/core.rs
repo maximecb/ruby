@@ -157,10 +157,10 @@ impl Type {
 // self, a local variable or constant so that we can track its type
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TempMapping {
-    MapToStack,               // Normal stack value
-    MapToSelf,                // Temp maps to the self operand
-    MapToLocal { idx: u8 },   // Temp maps to a local variable with index
-    //ConstMapping,             // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
+    MapToStack,             // Normal stack value
+    MapToSelf,              // Temp maps to the self operand
+    MapToLocal(u8),         // Temp maps to a local variable with index
+    //ConstMapping,         // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
 }
 
 impl Default for TempMapping {
@@ -176,7 +176,7 @@ pub enum InsnOpnd {
     SelfOpnd,
 
     // Temporary stack operand with stack index
-    StackOpnd { idx: u16 },
+    StackOpnd(u16),
 }
 
 /**
@@ -468,7 +468,7 @@ impl Context {
             local_types: [Type::Unknown; MAX_LOCAL_TYPES],
             temp_types: [Type::Unknown; MAX_TEMP_TYPES],
             self_type: Type::Unknown,
-            temp_mapping: [TempMapping::MapToStack; MAX_TEMP_TYPES]
+            temp_mapping: [MapToStack; MAX_TEMP_TYPES]
         };
     }
 
@@ -500,7 +500,7 @@ impl Context {
             self.temp_mapping[stack_size] = mapping;
             self.temp_types[stack_size] = temp_type;
 
-            if let MapToLocal { idx } = mapping {
+            if let MapToLocal(idx) = mapping {
                 assert!((idx as usize) < MAX_LOCAL_TYPES);
             }
         }
@@ -534,7 +534,7 @@ impl Context {
         }
 
         return self.stack_push_mapping(
-            (MapToLocal{ idx: local_idx as u8 }, Type::Unknown)
+            (MapToLocal(local_idx as u8), Type::Unknown)
         );
     }
 
@@ -580,7 +580,7 @@ impl Context {
             SelfOpnd => {
                 self.self_type
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -599,7 +599,7 @@ impl Context {
                     MapToStack => {
                         self.temp_types[(self.stack_size - 1 - idx) as usize]
                     },
-                    MapToLocal{idx} => {
+                    MapToLocal(idx) => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
                         return self.local_types[idx as usize]
                     },
@@ -623,7 +623,7 @@ impl Context {
             SelfOpnd => {
                 self.self_type.upgrade(opnd_type)
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -642,7 +642,7 @@ impl Context {
                     MapToStack => {
                         self.temp_types[stack_idx].upgrade(opnd_type)
                     },
-                    MapToLocal{idx} => {
+                    MapToLocal(idx) => {
                         let idx = idx as usize;
                         assert!(idx < MAX_LOCAL_TYPES);
                         self.local_types[idx].upgrade(opnd_type);
@@ -665,7 +665,7 @@ impl Context {
             SelfOpnd => {
                 (MapToSelf, opnd_type)
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -688,7 +688,7 @@ impl Context {
     {
         match opnd {
             SelfOpnd => unreachable!("self always maps to self"),
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
 
@@ -728,12 +728,12 @@ impl Context {
             *mapping = match *mapping {
                 MapToStack => MapToStack,
                 MapToSelf => MapToSelf,
-                MapToLocal{idx} => {
+                MapToLocal(idx) => {
                     if idx as usize == local_idx {
                         ctx.temp_types[i] = ctx.local_types[idx as usize];
                         MapToStack
                     } else {
-                        MapToLocal{idx}
+                        MapToLocal(idx)
                     }
                 },
             }
@@ -751,7 +751,7 @@ impl Context {
             *mapping = match *mapping {
                 MapToStack => MapToStack,
                 MapToSelf => MapToSelf,
-                MapToLocal{idx} => {
+                MapToLocal(idx) => {
                     ctx.temp_types[i] = ctx.local_types[idx as usize];
                     MapToStack
                 },
@@ -817,8 +817,8 @@ impl Context {
 
         // For each value on the temp stack
         for i in 0..src.stack_size {
-            let (src_mapping, src_type) = src.get_opnd_mapping(StackOpnd{idx: i});
-            let (dst_mapping, dst_type) = dst.get_opnd_mapping(StackOpnd{idx: i});
+            let (src_mapping, src_type) = src.get_opnd_mapping(StackOpnd(i));
+            let (dst_mapping, dst_type) = dst.get_opnd_mapping(StackOpnd(i));
 
             // If the two mappings aren't the same
             if src_mapping != dst_mapping {
@@ -1664,7 +1664,7 @@ mod tests {
         // Try pushing an operand and getting its type
         let mut ctx = Context::default();
         ctx.stack_push(Type::Fixnum);
-        let top_type = ctx.get_opnd_type(InsnOpnd::StackOpnd{ idx: 0 });
+        let top_type = ctx.get_opnd_type(StackOpnd(0));
         assert!(top_type == Type::Fixnum);
 
         // TODO: write more tests for Context type diff
