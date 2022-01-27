@@ -4972,7 +4972,7 @@ invalidate_all_blocks_for_tracing(const rb_iseq_t *iseq)
 
 
 
-
+/// Maps a YARV opcode to a code generation function (if supported)
 fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
 {
     let VALUE(opcode) = opcode;

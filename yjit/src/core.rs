@@ -85,6 +85,7 @@ impl Type {
         */
     }
 
+    /// Check if the type is an immediate
     fn is_imm(&self) -> bool {
         match self {
             Type::UnknownImm => true,
@@ -98,6 +99,7 @@ impl Type {
         }
     }
 
+    /// Check if the type is a heap object
     fn is_heap(&self) -> bool {
         match self {
             Type::UnknownHeap => true,
@@ -112,7 +114,7 @@ impl Type {
     /// Compute a difference between two value types
     /// Returns 0 if the two are the same
     /// Returns > 0 if different but compatible
-    /// Returns INT_MAX if incompatible
+    /// Returns usize::MAX if incompatible
     fn diff(self, dst: Self) -> usize
     {
         println!("diff {:?}, {:?}", self, dst);
@@ -179,7 +181,7 @@ pub enum InsnOpnd {
 
 /**
 Code generation context
-Contains information we can use to optimize code
+Contains information we can use to specialize/optimize code
 */
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Context
@@ -217,7 +219,7 @@ pub struct BlockId
     pub idx: usize,
 }
 
-// Null block id constant
+/// Null block id constant
 pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
 
 /// Pointer to a piece of machine code
