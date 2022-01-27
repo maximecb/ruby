@@ -1,7 +1,7 @@
 # frozen_string_literal: false
 class TestGVLInstrumentation < Test::Unit::TestCase
   def setup
-    skip("No windows support yet") if /mswin|mingw|bccwin/ =~ RUBY_PLATFORM
+    pend("TODO: No windows support yet") if /mswin|mingw|bccwin/ =~ RUBY_PLATFORM
   end
 
   def test_gvl_instrumentation

@@ -207,16 +207,12 @@ typedef struct gvl_hook_event_args {
 
 typedef void (*rb_gvl_callback)(uint32_t event, gvl_hook_event_args_t args);
 
-// TODO: this is going to be the same on Windows so move it somewhere sensible
 typedef struct gvl_hook {
     rb_gvl_callback callback;
     rb_event_flag_t event;
 
     struct gvl_hook *next;
 } gvl_hook_t;
-
-#include "ruby/internal/memory.h"
-#include "ruby/atomic.h"
 
 gvl_hook_t * rb_gvl_event_new(void *callback, rb_event_flag_t event);
 bool rb_gvl_event_delete(gvl_hook_t * hook);
