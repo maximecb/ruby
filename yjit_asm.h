@@ -282,6 +282,7 @@ static void cb_mark_all_executable(codeblock_t *cb);
 static void add(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1);
 static void and(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1);
 static void call_ptr(codeblock_t *cb, x86opnd_t scratch_reg, uint8_t *dst_ptr);
+static inline void call_label(codeblock_t *cb, uint32_t label_idx);
 static void call(codeblock_t *cb, x86opnd_t opnd);
 //static void cmova(codeblock_t *cb, x86opnd_t dst, x86opnd_t src);
 //static void cmovae(codeblock_t *cb, x86opnd_t dst, x86opnd_t src);
