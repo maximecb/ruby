@@ -1,11 +1,13 @@
+use super::Assembler;
+use super::libc::page_size;
+use super::memreg::MemoryRegion;
+use std::io::Result;
+
 // For mmapp(), sysconf()
 //#ifndef _WIN32
 //#include <unistd.h>
 //#include <sys/mman.h>
 //#endif
-
-use libc;
-use memmap::MmapMut;
 
 // Import the CodeBlock tests module
 mod tests;
@@ -34,7 +36,7 @@ pub struct CodeBlock
 
     // Memory block
     // Users are advised to not use this directly.
-    mem_block: MmapMut,
+    mem_block: MemoryRegion,
 
     // Memory block size
     mem_size: usize,
@@ -123,12 +125,47 @@ pub enum X86Opnd
 impl X86Opnd {
     fn rex_needed(&self) -> bool {
         match self {
-            X86Opnd::None => false,
+            X86Opnd::None => unreachable!(),
             X86Opnd::Imm(_) => false,
             X86Opnd::UImm(_) => false,
             X86Opnd::Reg(reg) => (reg.reg_no > 7 || (reg.num_bits == 8 && reg.reg_no >= 4 && reg.reg_no <= 7)),
             X86Opnd::Mem(mem) => (mem.base_reg_no > 7 || (mem.idx_reg_no.unwrap_or(0) > 7)),
             X86Opnd::IPRel(_) => false
+        }
+    }
+
+    fn sib_needed(&self) -> bool {
+        match self {
+            X86Opnd::Mem(mem) => {
+                mem.idx_reg_no.is_some() ||
+                mem.base_reg_no == RSP_REG_NO ||
+                mem.base_reg_no == R12_REG_NO
+            },
+            _ => false
+        }
+    }
+
+    fn disp_size(&self) -> u32 {
+        match self {
+            X86Opnd::IPRel(_) => 32,
+            X86Opnd::Mem(mem) => {
+                if mem.disp != 0 {
+                    // Compute the required displacement size
+                    let num_bits = sig_imm_size(mem.disp.into());
+                    if num_bits > 32 {
+                        panic!("displacement does not fit in 32 bits");
+                    }
+
+                    // x86 can only encode 8-bit and 32-bit displacements
+                    if num_bits == 16 { 32 } else { 8 }
+                } else if mem.base_reg_no == RBP_REG_NO || mem.base_reg_no == R13_REG_NO {
+                    // If EBP or RBP or R13 is used as the base, displacement must be encoded
+                    8
+                } else {
+                    0
+                }
+            },
+            _ => 0
         }
     }
 }
@@ -137,20 +174,25 @@ impl X86Opnd {
 pub const RIP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::IP, reg_no:5 });
 
 // 64-bit GP registers
+const RSP_REG_NO: u8 = 4;
+const RBP_REG_NO: u8 = 5;
+const R12_REG_NO: u8 = 12;
+const R13_REG_NO: u8 = 13;
+
 pub const RAX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:0 });
 pub const RCX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:1 });
 pub const RDX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:2 });
 pub const RBX: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:3 });
-pub const RSP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:4 });
-pub const RBP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:5 });
+pub const RSP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:RSP_REG_NO });
+pub const RBP: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:RBP_REG_NO });
 pub const RSI: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:6 });
 pub const RDI: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:7 });
 pub const R8: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:8 });
 pub const R9: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:9 });
 pub const R10: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:10 });
 pub const R11: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:11 });
-pub const R12: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:12 });
-pub const R13: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:13 });
+pub const R12: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:R12_REG_NO });
+pub const R13: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:R13_REG_NO });
 pub const R14: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:14 });
 pub const R15: X86Opnd = X86Opnd::Reg(X86Reg{ num_bits: 64, reg_type: RegType::GP, reg_no:15 });
 
@@ -422,11 +464,11 @@ impl CodeBlock
     }
 
     pub fn new_with_mem_size(mem_size: usize) -> Self {
-        let mmap = MmapMut::map_anon(mem_size).unwrap();
+        let mmap = MemoryRegion::new(mem_size).unwrap();
         Self::new_with_mem_block(mmap, mem_size)
     }
 
-    pub fn new_with_mem_block(mem_block: MmapMut, mem_size: usize) -> Self {
+    pub fn new_with_mem_block(mem_block: MemoryRegion, mem_size: usize) -> Self {
         Self {
             mem_block,
             mem_size,
@@ -472,15 +514,12 @@ impl CodeBlock
     }
 */
     // Get a direct pointer into the executable memory block
-    fn get_ptr(&mut self, index: usize) -> *mut u8 {
-        if let Some(ptr) = self.mem_block.get_mut(index) {
-            return ptr;
-        }
-        panic!("Attempting to get a raw pointer outside the memory block");
+    fn get_ptr(&mut self, offset: usize) -> Result<*mut u8> {
+        self.mem_block.get_raw_ptr(offset)
     }
 
     // Get a direct pointer to the current write position
-    fn get_write_ptr(&mut self) -> *mut u8 {
+    fn get_write_ptr(&mut self) -> Result<*mut u8> {
         self.get_ptr(self.write_pos)
     }
 
@@ -494,70 +533,44 @@ impl CodeBlock
         }
     }
 
-/*
     // Write multiple bytes starting from the current position
-    void cb_write_bytes(codeblock_t *cb, uint32_t num_bytes, ...)
-    {
-        va_list va;
-        va_start(va, num_bytes);
-
-        for (uint32_t i = 0; i < num_bytes; ++i)
-        {
-            uint8_t byte = va_arg(va, int);
-            cb_write_byte(cb, byte);
+    fn write_bytes(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.write_byte(*byte);
         }
-
-        va_end(va);
     }
 
     // Write a signed integer over a given number of bits at the current position
-    void cb_write_int(codeblock_t *cb, uint64_t val, uint32_t num_bits)
-    {
-        assert (num_bits > 0);
-        assert (num_bits % 8 == 0);
+    fn write_int(&mut self, val: u64, num_bits: u32) {
+        assert!(num_bits > 0);
+        assert!(num_bits % 8 == 0);
 
         // Switch on the number of bits
-        switch (num_bits) {
-        case 8:
-            cb_write_byte(cb, (uint8_t)val);
-            break;
-
-        case 16:
-            cb_write_bytes(
-                cb,
-                2,
-                (uint8_t)((val >> 0) & 0xFF),
-                (uint8_t)((val >> 8) & 0xFF)
-            );
-            break;
-
-        case 32:
-            cb_write_bytes(
-                cb,
-                4,
-                (uint8_t)((val >>  0) & 0xFF),
-                (uint8_t)((val >>  8) & 0xFF),
-                (uint8_t)((val >> 16) & 0xFF),
-                (uint8_t)((val >> 24) & 0xFF)
-            );
-            break;
-
-        default:
-            {
-                // Compute the size in bytes
-                uint32_t num_bytes = num_bits / 8;
+        match num_bits {
+            8 => self.write_byte(val as u8),
+            16 => self.write_bytes(&[
+                ((val >> 0) & 0xff) as u8,
+                ((val >> 8) & 0xff) as u8
+            ]),
+            32 => self.write_bytes(&[
+                ((val >>  0) & 0xff) as u8,
+                ((val >>  8) & 0xff) as u8,
+                ((val >> 16) & 0xff) as u8,
+                ((val >> 24) & 0xff) as u8
+            ]),
+            _ => {
+                let mut cur = val;
 
                 // Write out the bytes
-                for (uint32_t i = 0; i < num_bytes; ++i)
-                {
-                    uint8_t byte_val = (uint8_t)(val & 0xFF);
-                    cb_write_byte(cb, byte_val);
-                    val >>= 8;
+                for byte in 0..(num_bits / 8) {
+                    self.write_byte((cur & 0xff) as u8);
+                    cur >>= 8;
                 }
             }
         }
     }
 
+    /*
     // Allocate a new label with a given name
     uint32_t cb_new_label(codeblock_t *cb, const char *name)
     {
@@ -626,17 +639,18 @@ impl CodeBlock
     */
 
     fn mark_position_writeable(&mut self, write_pos: usize) {
-        let pagesize = unsafe { libc::sysconf(libc::_SC_PAGESIZE) as usize };
-        let aligned_position = (self.write_pos / pagesize) * pagesize;
+        let page_size = page_size();
+        let aligned_position = (self.write_pos / page_size) * page_size;
 
         if self.current_aligned_write_pos != aligned_position {
             self.current_aligned_write_pos = aligned_position;
-            let page_addr = self.get_ptr(aligned_position) as *mut libc::c_void;
-
-            unsafe {
-                libc::mprotect(page_addr, pagesize, libc::PROT_READ | libc::PROT_WRITE);
-            }
+            self.mem_block.mark_read_write(aligned_position, page_size).unwrap();
         }
+    }
+
+    fn mark_all_executable(&mut self) {
+        self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
+        self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }
 
     /// Write the REX byte
@@ -660,16 +674,160 @@ impl CodeBlock
         let op_byte: u8 = opcode | (reg.reg_no & 7);
         self.write_byte(op_byte);
     }
+
+    /// Encode an RM instruction
+    fn write_rm(&mut self, sz_pref: bool, rex_w: bool, r_opnd: &X86Opnd, rm_opnd: &X86Opnd, op_ext: u8, op_len: u32, bytes: &[u8]) {
+        assert!(op_len > 0 && op_len <= 3);
+
+        let matched = match r_opnd {
+            X86Opnd::None => Some(()),
+            X86Opnd::Reg(_) => Some(()),
+            _ => None
+        };
+
+        matched.expect("Can only encode an RM instruction with a register or a none");
+
+        // Flag to indicate the REX prefix is needed
+        let need_rex = rex_w || r_opnd.rex_needed() || rm_opnd.rex_needed();
+
+        // Flag to indicate SIB byte is needed
+        let need_sib = r_opnd.sib_needed() || rm_opnd.sib_needed();
+
+        // Add the operand-size prefix, if needed
+        if sz_pref {
+            self.write_byte(0x66)
+        }
+
+        // Add the REX prefix, if needed
+        if need_rex {
+            // 0 1 0 0 w r x b
+            // w - 64-bit operand size flag
+            // r - MODRM.reg extension
+            // x - SIB.index extension
+            // b - MODRM.rm or SIB.base extension
+
+            let w = if rex_w { 1 } else { 0 };
+            let r = match r_opnd {
+                X86Opnd::None => 0,
+                X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
+                _ => unreachable!()
+            };
+
+            let x = match (need_sib, rm_opnd) {
+                (true, X86Opnd::Mem(mem)) => if (mem.idx_reg_no.unwrap_or(0) & 8) > 0 { 1 } else { 0 },
+                _ => 0
+            };
+
+            let b = match rm_opnd {
+                X86Opnd::Reg(reg) => if (reg.reg_no & 8) > 0 { 1 } else { 0 },
+                X86Opnd::Mem(mem) => if (mem.base_reg_no & 8) > 0 { 1 } else { 0 },
+                _ => 0
+            };
+
+            // Encode and write the REX byte
+            let rex_byte: u8 = 0x40 + (w << 3) + (r << 2) + (x << 1) + (b);
+            self.write_byte(rex_byte);
+        }
+
+        // Write the opcode bytes to the code block
+        for byte in bytes {
+            self.write_byte(*byte)
+        }
+
+        // MODRM.mod (2 bits)
+        // MODRM.reg (3 bits)
+        // MODRM.rm  (3 bits)
+
+        // assert (
+        //     !(opExt != 0xFF && r_opnd.type != OPND_NONE) &&
+        //     "opcode extension and register operand present"
+        // );
+
+        // Encode the mod field
+        let rm_mod = match rm_opnd {
+            X86Opnd::Reg(_) => 3,
+            X86Opnd::IPRel(_) => 0,
+            X86Opnd::Mem(mem) => {
+                match rm_opnd.disp_size() {
+                    0 => 0,
+                    8 => 1,
+                    32 => 2,
+                    _ => unreachable!()
+                }
+            },
+            _ => unreachable!()
+        };
+
+        // Encode the reg field
+        let reg: u8;
+        if op_ext != 0xff {
+            reg = op_ext;
+        } else {
+            reg = match r_opnd {
+                X86Opnd::Reg(reg) => reg.reg_no & 7,
+                _ => 0
+            };
+        }
+
+        // Encode the rm field
+        let rm = match rm_opnd {
+            X86Opnd::Reg(reg) => reg.reg_no & 7,
+            X86Opnd::Mem(mem) => if need_sib { 4 } else { mem.base_reg_no & 7 },
+            _ => unreachable!()
+        };
+
+        // Encode and write the ModR/M byte
+        let rm_byte: u8 = (rm_mod << 6) + (reg << 3) + (rm);
+        self.write_byte(rm_byte);
+
+        // Add the SIB byte, if needed
+        if need_sib {
+            // SIB.scale (2 bits)
+            // SIB.index (3 bits)
+            // SIB.base  (3 bits)
+
+            match rm_opnd {
+                X86Opnd::Mem(mem) => {
+                    // Encode the scale value
+                    let scale = mem.scale_exp;
+
+                    // Encode the index value
+                    let index = mem.idx_reg_no.map(|no| no & 7).unwrap_or(4);
+
+                    // Encode the base register
+                    let base = mem.base_reg_no & 7;
+
+                    // Encode and write the SIB byte
+                    let sib_byte: u8 = (scale << 6) + (index << 3) + (base);
+                    self.write_byte(sib_byte);
+                },
+                _ => panic!("Expected mem operand")
+            }
+        }
+
+        // Add the displacement
+        match rm_opnd {
+            X86Opnd::Mem(mem) => {
+                let disp_size = rm_opnd.disp_size();
+                if disp_size > 0 {
+                    self.write_int(mem.disp as u64, disp_size);
+                }
+            },
+            _ => {}
+        }
+    }
+
+    /// Returns the memory region that this codeblock wraps reinterpreted as an
+    /// external C function. Note that is effectively just returning a pointer,
+    /// the memory still needs to be marked as executable.
+    pub fn as_fn(&self) -> extern "C" fn() -> u8 {
+        unsafe { std::mem::transmute(self.mem_block.as_ptr()) }
+    }
 }
 
-trait Assembler {
-    fn push(&mut self, opnd: X86Opnd) -> ();
-    fn ret(&mut self) -> ();
-}
-
-impl Assembler for CodeBlock {
+impl Assembler<X86Opnd> for CodeBlock {
     /// push - Push an operand on the stack
-    fn push(&mut self, opnd: X86Opnd) {
+    fn push(&mut self, opnd: &X86Opnd) {
         match opnd {
             X86Opnd::Reg(ref reg) => {
                 if opnd.rex_needed() {
@@ -678,8 +836,7 @@ impl Assembler for CodeBlock {
                 self.write_opcode(0x50, reg);
             },
             X86Opnd::Mem(mem) => {
-                todo!();
-                // cb_write_rm(cb, false, false, NO_OPND, opnd, 6, 1, 0xFF);
+                self.write_rm(false, false, &X86Opnd::None, opnd, 6, 1, &[0xff]);
             },
             _ => unreachable!()
         }
@@ -692,53 +849,6 @@ impl Assembler for CodeBlock {
 }
 
 /*
-// Check if an SIB byte is needed to encode this operand
-static bool sib_needed(x86opnd_t opnd)
-{
-    if (opnd.type != OPND_MEM)
-        return false;
-
-    return (
-        opnd.as.mem.has_idx ||
-        opnd.as.mem.base_reg_no == RSP.as.reg.reg_no ||
-        opnd.as.mem.base_reg_no == R12.as.reg.reg_no
-    );
-}
-
-// Compute the size of the displacement field needed for a memory operand
-static uint32_t disp_size(x86opnd_t opnd)
-{
-    assert (opnd.type == OPND_MEM);
-
-    // If using RIP as the base, use disp32
-    if (opnd.as.mem.is_iprel)
-    {
-        return 32;
-    }
-
-    // Compute the required displacement size
-    if (opnd.as.mem.disp != 0)
-    {
-        uint32_t num_bits = sig_imm_size(opnd.as.mem.disp);
-        assert (num_bits <= 32 && "displacement does not fit in 32 bits");
-
-        // x86 can only encode 8-bit and 32-bit displacements
-        if (num_bits == 16)
-            num_bits = 32;;
-
-        return num_bits;
-    }
-
-    // If EBP or RBP or R13 is used as the base, displacement must be encoded
-    if (opnd.as.mem.base_reg_no == RBP.as.reg.reg_no ||
-        opnd.as.mem.base_reg_no == R13.as.reg.reg_no)
-    {
-        return 8;
-    }
-
-    return 0;
-}
-
 // Encode an RM instruction
 static void cb_write_rm(
     codeblock_t *cb,
@@ -2029,15 +2139,6 @@ void cb_mark_all_writeable(codeblock_t * cb)
 {
     if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_WRITE)) {
         fprintf(stderr, "Couldn't make JIT page (%p) writeable, errno: %s", (void *)cb->mem_block_, strerror(errno));
-        abort();
-    }
-}
-
-void cb_mark_all_executable(codeblock_t * cb)
-{
-    cb->current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
-    if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_EXEC)) {
-        fprintf(stderr, "Couldn't make JIT page (%p) executable, errno: %s", (void *)cb->mem_block_, strerror(errno));
         abort();
     }
 }
