@@ -151,7 +151,7 @@ rb_gvl_event_delete(gvl_hook_t * hook) {
     return success;
 }
 
-void
+static void
 rb_gvl_execute_hooks(rb_event_flag_t event, rb_atomic_t waiting) {
     if (pthread_rwlock_rdlock(&rb_gvl_hooks_rw_lock)) {
         rb_bug("GVL hooks deadlock");
