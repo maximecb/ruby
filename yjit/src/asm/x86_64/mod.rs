@@ -4,6 +4,8 @@
 //#include <sys/mman.h>
 //#endif
 
+use memmap::MmapMut;
+
 // Import the CodeBlock tests module
 mod tests;
 
@@ -31,7 +33,7 @@ pub struct CodeBlock
 
     // Memory block
     // Users are advised to not use this directly.
-    //uint8_t *mem_block_;
+    mem_block: MmapMut,
 
     // Memory block size
     mem_size: usize,
@@ -402,15 +404,25 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
 impl CodeBlock
 {
     pub fn new() -> Self {
-        return CodeBlock {
-            mem_size: 0,
+        Self::new_with_mem_size(1024)
+    }
+
+    pub fn new_with_mem_size(mem_size: usize) -> Self {
+        let mmap = MmapMut::map_anon(mem_size).unwrap();
+        Self::new_with_mem_block(mmap, mem_size)
+    }
+
+    pub fn new_with_mem_block(mem_block: MmapMut, mem_size: usize) -> Self {
+        Self {
+            mem_block,
+            mem_size,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),
             label_refs: Vec::new(),
             current_aligned_write_pos: 0,
             dropped_bytes: false
-        };
+        }
     }
 
     /*
