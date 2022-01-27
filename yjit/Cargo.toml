@@ -17,6 +17,7 @@ crate-type = ["staticlib"]
 # It might be better to dynamically link against system capstone instead of
 # depending on this crate.
 capstone = { version = "0.10.0", optional = true }
+memmap = { version = "0.7.0" }
 
 [features]
 # NOTE: By having the Capstone dependency behind a feature, we allow
