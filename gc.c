@@ -1874,6 +1874,13 @@ heap_page_add_freeobj(rb_objspace_t *objspace, struct heap_page *page, VALUE obj
 static inline void
 heap_add_freepage(rb_heap_t *heap, struct heap_page *page)
 {
+#if RGENGC_CHECK_MODE
+    struct heap_page *p = heap->free_pages;
+    while (p) {
+        GC_ASSERT(page != p);
+        p = p->free_next;
+    }
+#endif
     asan_unpoison_memory_region(&page->freelist, sizeof(RVALUE*), false);
     GC_ASSERT(page->free_slots != 0);
     GC_ASSERT(page->freelist != NULL);
