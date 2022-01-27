@@ -910,101 +910,15 @@ fn add_block_version(block: &mut Block)
     */
 }
 
-/*
-static ptrdiff_t
-branch_code_size(const branch_t *branch)
+// FIXME: the return type here should probably be a BlockRef?
+//
+// Immediately compile a series of block versions at a starting point and
+// return the starting block.
+fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
 {
-    return branch->end_addr - branch->start_addr;
-}
-
-// Generate code for a branch, possibly rewriting and changing the size of it
-static void
-regenerate_branch(codeblock_t *cb, branch_t *branch)
-{
-    if (branch->start_addr < cb_get_ptr(cb, yjit_codepage_frozen_bytes)) {
-        // Generating this branch would modify frozen bytes. Do nothing.
-        return;
-    }
-
-    const uint32_t old_write_pos = cb->write_pos;
-    const bool branch_terminates_block = branch->end_addr == branch->block->end_addr;
-
-    RUBY_ASSERT(branch->dst_addrs[0] != NULL);
-
-    cb_set_write_ptr(cb, branch->start_addr);
-    branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
-    branch->end_addr = cb_get_write_ptr(cb);
-
-    if (branch_terminates_block) {
-        // Adjust block size
-        branch->block->end_addr = branch->end_addr;
-    }
-
-    // cb->write_pos is both a write cursor and a marker for the end of
-    // everything written out so far. Leave cb->write_pos at the end of the
-    // block before returning. This function only ever bump or retain the end
-    // of block marker since that's what the majority of callers want. When the
-    // branch sits at the very end of the codeblock and it shrinks after
-    // regeneration, it's up to the caller to drop bytes off the end to
-    // not leave a gap and implement branch->shape.
-    if (old_write_pos > cb->write_pos) {
-        // We rewound cb->write_pos to generate the branch, now restore it.
-        cb_set_pos(cb, old_write_pos);
-    }
-    else {
-        // The branch sits at the end of cb and consumed some memory.
-        // Keep cb->write_pos.
-    }
-}
-*/
-
-// Create a new outgoing branch entry for a block
-fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
-
     todo!();
 
     /*
-    let branch = Branch {
-        block: Weak::new(block),
-        src_ctx: *src_ctx,
-
-        gen_fn: gen_fn,
-
-        shape: BranchShape::Default
-
-        // Block this is attached to
-        block: Weak<Block>,
-
-        // Positions where the generated code starts and ends
-        start_addr: CodePtr,
-        end_addr: CodePtr,
-
-        // Context right after the branch instruction
-        src_ctx : Context,
-
-        // Branch target blocks and their contexts
-        targets: [BlockId; 2],
-        target_ctxs: [Context; 2],
-        blocks: [Weak<Block>; 2],
-
-        // Jump target addresses
-        dst_addrs: [CodePtr; 2],
-    };
-    */
-
-    // TODO
-    // Add to the list of outgoing branches for the block
-    //rb_darray_append(&block->outgoing, branch);
-
-    //return branch;
-}
-
-/*
-// Immediately compile a series of block versions at a starting point and
-// return the starting block.
-static block_t *
-gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context_t *ec)
-{
     // Small array to keep track of all the blocks compiled per invocation. We
     // tend to have small batches since we often break up compilation with lazy
     // stubs. Compilation is successful only if the whole batch is successful.
@@ -1098,12 +1012,15 @@ gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_contex
 #endif
         return NULL;
     }
+    */
 }
 
-// Generate a block version that is an entry point inserted into an iseq
-static uint8_t *
-gen_entry_point(const rb_iseq_t *iseq, uint32_t insn_idx, rb_execution_context_t *ec)
+/// Generate a block version that is an entry point inserted into an iseq
+fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> CodePtr
 {
+    todo!();
+
+    /*
     // If we aren't at PC 0, don't generate code
     // See yjit_pc_guard
     if (iseq->body->iseq_encoded != ec->cfp->pc) {
@@ -1129,8 +1046,99 @@ gen_entry_point(const rb_iseq_t *iseq, uint32_t insn_idx, rb_execution_context_t
     }
 
     return code_ptr;
+    */
 }
 
+/*
+static ptrdiff_t
+branch_code_size(const branch_t *branch)
+{
+    return branch->end_addr - branch->start_addr;
+}
+
+// Generate code for a branch, possibly rewriting and changing the size of it
+static void
+regenerate_branch(codeblock_t *cb, branch_t *branch)
+{
+    if (branch->start_addr < cb_get_ptr(cb, yjit_codepage_frozen_bytes)) {
+        // Generating this branch would modify frozen bytes. Do nothing.
+        return;
+    }
+
+    const uint32_t old_write_pos = cb->write_pos;
+    const bool branch_terminates_block = branch->end_addr == branch->block->end_addr;
+
+    RUBY_ASSERT(branch->dst_addrs[0] != NULL);
+
+    cb_set_write_ptr(cb, branch->start_addr);
+    branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
+    branch->end_addr = cb_get_write_ptr(cb);
+
+    if (branch_terminates_block) {
+        // Adjust block size
+        branch->block->end_addr = branch->end_addr;
+    }
+
+    // cb->write_pos is both a write cursor and a marker for the end of
+    // everything written out so far. Leave cb->write_pos at the end of the
+    // block before returning. This function only ever bump or retain the end
+    // of block marker since that's what the majority of callers want. When the
+    // branch sits at the very end of the codeblock and it shrinks after
+    // regeneration, it's up to the caller to drop bytes off the end to
+    // not leave a gap and implement branch->shape.
+    if (old_write_pos > cb->write_pos) {
+        // We rewound cb->write_pos to generate the branch, now restore it.
+        cb_set_pos(cb, old_write_pos);
+    }
+    else {
+        // The branch sits at the end of cb and consumed some memory.
+        // Keep cb->write_pos.
+    }
+}
+*/
+
+// Create a new outgoing branch entry for a block
+fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
+
+    todo!();
+
+    /*
+    let branch = Branch {
+        block: Weak::new(block),
+        src_ctx: *src_ctx,
+
+        gen_fn: gen_fn,
+
+        shape: BranchShape::Default
+
+        // Block this is attached to
+        block: Weak<Block>,
+
+        // Positions where the generated code starts and ends
+        start_addr: CodePtr,
+        end_addr: CodePtr,
+
+        // Context right after the branch instruction
+        src_ctx : Context,
+
+        // Branch target blocks and their contexts
+        targets: [BlockId; 2],
+        target_ctxs: [Context; 2],
+        blocks: [Weak<Block>; 2],
+
+        // Jump target addresses
+        dst_addrs: [CodePtr; 2],
+    };
+    */
+
+    // TODO
+    // Add to the list of outgoing branches for the block
+    //rb_darray_append(&block->outgoing, branch);
+
+    //return branch;
+}
+
+/*
 // Called by the generated code when a branch stub is executed
 // Triggers compilation of branches and code patching
 static uint8_t *
@@ -1484,7 +1492,9 @@ block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
 
     RUBY_ASSERT(false);
 }
+*/
 
+/*
 // Some runtime checks for integrity of a program location
 static void
 verify_blockid(const blockid_t blockid)
@@ -1493,7 +1503,9 @@ verify_blockid(const blockid_t blockid)
     RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
     RUBY_ASSERT_ALWAYS(blockid.idx < iseq->body->iseq_size);
 }
+*/
 
+/*
 // Invalidate one specific block version
 static void
 invalidate_block_version(block_t *block)
@@ -1632,7 +1644,7 @@ invalidate_block_version(block_t *block)
 }
 */
 
-fn init_core() {
+pub fn init_core() {
     //gen_code_for_exit_from_stub();
     todo!();
 }

@@ -5096,7 +5096,7 @@ fn get_method_gen_fn()
     */
 }
 
-fn init_codegen()
+pub fn init_codegen()
 {
     /*
     // Initialize the code blocks

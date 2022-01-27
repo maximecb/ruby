@@ -10,6 +10,9 @@ pub struct VALUE(pub usize);
 /// Pointer to an ISEQ
 pub struct IseqPtr(pub usize);
 
+/// Pointer to an execution context (EC)
+pub struct EcPtr(pub usize);
+
 impl VALUE {
     // TODO: these could be in a trait for VALUE
     // SPECIAL_CONST_P(val)
