@@ -3,31 +3,21 @@
 use crate::asm::x86_64::*;
 
 #[test]
-fn ret() {
+fn test_ret() {
     let mut cb = CodeBlock::new();
 
-    cb.ret();
+    ret(&mut cb);
 
     assert_eq!(0xC3, cb.mem_block[0]);
 }
 
 #[test]
-fn push() {
+fn test_push() {
     let mut cb = CodeBlock::new();
 
-    cb.push(&RAX);
+    push(&mut cb, RAX);
 
     assert_eq!(0x50, cb.mem_block[0]);
-}
-
-#[test]
-fn execute() {
-    let mut cb = CodeBlock::new();
-
-    cb.ret();
-
-    cb.mark_all_executable();
-    cb.as_fn()();
 }
 
 /*

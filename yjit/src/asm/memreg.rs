@@ -45,7 +45,7 @@ impl MemoryRegion {
 
     /// Call mprotect on the allocated memory region at the given position with
     /// the PROT_READ and PROT_WRITE flags.
-    pub fn mark_read_write(&self, offset: usize, length: usize) -> Result<()> {
+    pub fn mark_writable(&self, offset: usize, length: usize) -> Result<()> {
         self.mark_prot(offset, length, libc::PROT_READ | libc::PROT_WRITE)
     }
 
@@ -119,9 +119,9 @@ mod tests {
     }
 
     #[test]
-    fn mark_read_write() {
+    fn mark_writable() {
         let region = MemoryRegion::new(64).unwrap();
-        let result = region.mark_read_write(0, 64);
+        let result = region.mark_writable(0, 64);
 
         assert!(matches!(result, Ok(_)));
     }
