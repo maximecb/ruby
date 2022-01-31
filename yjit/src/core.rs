@@ -1016,9 +1016,8 @@ fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
 }
 
 /// Generate a block version that is an entry point inserted into an iseq
-fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> CodePtr
+fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> CodePtr
 {
-    todo!();
 
     /*
     // If we aren't at PC 0, don't generate code
@@ -1026,11 +1025,19 @@ fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> CodePtr
     if (iseq->body->iseq_encoded != ec->cfp->pc) {
         return NULL;
     }
+    */
 
     // The entry context makes no assumptions about types
-    blockid_t blockid = { iseq, insn_idx };
+    let blockid = BlockId { iseq: iseq, idx: insn_idx };
 
+
+    todo!();
+
+
+    /*
+    // TODO: why do we need rb_vm_barrier() here? this should be commented.
     rb_vm_barrier();
+
     // Write the interpreter entry prologue. Might be NULL when out of memory.
     uint8_t *code_ptr = yjit_entry_prologue(cb, iseq);
 
