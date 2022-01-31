@@ -22,11 +22,10 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
-      # Run cargo offline so it can't download anything from crates.io
-      # We want to avoid external dependencies.
-      # NOTE: if we want to test disassembly with capstone, we could run cargo test
-      # a second time with the disassembly feature enabled
-      - run: cargo test --offline
+      # For now we can't run cargo test --offline because it complains about the
+      # capstone dependency, even though the dependency is optional
+      #- run: cargo test --offline
+      - run: cargo test
         working-directory: yjit
   make:
     strategy:
