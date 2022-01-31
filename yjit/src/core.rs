@@ -1016,7 +1016,7 @@ fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
 }
 
 /// Generate a block version that is an entry point inserted into an iseq
-fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> CodePtr
+fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
 
     /*
@@ -1031,29 +1031,33 @@ fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> CodePtr
     let blockid = BlockId { iseq: iseq, idx: insn_idx };
 
 
-    todo!();
 
 
-    /*
     // TODO: why do we need rb_vm_barrier() here? this should be commented.
-    rb_vm_barrier();
+    //rb_vm_barrier();
 
+
+
+    // FIXME: here we're trying to access a global code block, which is kind of problematic in Rust!
+    //
     // Write the interpreter entry prologue. Might be NULL when out of memory.
-    uint8_t *code_ptr = yjit_entry_prologue(cb, iseq);
+    let code_ptr = gen_entry_prologue(cb, iseq);
 
     // Try to generate code for the entry block
-    block_t *block = gen_block_version(blockid, &DEFAULT_CTX, ec);
+    let block = gen_block_version(blockid, &Context::default(), ec);
 
-    cb_mark_all_executable(ocb);
-    cb_mark_all_executable(cb);
+
+
+
+    //cb_mark_all_executable(ocb);
+    //cb_mark_all_executable(cb);
 
     // If we couldn't generate any code
-    if (!block || block->end_idx == insn_idx) {
-        return NULL;
-    }
+    //if (!block || block->end_idx == insn_idx) {
+    //    return None;
+    //}
 
     return code_ptr;
-    */
 }
 
 /*

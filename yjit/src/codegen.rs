@@ -559,39 +559,42 @@ gen_full_cfunc_return(void)
     mov(cb, RAX, imm_opnd(Qundef));
     ret(cb);
 }
-
-/*
-Compile an interpreter entry block to be inserted into an iseq
-Returns `NULL` if compilation fails.
 */
-static uint8_t *
-yjit_entry_prologue(codeblock_t *cb, const rb_iseq_t *iseq)
-{
-    RUBY_ASSERT(cb != NULL);
 
-    enum { MAX_PROLOGUE_SIZE = 1024 };
+
+
+/// Compile an interpreter entry block to be inserted into an iseq
+/// Returns None if compilation fails.
+pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
+{
+    const MAX_PROLOGUE_SIZE: usize = 1024;
 
     // Check if we have enough executable memory
-    if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
-        return NULL;
-    }
+    //if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
+    //    return NULL;
+    //}
 
-    const uint32_t old_write_pos = cb->write_pos;
+    //let old_write_pos = cb.write_pos;
 
     // Align the current write position to cache line boundaries
-    cb_align_pos(cb, 64);
+    //cb_align_pos(cb, 64);
 
-    uint8_t *code_ptr = cb_get_ptr(cb, cb->write_pos);
-    ADD_COMMENT(cb, "yjit entry");
+    //uint8_t *code_ptr = cb_get_ptr(cb, cb->write_pos);
+    //ADD_COMMENT(cb, "yjit entry");
 
-    push(cb, REG_CFP);
-    push(cb, REG_EC);
-    push(cb, REG_SP);
+    //push(cb, REG_CFP);
+    //push(cb, REG_EC);
+    //push(cb, REG_SP);
 
     // We are passed EC and CFP
-    mov(cb, REG_EC, C_ARG_REGS[0]);
-    mov(cb, REG_CFP, C_ARG_REGS[1]);
+    //mov(cb, REG_EC, C_ARG_REGS[0]);
+    //mov(cb, REG_CFP, C_ARG_REGS[1]);
 
+    todo!();
+
+
+
+    /*
     // Load the current SP from the CFP into REG_SP
     mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
 
@@ -614,8 +617,12 @@ yjit_entry_prologue(codeblock_t *cb, const rb_iseq_t *iseq)
     RUBY_ASSERT_ALWAYS(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
 
     return code_ptr;
+    */
 }
 
+
+
+/*
 // Generate code to check for interrupts and take a side-exit.
 // Warning: this function clobbers REG0
 static void

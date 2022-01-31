@@ -5,12 +5,15 @@
 // RBasic
 // ... and more!
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct VALUE(pub usize);
 
 /// Pointer to an ISEQ
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct IseqPtr(pub usize);
 
 /// Pointer to an execution context (EC)
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct EcPtr(pub usize);
 
 impl VALUE {
