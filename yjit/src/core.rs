@@ -371,7 +371,7 @@ fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 }
 
 // Get all blocks for a particular place in an iseq.
-fn get_version_list(blockid: BlockId) -> &'static VersionList
+fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 {
     let payload = get_iseq_payload(blockid.iseq);
 
@@ -380,7 +380,7 @@ fn get_version_list(blockid: BlockId) -> &'static VersionList
         payload.version_map.resize(blockid.idx + 1, VersionList::default());
     }
 
-    return &payload.version_map[blockid.idx];
+    return payload.version_map.get_mut(blockid.idx).unwrap()
 }
 
 // Count the number of block versions matching a given blockid
@@ -401,7 +401,7 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
     let mut best_diff = usize::MAX;
 
     // For each version matching the blockid
-    for blockref in versions {
+    for blockref in versions.iter_mut() {
         let block = blockref.borrow();
         let diff = ctx.diff(&block.ctx);
 
