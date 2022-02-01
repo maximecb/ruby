@@ -1,7 +1,4 @@
-use super::libc::page_size;
-use super::memreg::MemoryRegion;
-
-use std::io::Result;
+use std::io::{Result, Write};
 use std::mem::transmute;
 
 // For mmapp(), sysconf()
@@ -35,7 +32,7 @@ pub struct CodeBlock
 {
     // Memory block
     // Users are advised to not use this directly.
-    mem_block: MemoryRegion,
+    mem_block: Vec<u8>,
 
     // Memory block size
     mem_size: usize,
@@ -151,7 +148,7 @@ impl X86Opnd {
             X86Opnd::None => unreachable!(),
             X86Opnd::Imm(_) => false,
             X86Opnd::UImm(_) => false,
-            X86Opnd::Reg(reg) => (reg.reg_no > 7 || (reg.num_bits == 8 && reg.reg_no >= 4 && reg.reg_no <= 7)),
+            X86Opnd::Reg(reg) => reg.reg_no > 7 || reg.num_bits == 8 && reg.reg_no >= 4,
             X86Opnd::Mem(mem) => (mem.base_reg_no > 7 || (mem.idx_reg_no.unwrap_or(0) > 7)),
             X86Opnd::IPRel(_) => false
         }
@@ -462,18 +459,9 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
 impl CodeBlock
 {
     pub fn new() -> Self {
-        Self::new_with_mem_size(1024)
-    }
-
-    pub fn new_with_mem_size(mem_size: usize) -> Self {
-        let mmap = MemoryRegion::new(mem_size).unwrap();
-        Self::new_with_mem_block(mmap, mem_size)
-    }
-
-    pub fn new_with_mem_block(mem_block: MemoryRegion, mem_size: usize) -> Self {
         Self {
-            mem_block,
-            mem_size,
+            mem_block: Vec::with_capacity(1024),
+            mem_size: 1024,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),
@@ -482,9 +470,9 @@ impl CodeBlock
             dropped_bytes: false
         }
     }
-      
+
     pub fn get_write_pos(self) -> usize {
-        return self.write_pos;
+        self.write_pos
     }
 
     // Set the current write position
@@ -519,19 +507,25 @@ impl CodeBlock
     }
 */
     // Get a direct pointer into the executable memory block
-    fn get_ptr(&mut self, offset: usize) -> Result<*mut u8> {
-        self.mem_block.get_raw_ptr(offset)
-    }
+    // fn get_ptr(&mut self, offset: usize) -> Result<*mut u8> {
+    //     self.mem_block.as_ptr(offset)
+    // }
 
     // Get a direct pointer to the current write position
-    fn get_write_ptr(&mut self) -> Result<*mut u8> {
-        self.get_ptr(self.write_pos)
-    }
+    // fn get_write_ptr(&mut self) -> Result<*mut u8> {
+    //     self.get_ptr(self.write_pos)
+    // }
 
     pub fn write_byte(&mut self, byte: u8) {
         if self.write_pos < self.mem_size {
             self.mark_position_writeable(self.write_pos);
-            self.mem_block[self.write_pos] = byte;
+
+            if self.write_pos + 1 > self.mem_block.len() {
+                self.mem_block.push(byte);
+            } else {
+                self.mem_block[self.write_pos] = byte;
+            }
+
             self.write_pos += 1;
         } else {
             self.dropped_bytes = true;
@@ -554,11 +548,11 @@ impl CodeBlock
         match num_bits {
             8 => self.write_byte(val as u8),
             16 => self.write_bytes(&[
-                ((val >> 0) & 0xff) as u8,
+                ( val       & 0xff) as u8,
                 ((val >> 8) & 0xff) as u8
             ]),
             32 => self.write_bytes(&[
-                ((val >>  0) & 0xff) as u8,
+                ( val        & 0xff) as u8,
                 ((val >>  8) & 0xff) as u8,
                 ((val >> 16) & 0xff) as u8,
                 ((val >> 24) & 0xff) as u8
@@ -644,18 +638,18 @@ impl CodeBlock
     */
 
     fn mark_position_writeable(&mut self, write_pos: usize) {
-        let page_size = page_size();
-        let aligned_position = (self.write_pos / page_size) * page_size;
+        // let page_size = page_size();
+        // let aligned_position = (self.write_pos / page_size) * page_size;
 
-        if self.current_aligned_write_pos != aligned_position {
-            self.current_aligned_write_pos = aligned_position;
-            self.mem_block.mark_writable(aligned_position, page_size).unwrap();
-        }
+        // if self.current_aligned_write_pos != aligned_position {
+            // self.current_aligned_write_pos = aligned_position;
+            // self.mem_block.mark_writable(aligned_position, page_size).unwrap();
+        // }
     }
 
     fn mark_all_executable(&mut self) {
         self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
-        self.mem_block.mark_executable(0, self.mem_size).unwrap();
+        // self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }
 
     /// Write the REX byte
@@ -811,14 +805,11 @@ impl CodeBlock
         }
 
         // Add the displacement
-        match rm_opnd {
-            X86Opnd::Mem(mem) => {
-                let disp_size = rm_opnd.disp_size();
-                if disp_size > 0 {
-                    self.write_int(mem.disp as u64, disp_size);
-                }
-            },
-            _ => {}
+        if let X86Opnd::Mem(mem) = rm_opnd {
+            let disp_size = rm_opnd.disp_size();
+            if disp_size > 0 {
+                self.write_int(mem.disp as u64, disp_size);
+            }
         }
     }
 
