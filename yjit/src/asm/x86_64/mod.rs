@@ -444,7 +444,7 @@ static uint8_t *alloc_exec_mem(uint32_t mem_size)
     // Fill the executable memory with PUSH DS (0x1E) so that
     // executing uninitialized memory will fault with #UD in
     // 64-bit mode.
-    cb_mark_all_writeable(cb);
+    cb_mark_all_writable(cb);
     memset(mem_block, 0x1E, mem_size);
     cb_mark_all_executable(cb);
 
@@ -486,7 +486,7 @@ impl CodeBlock
 
     /*
     // Align the current write position to a multiple of bytes
-    void cb_align_pos(codeblock_t *cb, uint32_t multiple)
+    void align_pos(codeblock_t *cb, uint32_t multiple)
     {
         // Compute the pointer modulo the given alignment boundary
         uint8_t *ptr = cb_get_write_ptr(cb);
@@ -499,13 +499,14 @@ impl CodeBlock
     }
 
     // Set the current write position from a pointer
-    void cb_set_write_ptr(codeblock_t *cb, uint8_t *code_ptr)
+    void set_write_ptr(codeblock_t *cb, uint8_t *code_ptr)
     {
         intptr_t pos = code_ptr - cb->mem_block_;
         assert (pos < cb->mem_size);
         cb_set_pos(cb, (uint32_t)pos);
     }
-*/
+    */
+
     // Get a direct pointer into the executable memory block
     // fn get_ptr(&mut self, offset: usize) -> Result<*mut u8> {
     //     self.mem_block.as_ptr(offset)
@@ -518,7 +519,7 @@ impl CodeBlock
 
     pub fn write_byte(&mut self, byte: u8) {
         if self.write_pos < self.mem_size {
-            self.mark_position_writeable(self.write_pos);
+            self.mark_position_writable(self.write_pos);
 
             if self.write_pos + 1 > self.mem_block.len() {
                 self.mem_block.push(byte);
@@ -571,7 +572,7 @@ impl CodeBlock
 
     /*
     // Allocate a new label with a given name
-    uint32_t cb_new_label(codeblock_t *cb, const char *name)
+    uint32_t new_label(codeblock_t *cb, const char *name)
     {
         //if (hasASM)
         //    writeString(to!string(label) ~ ":");
@@ -589,14 +590,14 @@ impl CodeBlock
     }
 
     // Write a label at the current address
-    void cb_write_label(codeblock_t *cb, uint32_t label_idx)
+    void write_label(codeblock_t *cb, uint32_t label_idx)
     {
         assert (label_idx < MAX_LABELS);
         cb->label_addrs[label_idx] = cb->write_pos;
     }
 
     // Add a label reference at the current write position
-    void cb_label_ref(codeblock_t *cb, uint32_t label_idx)
+    void label_ref(codeblock_t *cb, uint32_t label_idx)
     {
         assert (label_idx < MAX_LABELS);
         assert (cb->num_refs < MAX_LABEL_REFS);
@@ -607,7 +608,7 @@ impl CodeBlock
     }
 
     // Link internal label references
-    void cb_link_labels(codeblock_t *cb)
+    void link_labels(codeblock_t *cb)
     {
         uint32_t orig_pos = cb->write_pos;
 
@@ -637,7 +638,7 @@ impl CodeBlock
     }
     */
 
-    fn mark_position_writeable(&mut self, write_pos: usize) {
+    fn mark_position_writable(&mut self, write_pos: usize) {
         // let page_size = page_size();
         // let aligned_position = (self.write_pos / page_size) * page_size;
 
@@ -647,10 +648,27 @@ impl CodeBlock
         // }
     }
 
+    fn mark_all_writable(&mut self) {
+        todo!();
+
+        //if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_WRITE)) {
+        //    fprintf(stderr, "Couldn't make JIT page (%p) writable, errno: %s", (void *)cb->mem_block_, strerror(errno));
+        //    abort();
+        //}
+    }
+
     fn mark_all_executable(&mut self) {
         self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
         // self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }
+
+
+
+    // TODO: make the following non-public functions within this module
+    // instead of methods on the CodeBlock.
+    // We should try to make it so that CodeBlock can be reused by the ARM64 assembler.
+
+
 
     /// Write the REX byte
     fn write_rex(&mut self, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
@@ -1742,13 +1760,5 @@ fn xor(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 void cb_write_lock_prefix(codeblock_t *cb)
 {
     cb_write_byte(cb, 0xF0);
-}
-
-void cb_mark_all_writeable(codeblock_t * cb)
-{
-    if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_WRITE)) {
-        fprintf(stderr, "Couldn't make JIT page (%p) writeable, errno: %s", (void *)cb->mem_block_, strerror(errno));
-        abort();
-    }
 }
 */
