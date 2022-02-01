@@ -6,14 +6,17 @@
 // ... and more!
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct VALUE(pub usize);
 
 /// Pointer to an ISEQ
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct IseqPtr(pub usize);
 
 /// Pointer to an execution context (EC)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct EcPtr(pub usize);
 
 impl VALUE {

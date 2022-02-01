@@ -1,32 +1,48 @@
 //! Everything related to the collection of runtime stats in YJIT
 //! See the stats feature and the --yjit-stats command-line option
 
+use crate::cruby::*;
+use crate::options::*;
 
 // Maxime says: I added a stats feature so we can conditionally
 // enable/disable the stats code:
 // #[cfg(feature = "stats")]
 
+// TODO
+//extern const int rb_vm_max_insn_name_size;
 
+// YJIT exit counts for each instruction type
+static mut EXIT_OP_COUNT: [u64; VM_INSTRUCTION_SIZE] = [0; VM_INSTRUCTION_SIZE];
 
+// Macro to declare the stat counters
+macro_rules! make_counters {
+    ($($counter_name:ident),+) => {
+        // Struct containing the counter values
+        #[derive(Default, Debug)]
+        struct Counters { $($counter_name: u64),+ }
 
+        // Counter names constant
+        const COUNTER_NAMES: &'static [&'static str] = &[ $(stringify!($counter_name)),+ ];
 
-/*
-#if YJIT_STATS
-extern const int rb_vm_max_insn_name_size;
-static int64_t exit_op_count[VM_INSTRUCTION_SIZE] = { 0 };
-#endif
-*/
+        // Global counters instance, initialized to zero
+        static mut COUNTERS: Counters = Counters { $($counter_name: 0),+ };
+    }
+}
 
+/// Macro to increment a counter by name
+macro_rules! incr_counter {
+    // Unsafe is ok here because options are initialized
+    // once before any Ruby code executes
+    ($counter_name:ident) => {
+        unsafe {
+            COUNTERS.$counter_name += 1
+        }
+    };
+}
+pub(crate) use incr_counter;
 
-
-/*
-// Counters for generated code
-#define YJIT_DECLARE_COUNTERS(...) struct rb_yjit_runtime_counters { \
-    int64_t __VA_ARGS__; \
-}; \
-static char yjit_counter_names[] = #__VA_ARGS__;
-
-YJIT_DECLARE_COUNTERS(
+// Declare all the counters we track
+make_counters!(
     exec_instruction,
 
     send_keywords,
@@ -110,20 +126,8 @@ YJIT_DECLARE_COUNTERS(
     expandarray_rhs_too_small,
 
     gbpp_block_param_modified,
-    gbpp_block_handler_not_iseq,
-
-    // Member with known name for iterating over counters
-    last_member
-)
-
-static struct rb_yjit_runtime_counters yjit_runtime_counters = { 0 };
-*/
-
-
-
-
-
-
+    gbpp_block_handler_not_iseq
+);
 
 
 
@@ -213,18 +217,19 @@ get_yjit_stats(rb_execution_context_t *ec, VALUE self)
 
 
 
-/*
 // Primitive called in yjit.rb. Zero out all the counters.
-static VALUE
-reset_stats_bang(rb_execution_context_t *ec, VALUE self)
-{
-#if YJIT_STATS
-    memset(&exit_op_count, 0, sizeof(exit_op_count));
-    memset(&yjit_runtime_counters, 0, sizeof(yjit_runtime_counters));
-#endif // if YJIT_STATS
-    return Qnil;
+#[no_mangle]
+pub extern "C" fn reset_stats_bang(ec: EcPtr, ruby_self: VALUE) -> VALUE {
+    unsafe {
+        EXIT_OP_COUNT = [0; VM_INSTRUCTION_SIZE];
+        COUNTERS = Counters::default();
+    }
+
+    todo!(); // missing Qnil const
+    //return Qnil;
 }
-*/
+
+
 
 
 
@@ -271,16 +276,12 @@ _counted_side_exit(jitstate_t* jit, uint8_t *existing_side_exit, int64_t *counte
 
 
 
-
-
-/*
-#if YJIT_STATS
-void
-rb_yjit_collect_vm_usage_insn(int insn)
-{
-    yjit_runtime_counters.vm_insns_count++;
+#[no_mangle]
+pub extern "C" fn rb_yjit_collect_vm_usage_insn() {
+    incr_counter!(vm_insns_count);
 }
 
+/*
 void
 rb_yjit_collect_binding_alloc(void)
 {
@@ -300,5 +301,4 @@ yjit_count_side_exit_op(const VALUE *exit_pc)
     exit_op_count[insn]++;
     return exit_pc; // This function must return exit_pc!
 }
-#endif
 */
