@@ -87,7 +87,6 @@ MAKE_ENC      = -f $(ENC_MK) V="$(V)" UNICODE_HDR_DIR="$(UNICODE_HDR_DIR)" \
 # Possible alternative: make libyjit.a rule POHNY and rely on cargo to
 # figure out what's out of date. It seems fast when nothing changes.
 RUST_SOURCE = $(srcdir)/yjit/Cargo.lock $(srcdir)/yjit/Cargo.toml \
-	$(srcdir)/yjit/src/asm/x64/mod.rs \
 	$(srcdir)/yjit/src/codegen.rs \
 	$(srcdir)/yjit/src/core.rs \
 	$(srcdir)/yjit/src/cruby.rs \

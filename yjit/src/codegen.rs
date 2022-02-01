@@ -1,6 +1,7 @@
 use crate::cruby::*;
 use crate::asm::x86_64::*;
 use crate::core::*;
+use InsnOpnd::*;
 use CodegenStatus::*;
 
 // Callee-saved registers
@@ -25,7 +26,7 @@ pub struct JITState
     //codeblock_t* ocb;
 
     // Block version being compiled
-    block: Block,
+    block: BlockRef,
 
     // Instruction sequence this is associated with
     iseq: IseqPtr,
@@ -53,14 +54,14 @@ pub struct JITState
 
 impl JITState {
     pub fn new() -> Self {
-        return JITState {
+        JITState {
             block: Block::new(BLOCKID_NULL),
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
             side_exit_for_pc: CodePtr::null(),
             record_boundary_patch_point: false
-        };
+        }
     }
 }
 
@@ -71,7 +72,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
 
 
 
@@ -558,39 +559,42 @@ gen_full_cfunc_return(void)
     mov(cb, RAX, imm_opnd(Qundef));
     ret(cb);
 }
-
-/*
-Compile an interpreter entry block to be inserted into an iseq
-Returns `NULL` if compilation fails.
 */
-static uint8_t *
-yjit_entry_prologue(codeblock_t *cb, const rb_iseq_t *iseq)
-{
-    RUBY_ASSERT(cb != NULL);
 
-    enum { MAX_PROLOGUE_SIZE = 1024 };
+
+
+/// Compile an interpreter entry block to be inserted into an iseq
+/// Returns None if compilation fails.
+pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
+{
+    const MAX_PROLOGUE_SIZE: usize = 1024;
 
     // Check if we have enough executable memory
-    if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
-        return NULL;
-    }
+    //if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
+    //    return NULL;
+    //}
 
-    const uint32_t old_write_pos = cb->write_pos;
+    //let old_write_pos = cb.write_pos;
 
     // Align the current write position to cache line boundaries
-    cb_align_pos(cb, 64);
+    //cb_align_pos(cb, 64);
 
-    uint8_t *code_ptr = cb_get_ptr(cb, cb->write_pos);
-    ADD_COMMENT(cb, "yjit entry");
+    //uint8_t *code_ptr = cb_get_ptr(cb, cb->write_pos);
+    //ADD_COMMENT(cb, "yjit entry");
 
-    push(cb, REG_CFP);
-    push(cb, REG_EC);
-    push(cb, REG_SP);
+    //push(cb, REG_CFP);
+    //push(cb, REG_EC);
+    //push(cb, REG_SP);
 
     // We are passed EC and CFP
-    mov(cb, REG_EC, C_ARG_REGS[0]);
-    mov(cb, REG_CFP, C_ARG_REGS[1]);
+    //mov(cb, REG_EC, C_ARG_REGS[0]);
+    //mov(cb, REG_CFP, C_ARG_REGS[1]);
 
+    todo!();
+
+
+
+    /*
     // Load the current SP from the CFP into REG_SP
     mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
 
@@ -613,8 +617,12 @@ yjit_entry_prologue(codeblock_t *cb, const rb_iseq_t *iseq)
     RUBY_ASSERT_ALWAYS(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
 
     return code_ptr;
+    */
 }
 
+
+
+/*
 // Generate code to check for interrupts and take a side-exit.
 // Warning: this function clobbers REG0
 static void
@@ -816,56 +824,115 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Do nothing
-    return KeepCompiling;
+    KeepCompiling
 }
 
-fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &CodeBlock) -> CodegenStatus
+fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
-    return KeepCompiling;
+    KeepCompiling
+}
+
+fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    let dup_val = ctx.stack_pop(0);
+    let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
+
+    let loc0 = ctx.stack_push_mapping((mapping, tmp_type));
+    //mov(cb, REG0, dup_val);  // Huh. Mov() isn't implemented. Why did I think it was?
+    //mov(cb, loc0, REG0);
+
+    KeepCompiling
+}
+
+// Swap top 2 stack entries
+fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    stack_swap(ctx, cb, 0, 1, REG0, REG1);
+    KeepCompiling
+}
+
+fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16, reg0: X86Opnd, reg1: X86Opnd) -> ()
+{
+    let opnd0 = ctx.stack_opnd(offset0 as i32);
+    let opnd1 = ctx.stack_opnd(offset1 as i32);
+
+    let mapping0 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset0));
+    let mapping1 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset1));
+
+    //mov(cb, REG0, opnd0);
+    //mov(cb, REG1, opnd1);
+    //mov(cb, opnd0, REG1);
+    //mov(cb, opnd1, REG0);
+
+    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset0), mapping1);
+    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    //use crate::codegen::*;
+    use crate::asm::x86_64::*;
+
     #[test]
     fn test_gen_nop() {
-        let status = gen_nop(&JITState::new(), &mut Context::new(), &CodeBlock::new());
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let status = gen_nop(&JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
+        assert_eq!(context.diff(&Context::new()), 0);
+        assert_eq!(cb.get_write_pos(), 0);
     }
 
     #[test]
     fn test_gen_pop() {
         let mut context = Context::new_with_stack_size(1);
-        let status = gen_pop(&JITState::new(), &mut context, &CodeBlock::new());
+        let status = gen_pop(&JITState::new(), &mut context, &mut CodeBlock::new());
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
     }
+
+    #[test]
+    fn test_gen_dup() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        let mut cb = CodeBlock::new();
+        let status = gen_dup(&JITState::new(), &mut context, &mut cb);
+
+        assert!(matches!(KeepCompiling, status));
+        // Did we duplicate the type information for the Fixnum type?
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(0)));
+        assert_eq!(Type::Fixnum, context.get_opnd_type(StackOpnd(1)));
+
+        //assert_eq!(cb.get_write_pos(), 2);  // Can check the write_pos once the mov statements can be uncommented
+    }
+
+    #[test]
+    fn test_gen_swap() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Flonum);
+        let mut cb = CodeBlock::new();
+        let status = gen_swap(&JITState::new(), &mut context, &mut cb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+        let (_, tmp_type_next) = context.get_opnd_mapping(StackOpnd(1));
+
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Fixnum);
+        assert_eq!(tmp_type_next, Type::Flonum);
+    }
 }
 
 /*
-static codegen_status_t
-gen_dup(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    // Get the top value and its type
-    x86opnd_t dup_val = ctx_stack_pop(ctx, 0);
-    temp_type_mapping_t mapping = ctx_get_opnd_mapping(ctx, OPND_STACK(0));
-
-    // Push the same value on top
-    x86opnd_t loc0 = ctx_stack_push_mapping(ctx, mapping);
-    mov(cb, REG0, dup_val);
-    mov(cb, loc0, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
 // duplicate stack top n elements
 static codegen_status_t
 gen_dupn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
@@ -890,32 +957,6 @@ gen_dupn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     mov(cb, REG0, opnd0);
     mov(cb, dst0, REG0);
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static void
-stack_swap(ctx_t *ctx, codeblock_t *cb, int offset0, int offset1, x86opnd_t reg0, x86opnd_t reg1)
-{
-    x86opnd_t opnd0 = ctx_stack_opnd(ctx, offset0);
-    x86opnd_t opnd1 = ctx_stack_opnd(ctx, offset1);
-
-    temp_type_mapping_t mapping0 = ctx_get_opnd_mapping(ctx, OPND_STACK(offset0));
-    temp_type_mapping_t mapping1 = ctx_get_opnd_mapping(ctx, OPND_STACK(offset1));
-
-    mov(cb, reg0, opnd0);
-    mov(cb, reg1, opnd1);
-    mov(cb, opnd0, reg1);
-    mov(cb, opnd1, reg0);
-
-    ctx_set_opnd_mapping(ctx, OPND_STACK(offset0), mapping1);
-    ctx_set_opnd_mapping(ctx, OPND_STACK(offset1), mapping0);
-}
-
-// Swap top 2 stack entries
-static codegen_status_t
-gen_swap(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    stack_swap(ctx , cb, 0, 1, REG0, REG1);
     return YJIT_KEEP_COMPILING;
 }
 
@@ -4981,9 +5022,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
     match opcode {
         OP_NOP => Some(gen_nop),
         OP_POP => Some(gen_pop),
+        OP_DUP => Some(gen_dup),
 
         /*
-        yjit_reg_op(BIN(dup), gen_dup);
         yjit_reg_op(BIN(dupn), gen_dupn);
         yjit_reg_op(BIN(swap), gen_swap);
         yjit_reg_op(BIN(setn), gen_setn);
@@ -5096,7 +5137,7 @@ fn get_method_gen_fn()
     */
 }
 
-fn init_codegen()
+pub fn init_codegen()
 {
     /*
     // Initialize the code blocks

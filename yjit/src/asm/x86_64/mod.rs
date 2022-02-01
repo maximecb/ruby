@@ -482,6 +482,10 @@ impl CodeBlock
             dropped_bytes: false
         }
     }
+      
+    pub fn get_write_pos(self) -> usize {
+        return self.write_pos;
+    }
 
     // Set the current write position
     fn set_pos(&mut self, pos: usize) {

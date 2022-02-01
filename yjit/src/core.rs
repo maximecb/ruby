@@ -157,10 +157,10 @@ impl Type {
 // self, a local variable or constant so that we can track its type
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub enum TempMapping {
-    MapToStack,               // Normal stack value
-    MapToSelf,                // Temp maps to the self operand
-    MapToLocal { idx: u8 },   // Temp maps to a local variable with index
-    //ConstMapping,             // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
+    MapToStack,             // Normal stack value
+    MapToSelf,              // Temp maps to the self operand
+    MapToLocal(u8),         // Temp maps to a local variable with index
+    //ConstMapping,         // Small constant (0, 1, 2, Qnil, Qfalse, Qtrue)
 }
 
 impl Default for TempMapping {
@@ -176,7 +176,7 @@ pub enum InsnOpnd {
     SelfOpnd,
 
     // Temporary stack operand with stack index
-    StackOpnd { idx: u16 },
+    StackOpnd(u16),
 }
 
 /**
@@ -210,6 +210,7 @@ pub struct Context
 }
 
 // Tuple of (iseq, idx) used to identify basic blocks
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct BlockId
 {
     // Instruction sequence
@@ -325,11 +326,11 @@ pub struct Block
     entry_exit: CodePtr,
 }
 
+/// Reference-counted pointer to a block that can be borrowed mutably
+pub type BlockRef = Rc<RefCell<Block>>;
+
 /// Reference-counted pointer to a branch that can be borrowed mutably
 type BranchRef = Rc<RefCell<Branch>>;
-
-/// Reference-counted pointer to a block that can be borrowed mutably
-type BlockRef = Rc<RefCell<Block>>;
 
 /// List of block versions for a given blockid
 type VersionList = Vec<BlockRef>;
@@ -348,21 +349,38 @@ struct IseqPayload
 }
 
 /// Get the payload object associated with an iseq
-fn get_iseq_payload(iseq: IseqPtr) -> &'static IseqPayload
+fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 {
     todo!();
+
 
     // TODO: add black magic unsafe {} incantation here
     // Need to read the iseq payload from the iseq
     //unsafe {
     //}
+
+
+
+
+    // TODO: may need to allocate the payload object here
+
+
+
+
+
 }
 
 // Get all blocks for a particular place in an iseq.
-fn get_version_list(blockid: BlockId) -> &'static VersionList
+fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 {
     let payload = get_iseq_payload(blockid.iseq);
-    return &payload.version_map[blockid.idx];
+
+    // Expand the version map as necessary
+    if blockid.idx >= payload.version_map.len() {
+        payload.version_map.resize(blockid.idx + 1, VersionList::default());
+    }
+
+    return payload.version_map.get_mut(blockid.idx).unwrap()
 }
 
 // Count the number of block versions matching a given blockid
@@ -383,7 +401,7 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
     let mut best_diff = usize::MAX;
 
     // For each version matching the blockid
-    for blockref in versions {
+    for blockref in versions.iter_mut() {
         let block = blockref.borrow();
         let diff = ctx.diff(&block.ctx);
 
@@ -431,6 +449,50 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
     return *ctx;
 }
 
+/// Keep track of a block version. Block should be fully constructed.
+pub fn add_block_version(blockref: BlockRef)
+{
+    let block = blockref.borrow();
+
+    // Function entry blocks must have stack size 0
+    assert!(!(block.blockid.idx == 0 && block.ctx.stack_size > 0));
+
+    let version_list = get_version_list(block.blockid);
+
+    //version_list.push(blockref.clone());
+
+
+
+
+
+    /*
+    {
+        // By writing the new block to the iseq, the iseq now
+        // contains new references to Ruby objects. Run write barriers.
+        cme_dependency_t *cme_dep;
+        rb_darray_foreach(block->cme_dependencies, cme_dependency_idx, cme_dep) {
+            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->receiver_klass);
+            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->callee_cme);
+        }
+
+        // Run write barriers for all objects in generated code.
+        uint32_t *offset_element;
+        rb_darray_foreach(block->gc_object_offsets, offset_idx, offset_element) {
+            uint32_t offset_to_value = *offset_element;
+            uint8_t *value_address = cb_get_ptr(cb, offset_to_value);
+
+            VALUE object;
+            memcpy(&object, value_address, SIZEOF_VALUE);
+            RB_OBJ_WRITTEN(iseq, Qundef, object);
+        }
+    }
+    */
+
+    //#if YJIT_STATS
+    //yjit_runtime_counters.compiled_block_count++;
+    //#endif
+}
+
 //===========================================================================
 // I put the implementation of traits for core.rs types below
 // We can move these closer to the above structs later if we want.
@@ -441,10 +503,8 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 //static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Block {
-    pub fn new(blockid: BlockId) -> Self {
-        let ptr = 0;
-
-        return Block {
+    pub fn new(blockid: BlockId) -> BlockRef {
+        let block = Block {
             blockid,
             end_idx: 0,
             ctx: Context::new(),
@@ -456,6 +516,12 @@ impl Block {
             cme_dependencies: Vec::new(),
             entry_exit: CodePtr::null()
         };
+
+        // Wrap the block in a reference counted refcell
+        // so that the block ownership can be shared
+        let block_ref = Rc::new(RefCell::new(block));
+
+        return block_ref
     }
 }
 
@@ -468,7 +534,7 @@ impl Context {
             local_types: [Type::Unknown; MAX_LOCAL_TYPES],
             temp_types: [Type::Unknown; MAX_TEMP_TYPES],
             self_type: Type::Unknown,
-            temp_mapping: [TempMapping::MapToStack; MAX_TEMP_TYPES]
+            temp_mapping: [MapToStack; MAX_TEMP_TYPES]
         };
     }
 
@@ -477,7 +543,7 @@ impl Context {
     }
 
     /// Get an operand for the adjusted stack pointer address
-    fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
+    pub fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {
         let offset = ((self.sp_offset as usize) * SIZEOF_VALUE) + offset_bytes;
         let offset = offset as i32;
@@ -486,7 +552,7 @@ impl Context {
 
     /// Push one new value on the temp stack with an explicit mapping
     /// Return a pointer to the new stack top
-    fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> X86Opnd
+    pub fn stack_push_mapping(&mut self, (mapping, temp_type): (TempMapping, Type)) -> X86Opnd
     {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
@@ -500,7 +566,7 @@ impl Context {
             self.temp_mapping[stack_size] = mapping;
             self.temp_types[stack_size] = temp_type;
 
-            if let MapToLocal { idx } = mapping {
+            if let MapToLocal(idx) = mapping {
                 assert!((idx as usize) < MAX_LOCAL_TYPES);
             }
         }
@@ -515,26 +581,26 @@ impl Context {
 
     /// Push one new value on the temp stack
     /// Return a pointer to the new stack top
-    fn stack_push(&mut self, val_type: Type) -> X86Opnd
+    pub fn stack_push(&mut self, val_type: Type) -> X86Opnd
     {
         return self.stack_push_mapping((MapToStack, val_type));
     }
 
     /// Push the self value on the stack
-    fn stack_push_self(&mut self) -> X86Opnd
+    pub fn stack_push_self(&mut self) -> X86Opnd
     {
         return self.stack_push_mapping((MapToSelf, Type::Unknown));
     }
 
     /// Push a local variable on the stack
-    fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd
+    pub fn stack_push_local(&mut self, local_idx: usize) -> X86Opnd
     {
         if local_idx >= MAX_LOCAL_TYPES {
             return self.stack_push(Type::Unknown);
         }
 
         return self.stack_push_mapping(
-            (MapToLocal{ idx: local_idx as u8 }, Type::Unknown)
+            (MapToLocal(local_idx as u8), Type::Unknown)
         );
     }
 
@@ -565,7 +631,7 @@ impl Context {
     }
 
     /// Get an operand pointing to a slot on the temp stack
-    fn stack_opnd(&self, idx: i32) -> X86Opnd
+    pub fn stack_opnd(&self, idx: i32) -> X86Opnd
     {
         // SP points just above the topmost value
         let offset = ((self.sp_offset as i32) - 1 - idx) * (SIZEOF_VALUE as i32);
@@ -574,13 +640,13 @@ impl Context {
     }
 
     /// Get the type of an instruction operand
-    fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
+    pub fn get_opnd_type(&self, opnd: InsnOpnd) -> Type
     {
         match opnd {
             SelfOpnd => {
                 self.self_type
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -599,7 +665,7 @@ impl Context {
                     MapToStack => {
                         self.temp_types[(self.stack_size - 1 - idx) as usize]
                     },
-                    MapToLocal{idx} => {
+                    MapToLocal(idx) => {
                         assert!((idx as usize) < MAX_LOCAL_TYPES);
                         return self.local_types[idx as usize]
                     },
@@ -612,7 +678,7 @@ impl Context {
     /// This value must be compatible and at least as specific as the previously known type.
     /// If this value originated from self, or an lvar, the learned type will be
     /// propagated back to its source.
-    fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
+    pub fn upgrade_opnd_type(&mut self, opnd: InsnOpnd, opnd_type: Type)
     {
         // If type propagation is disabled, store no types
         if get_option!(no_type_prop) {
@@ -623,7 +689,7 @@ impl Context {
             SelfOpnd => {
                 self.self_type.upgrade(opnd_type)
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -642,7 +708,7 @@ impl Context {
                     MapToStack => {
                         self.temp_types[stack_idx].upgrade(opnd_type)
                     },
-                    MapToLocal{idx} => {
+                    MapToLocal(idx) => {
                         let idx = idx as usize;
                         assert!(idx < MAX_LOCAL_TYPES);
                         self.local_types[idx].upgrade(opnd_type);
@@ -657,7 +723,7 @@ impl Context {
     This is can be used with stack_push_mapping or set_opnd_mapping to copy
     a stack value's type while maintaining the mapping.
     */
-    fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
+    pub fn get_opnd_mapping(&self, opnd: InsnOpnd) -> (TempMapping, Type)
     {
         let opnd_type = self.get_opnd_type(opnd);
 
@@ -665,7 +731,7 @@ impl Context {
             SelfOpnd => {
                 (MapToSelf, opnd_type)
             },
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 let idx = idx as u16;
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
@@ -684,11 +750,11 @@ impl Context {
     }
 
     /// Overwrite both the type and mapping of a stack operand.
-    fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
+    pub fn set_opnd_mapping(&mut self, opnd: InsnOpnd, (mapping, opnd_type): (TempMapping, Type))
     {
         match opnd {
             SelfOpnd => unreachable!("self always maps to self"),
-            StackOpnd{ idx } => {
+            StackOpnd(idx) => {
                 assert!(idx < self.stack_size);
                 let stack_idx = (self.stack_size - 1 - idx) as usize;
 
@@ -711,7 +777,7 @@ impl Context {
     }
 
     /// Set the type of a local variable
-    fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
+    pub fn set_local_type(&mut self, local_idx: usize, local_type: Type) {
         let ctx = self;
 
         // If type propagation is disabled, store no types
@@ -728,12 +794,12 @@ impl Context {
             *mapping = match *mapping {
                 MapToStack => MapToStack,
                 MapToSelf => MapToSelf,
-                MapToLocal{idx} => {
+                MapToLocal(idx) => {
                     if idx as usize == local_idx {
                         ctx.temp_types[i] = ctx.local_types[idx as usize];
                         MapToStack
                     } else {
-                        MapToLocal{idx}
+                        MapToLocal(idx)
                     }
                 },
             }
@@ -744,14 +810,14 @@ impl Context {
 
     /// Erase local variable type information
     /// eg: because of a call we can't track
-    fn clear_local_types(ctx: &mut Self) {
+    pub fn clear_local_types(ctx: &mut Self) {
         // When clearing local types we must detach any stack mappings to those
         // locals. Even if local values may have changed, stack values will not.
         for (i, mapping) in ctx.temp_mapping.iter_mut().enumerate() {
             *mapping = match *mapping {
                 MapToStack => MapToStack,
                 MapToSelf => MapToSelf,
-                MapToLocal{idx} => {
+                MapToLocal(idx) => {
                     ctx.temp_types[i] = ctx.local_types[idx as usize];
                     MapToStack
                 },
@@ -817,8 +883,8 @@ impl Context {
 
         // For each value on the temp stack
         for i in 0..src.stack_size {
-            let (src_mapping, src_type) = src.get_opnd_mapping(StackOpnd{idx: i});
-            let (dst_mapping, dst_type) = dst.get_opnd_mapping(StackOpnd{idx: i});
+            let (src_mapping, src_type) = src.get_opnd_mapping(StackOpnd(i));
+            let (dst_mapping, dst_type) = dst.get_opnd_mapping(StackOpnd(i));
 
             // If the two mappings aren't the same
             if src_mapping != dst_mapping {
@@ -845,166 +911,15 @@ impl Context {
     }
 }
 
-/// Keep track of a block version. Block should be fully constructed.
-fn add_block_version(block: &mut Block)
-{
-    todo!();
-
-    /*
-    const blockid_t blockid = block->blockid;
-    const rb_iseq_t *iseq = blockid.iseq;
-    struct rb_iseq_constant_body *body = iseq->body;
-
-    // Function entry blocks must have stack size 0
-    RUBY_ASSERT(!(block->blockid.idx == 0 && block->ctx.stack_size > 0));
-
-    // Ensure yjit_blocks is initialized for this iseq
-    if (rb_darray_size(body->yjit_blocks) == 0) {
-        // Initialize yjit_blocks to be as wide as body->iseq_encoded
-        int32_t casted = (int32_t)body->iseq_size;
-        if ((unsigned)casted != body->iseq_size) {
-            rb_bug("iseq too large");
-        }
-        if (!rb_darray_make(&body->yjit_blocks, casted)) {
-            rb_bug("allocation failed");
-        }
-
-#if YJIT_STATS
-        // First block compiled for this iseq
-        yjit_runtime_counters.compiled_iseq_count++;
-#endif
-    }
-
-    RUBY_ASSERT((int32_t)blockid.idx < rb_darray_size(body->yjit_blocks));
-    rb_yjit_block_array_t *block_array_ref = rb_darray_ref(body->yjit_blocks, blockid.idx);
-
-    // Add the new block
-    if (!rb_darray_append(block_array_ref, block)) {
-        rb_bug("allocation failed");
-    }
-
-    {
-        // By writing the new block to the iseq, the iseq now
-        // contains new references to Ruby objects. Run write barriers.
-        cme_dependency_t *cme_dep;
-        rb_darray_foreach(block->cme_dependencies, cme_dependency_idx, cme_dep) {
-            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->receiver_klass);
-            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->callee_cme);
-        }
-
-        // Run write barriers for all objects in generated code.
-        uint32_t *offset_element;
-        rb_darray_foreach(block->gc_object_offsets, offset_idx, offset_element) {
-            uint32_t offset_to_value = *offset_element;
-            uint8_t *value_address = cb_get_ptr(cb, offset_to_value);
-
-            VALUE object;
-            memcpy(&object, value_address, SIZEOF_VALUE);
-            RB_OBJ_WRITTEN(iseq, Qundef, object);
-        }
-    }
-
-#if YJIT_STATS
-    yjit_runtime_counters.compiled_block_count++;
-#endif
-    */
-}
-
-/*
-static ptrdiff_t
-branch_code_size(const branch_t *branch)
-{
-    return branch->end_addr - branch->start_addr;
-}
-
-// Generate code for a branch, possibly rewriting and changing the size of it
-static void
-regenerate_branch(codeblock_t *cb, branch_t *branch)
-{
-    if (branch->start_addr < cb_get_ptr(cb, yjit_codepage_frozen_bytes)) {
-        // Generating this branch would modify frozen bytes. Do nothing.
-        return;
-    }
-
-    const uint32_t old_write_pos = cb->write_pos;
-    const bool branch_terminates_block = branch->end_addr == branch->block->end_addr;
-
-    RUBY_ASSERT(branch->dst_addrs[0] != NULL);
-
-    cb_set_write_ptr(cb, branch->start_addr);
-    branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
-    branch->end_addr = cb_get_write_ptr(cb);
-
-    if (branch_terminates_block) {
-        // Adjust block size
-        branch->block->end_addr = branch->end_addr;
-    }
-
-    // cb->write_pos is both a write cursor and a marker for the end of
-    // everything written out so far. Leave cb->write_pos at the end of the
-    // block before returning. This function only ever bump or retain the end
-    // of block marker since that's what the majority of callers want. When the
-    // branch sits at the very end of the codeblock and it shrinks after
-    // regeneration, it's up to the caller to drop bytes off the end to
-    // not leave a gap and implement branch->shape.
-    if (old_write_pos > cb->write_pos) {
-        // We rewound cb->write_pos to generate the branch, now restore it.
-        cb_set_pos(cb, old_write_pos);
-    }
-    else {
-        // The branch sits at the end of cb and consumed some memory.
-        // Keep cb->write_pos.
-    }
-}
-*/
-
-// Create a new outgoing branch entry for a block
-fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
-
-    todo!();
-
-    /*
-    let branch = Branch {
-        block: Weak::new(block),
-        src_ctx: *src_ctx,
-
-        gen_fn: gen_fn,
-
-        shape: BranchShape::Default
-
-        // Block this is attached to
-        block: Weak<Block>,
-
-        // Positions where the generated code starts and ends
-        start_addr: CodePtr,
-        end_addr: CodePtr,
-
-        // Context right after the branch instruction
-        src_ctx : Context,
-
-        // Branch target blocks and their contexts
-        targets: [BlockId; 2],
-        target_ctxs: [Context; 2],
-        blocks: [Weak<Block>; 2],
-
-        // Jump target addresses
-        dst_addrs: [CodePtr; 2],
-    };
-    */
-
-    // TODO
-    // Add to the list of outgoing branches for the block
-    //rb_darray_append(&block->outgoing, branch);
-
-    //return branch;
-}
-
-/*
+// FIXME: the return type here should probably be a BlockRef?
+//
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
-static block_t *
-gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context_t *ec)
+fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
 {
+    todo!();
+
+    /*
     // Small array to keep track of all the blocks compiled per invocation. We
     // tend to have small batches since we often break up compilation with lazy
     // stubs. Compilation is successful only if the whole batch is successful.
@@ -1098,39 +1013,144 @@ gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_contex
 #endif
         return NULL;
     }
+    */
 }
 
-// Generate a block version that is an entry point inserted into an iseq
-static uint8_t *
-gen_entry_point(const rb_iseq_t *iseq, uint32_t insn_idx, rb_execution_context_t *ec)
+/// Generate a block version that is an entry point inserted into an iseq
+fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
+
+    /*
     // If we aren't at PC 0, don't generate code
     // See yjit_pc_guard
     if (iseq->body->iseq_encoded != ec->cfp->pc) {
         return NULL;
     }
+    */
 
     // The entry context makes no assumptions about types
-    blockid_t blockid = { iseq, insn_idx };
+    let blockid = BlockId { iseq: iseq, idx: insn_idx };
 
-    rb_vm_barrier();
+
+
+
+    // TODO: why do we need rb_vm_barrier() here? this should be commented.
+    //rb_vm_barrier();
+
+
+
+    // FIXME: here we're trying to access a global code block, which is kind of problematic in Rust!
+    //
     // Write the interpreter entry prologue. Might be NULL when out of memory.
-    uint8_t *code_ptr = yjit_entry_prologue(cb, iseq);
+    let code_ptr = gen_entry_prologue(cb, iseq);
 
     // Try to generate code for the entry block
-    block_t *block = gen_block_version(blockid, &DEFAULT_CTX, ec);
+    let block = gen_block_version(blockid, &Context::default(), ec);
 
-    cb_mark_all_executable(ocb);
-    cb_mark_all_executable(cb);
+
+
+
+    //cb_mark_all_executable(ocb);
+    //cb_mark_all_executable(cb);
 
     // If we couldn't generate any code
-    if (!block || block->end_idx == insn_idx) {
-        return NULL;
-    }
+    //if (!block || block->end_idx == insn_idx) {
+    //    return None;
+    //}
 
     return code_ptr;
 }
 
+/*
+static ptrdiff_t
+branch_code_size(const branch_t *branch)
+{
+    return branch->end_addr - branch->start_addr;
+}
+
+// Generate code for a branch, possibly rewriting and changing the size of it
+static void
+regenerate_branch(codeblock_t *cb, branch_t *branch)
+{
+    if (branch->start_addr < cb_get_ptr(cb, yjit_codepage_frozen_bytes)) {
+        // Generating this branch would modify frozen bytes. Do nothing.
+        return;
+    }
+
+    const uint32_t old_write_pos = cb->write_pos;
+    const bool branch_terminates_block = branch->end_addr == branch->block->end_addr;
+
+    RUBY_ASSERT(branch->dst_addrs[0] != NULL);
+
+    cb_set_write_ptr(cb, branch->start_addr);
+    branch->gen_fn(cb, branch->dst_addrs[0], branch->dst_addrs[1], branch->shape);
+    branch->end_addr = cb_get_write_ptr(cb);
+
+    if (branch_terminates_block) {
+        // Adjust block size
+        branch->block->end_addr = branch->end_addr;
+    }
+
+    // cb->write_pos is both a write cursor and a marker for the end of
+    // everything written out so far. Leave cb->write_pos at the end of the
+    // block before returning. This function only ever bump or retain the end
+    // of block marker since that's what the majority of callers want. When the
+    // branch sits at the very end of the codeblock and it shrinks after
+    // regeneration, it's up to the caller to drop bytes off the end to
+    // not leave a gap and implement branch->shape.
+    if (old_write_pos > cb->write_pos) {
+        // We rewound cb->write_pos to generate the branch, now restore it.
+        cb_set_pos(cb, old_write_pos);
+    }
+    else {
+        // The branch sits at the end of cb and consumed some memory.
+        // Keep cb->write_pos.
+    }
+}
+*/
+
+// Create a new outgoing branch entry for a block
+fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
+
+    todo!();
+
+    /*
+    let branch = Branch {
+        block: Weak::new(block),
+        src_ctx: *src_ctx,
+
+        gen_fn: gen_fn,
+
+        shape: BranchShape::Default
+
+        // Block this is attached to
+        block: Weak<Block>,
+
+        // Positions where the generated code starts and ends
+        start_addr: CodePtr,
+        end_addr: CodePtr,
+
+        // Context right after the branch instruction
+        src_ctx : Context,
+
+        // Branch target blocks and their contexts
+        targets: [BlockId; 2],
+        target_ctxs: [Context; 2],
+        blocks: [Weak<Block>; 2],
+
+        // Jump target addresses
+        dst_addrs: [CodePtr; 2],
+    };
+    */
+
+    // TODO
+    // Add to the list of outgoing branches for the block
+    //rb_darray_append(&block->outgoing, branch);
+
+    //return branch;
+}
+
+/*
 // Called by the generated code when a branch stub is executed
 // Triggers compilation of branches and code patching
 static uint8_t *
@@ -1484,7 +1504,9 @@ block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
 
     RUBY_ASSERT(false);
 }
+*/
 
+/*
 // Some runtime checks for integrity of a program location
 static void
 verify_blockid(const blockid_t blockid)
@@ -1493,7 +1515,9 @@ verify_blockid(const blockid_t blockid)
     RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
     RUBY_ASSERT_ALWAYS(blockid.idx < iseq->body->iseq_size);
 }
+*/
 
+/*
 // Invalidate one specific block version
 static void
 invalidate_block_version(block_t *block)
@@ -1632,7 +1656,7 @@ invalidate_block_version(block_t *block)
 }
 */
 
-fn init_core() {
+pub fn init_core() {
     //gen_code_for_exit_from_stub();
     todo!();
 }
@@ -1664,7 +1688,7 @@ mod tests {
         // Try pushing an operand and getting its type
         let mut ctx = Context::default();
         ctx.stack_push(Type::Fixnum);
-        let top_type = ctx.get_opnd_type(InsnOpnd::StackOpnd{ idx: 0 });
+        let top_type = ctx.get_opnd_type(StackOpnd(0));
         assert!(top_type == Type::Fixnum);
 
         // TODO: write more tests for Context type diff

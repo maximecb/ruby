@@ -22,6 +22,9 @@ jobs:
     runs-on: ubuntu-20.04
     steps:
       - uses: actions/checkout@v2
+      # For now we can't run cargo test --offline because it complains about the
+      # capstone dependency, even though the dependency is optional
+      #- run: cargo test --offline
       - run: cargo test
         working-directory: yjit
   make:
