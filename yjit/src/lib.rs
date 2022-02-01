@@ -3,6 +3,7 @@
 #![allow(dead_code)]
 #![allow(unused_variables)]
 #![allow(unused_assignments)]
+#![allow(unused_macros)]
 
 mod asm;
 mod cruby;

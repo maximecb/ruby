@@ -329,6 +329,22 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
     );
 }
 
+// Compute an offset to a given field of a struct
+macro_rules! offset_of {
+    ($struct_type:ty, $field_name:tt) => {
+        {
+            // Null pointer to our struct type
+            let foo = (0 as * const $struct_type);
+
+            unsafe {
+                let ptr_field = (&(*foo).$field_name as *const _ as usize);
+                let ptr_base = (foo as usize);
+                ptr_field - ptr_base
+            }
+        }
+    };
+}
+
 /*
 // Struct member operand
 #define member_opnd(base_reg, struct_type, member_name) mem_opnd( \
