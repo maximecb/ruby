@@ -2,15 +2,23 @@
 
 use crate::asm::x86_64::*;
 
-
-
-/// just as a sandbox for playing around
 #[test]
-fn sandbox() {
+fn test_ret() {
+    let mut cb = CodeBlock::new();
+
+    ret(&mut cb);
+
+    assert_eq!(0xC3, cb.mem_block[0]);
 }
 
+#[test]
+fn test_push() {
+    let mut cb = CodeBlock::new();
 
+    push(&mut cb, RAX);
 
+    assert_eq!(0x50, cb.mem_block[0]);
+}
 
 /*
 // Print the bytes in a code block
