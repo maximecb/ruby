@@ -28,7 +28,7 @@ pub struct Options {
     pub gen_stats : bool
 }
 
-// TODO: the mutable options can be initialized in a simple unsafe block
+// The mutable options can be initialized in a simple unsafe block
 // https://stackoverflow.com/questions/19605132/is-it-possible-to-use-global-variables-in-rust
 pub static mut OPTIONS: Options = Options {
     yjit_enabled: false,

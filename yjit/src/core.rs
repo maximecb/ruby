@@ -210,6 +210,7 @@ pub struct Context
 }
 
 // Tuple of (iseq, idx) used to identify basic blocks
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct BlockId
 {
     // Instruction sequence
@@ -325,11 +326,11 @@ pub struct Block
     entry_exit: CodePtr,
 }
 
+/// Reference-counted pointer to a block that can be borrowed mutably
+pub type BlockRef = Rc<RefCell<Block>>;
+
 /// Reference-counted pointer to a branch that can be borrowed mutably
 type BranchRef = Rc<RefCell<Branch>>;
-
-/// Reference-counted pointer to a block that can be borrowed mutably
-type BlockRef = Rc<RefCell<Block>>;
 
 /// List of block versions for a given blockid
 type VersionList = Vec<BlockRef>;
@@ -348,20 +349,37 @@ struct IseqPayload
 }
 
 /// Get the payload object associated with an iseq
-fn get_iseq_payload(iseq: IseqPtr) -> &'static IseqPayload
+fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 {
     todo!();
+
 
     // TODO: add black magic unsafe {} incantation here
     // Need to read the iseq payload from the iseq
     //unsafe {
     //}
+
+
+
+
+    // TODO: may need to allocate the payload object here
+
+
+
+
+
 }
 
 // Get all blocks for a particular place in an iseq.
 fn get_version_list(blockid: BlockId) -> &'static VersionList
 {
     let payload = get_iseq_payload(blockid.iseq);
+
+    // Expand the version map as necessary
+    if blockid.idx >= payload.version_map.len() {
+        payload.version_map.resize(blockid.idx + 1, VersionList::default());
+    }
+
     return &payload.version_map[blockid.idx];
 }
 
@@ -431,6 +449,50 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
     return *ctx;
 }
 
+/// Keep track of a block version. Block should be fully constructed.
+pub fn add_block_version(blockref: BlockRef)
+{
+    let block = blockref.borrow();
+
+    // Function entry blocks must have stack size 0
+    assert!(!(block.blockid.idx == 0 && block.ctx.stack_size > 0));
+
+    let version_list = get_version_list(block.blockid);
+
+    //version_list.push(blockref.clone());
+
+
+
+
+
+    /*
+    {
+        // By writing the new block to the iseq, the iseq now
+        // contains new references to Ruby objects. Run write barriers.
+        cme_dependency_t *cme_dep;
+        rb_darray_foreach(block->cme_dependencies, cme_dependency_idx, cme_dep) {
+            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->receiver_klass);
+            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->callee_cme);
+        }
+
+        // Run write barriers for all objects in generated code.
+        uint32_t *offset_element;
+        rb_darray_foreach(block->gc_object_offsets, offset_idx, offset_element) {
+            uint32_t offset_to_value = *offset_element;
+            uint8_t *value_address = cb_get_ptr(cb, offset_to_value);
+
+            VALUE object;
+            memcpy(&object, value_address, SIZEOF_VALUE);
+            RB_OBJ_WRITTEN(iseq, Qundef, object);
+        }
+    }
+    */
+
+    //#if YJIT_STATS
+    //yjit_runtime_counters.compiled_block_count++;
+    //#endif
+}
+
 //===========================================================================
 // I put the implementation of traits for core.rs types below
 // We can move these closer to the above structs later if we want.
@@ -441,10 +503,8 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 //static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Block {
-    pub fn new(blockid: BlockId) -> Self {
-        let ptr = 0;
-
-        return Block {
+    pub fn new(blockid: BlockId) -> BlockRef {
+        let block = Block {
             blockid,
             end_idx: 0,
             ctx: Context::new(),
@@ -456,6 +516,12 @@ impl Block {
             cme_dependencies: Vec::new(),
             entry_exit: CodePtr::null()
         };
+
+        // Wrap the block in a reference counted refcell
+        // so that the block ownership can be shared
+        let block_ref = Rc::new(RefCell::new(block));
+
+        return block_ref
     }
 }
 
@@ -843,71 +909,6 @@ impl Context {
 
         return diff;
     }
-}
-
-/// Keep track of a block version. Block should be fully constructed.
-pub fn add_block_version(block: &mut Block)
-{
-    todo!();
-
-    /*
-    const blockid_t blockid = block->blockid;
-    const rb_iseq_t *iseq = blockid.iseq;
-    struct rb_iseq_constant_body *body = iseq->body;
-
-    // Function entry blocks must have stack size 0
-    RUBY_ASSERT(!(block->blockid.idx == 0 && block->ctx.stack_size > 0));
-
-    // Ensure yjit_blocks is initialized for this iseq
-    if (rb_darray_size(body->yjit_blocks) == 0) {
-        // Initialize yjit_blocks to be as wide as body->iseq_encoded
-        int32_t casted = (int32_t)body->iseq_size;
-        if ((unsigned)casted != body->iseq_size) {
-            rb_bug("iseq too large");
-        }
-        if (!rb_darray_make(&body->yjit_blocks, casted)) {
-            rb_bug("allocation failed");
-        }
-
-#if YJIT_STATS
-        // First block compiled for this iseq
-        yjit_runtime_counters.compiled_iseq_count++;
-#endif
-    }
-
-    RUBY_ASSERT((int32_t)blockid.idx < rb_darray_size(body->yjit_blocks));
-    rb_yjit_block_array_t *block_array_ref = rb_darray_ref(body->yjit_blocks, blockid.idx);
-
-    // Add the new block
-    if (!rb_darray_append(block_array_ref, block)) {
-        rb_bug("allocation failed");
-    }
-
-    {
-        // By writing the new block to the iseq, the iseq now
-        // contains new references to Ruby objects. Run write barriers.
-        cme_dependency_t *cme_dep;
-        rb_darray_foreach(block->cme_dependencies, cme_dependency_idx, cme_dep) {
-            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->receiver_klass);
-            RB_OBJ_WRITTEN(iseq, Qundef, cme_dep->callee_cme);
-        }
-
-        // Run write barriers for all objects in generated code.
-        uint32_t *offset_element;
-        rb_darray_foreach(block->gc_object_offsets, offset_idx, offset_element) {
-            uint32_t offset_to_value = *offset_element;
-            uint8_t *value_address = cb_get_ptr(cb, offset_to_value);
-
-            VALUE object;
-            memcpy(&object, value_address, SIZEOF_VALUE);
-            RB_OBJ_WRITTEN(iseq, Qundef, object);
-        }
-    }
-
-#if YJIT_STATS
-    yjit_runtime_counters.compiled_block_count++;
-#endif
-    */
 }
 
 // FIXME: the return type here should probably be a BlockRef?

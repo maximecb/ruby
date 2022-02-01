@@ -26,7 +26,7 @@ pub struct JITState
     //codeblock_t* ocb;
 
     // Block version being compiled
-    block: Block,
+    block: BlockRef,
 
     // Instruction sequence this is associated with
     iseq: IseqPtr,
