@@ -492,7 +492,7 @@ impl CodeBlock
     }
 
     // Set the current write position
-    fn set_pos(&mut self, pos: usize) {
+    pub fn set_pos(&mut self, pos: usize) {
         // Assert here since while CodeBlock functions do bounds checking, there is
         // nothing stopping users from taking out an out-of-bounds pointer and
         // doing bad accesses with it.
@@ -500,10 +500,12 @@ impl CodeBlock
         self.write_pos = pos;
     }
 
-    /*
     // Align the current write position to a multiple of bytes
-    void align_pos(codeblock_t *cb, uint32_t multiple)
+    pub fn align_pos(&mut self, multiple: u32)
     {
+        todo!();
+
+        /*
         // Compute the pointer modulo the given alignment boundary
         uint8_t *ptr = cb_get_write_ptr(cb);
         uint8_t *aligned_ptr = align_ptr(ptr, multiple);
@@ -512,8 +514,10 @@ impl CodeBlock
         // Pad the pointer by the necessary amount to align it
         ptrdiff_t pad = aligned_ptr - ptr;
         cb_set_pos(cb, write_pos + (int32_t)pad);
+        */
     }
 
+    /*
     // Set the current write position from a pointer
     void set_write_ptr(codeblock_t *cb, uint8_t *code_ptr)
     {
@@ -1490,7 +1494,7 @@ void movzx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
 */
 
 // neg - Integer negation (multiplication by -1)
-fn neg(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn neg(cb: &mut CodeBlock, opnd: X86Opnd) {
     cb.write_rm_unary(
         0xF6, // opMemReg8
         0xF7, // opMemRegPref
@@ -1500,7 +1504,7 @@ fn neg(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 
 /// nop - Noop, one or multiple bytes long
-fn nop(cb: &mut CodeBlock, length: u32) {
+pub fn nop(cb: &mut CodeBlock, length: u32) {
     match length {
         0 => {},
         1 => cb.write_byte(0x90),
@@ -1524,7 +1528,7 @@ fn nop(cb: &mut CodeBlock, length: u32) {
 }
 
 /// not - Bitwise NOT
-fn not(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn not(cb: &mut CodeBlock, opnd: X86Opnd) {
     cb.write_rm_unary(
         0xf6, // opMemReg8
         0xf7, // opMemRegPref
@@ -1534,7 +1538,7 @@ fn not(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 
 /// or - Bitwise OR
-fn or(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+pub fn or(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     cb.write_rm_multi(
         0x08, // opMemReg8
         0x09, // opMemRegPref
@@ -1550,7 +1554,7 @@ fn or(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// pop - Pop a register off the stack
-fn pop(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn pop(cb: &mut CodeBlock, opnd: X86Opnd) {
     match opnd {
         X86Opnd::Reg(reg) => {
             assert!(reg.num_bits == 64);
@@ -1570,13 +1574,13 @@ fn pop(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 
 /// popfq - Pop the flags register (64-bit)
-fn popfq(cb: &mut CodeBlock) {
+pub fn popfq(cb: &mut CodeBlock) {
     // REX.W + 0x9D
     cb.write_bytes(&[0x48, 0x9d]);
 }
 
 /// push - Push an operand on the stack
-fn push(cb: &mut CodeBlock, opnd: X86Opnd) {
+pub fn push(cb: &mut CodeBlock, opnd: X86Opnd) {
     match opnd {
         X86Opnd::Reg(reg) => {
             if opnd.rex_needed() {
@@ -1592,17 +1596,17 @@ fn push(cb: &mut CodeBlock, opnd: X86Opnd) {
 }
 
 /// pushfq - Push the flags register (64-bit)
-fn pushfq(cb: &mut CodeBlock) {
+pub fn pushfq(cb: &mut CodeBlock) {
     cb.write_byte(0x9C);
 }
 
 /// ret - Return from call, popping only the return address
-fn ret(cb: &mut CodeBlock) {
+pub fn ret(cb: &mut CodeBlock) {
     cb.write_byte(0xC3);
 }
 
 // sal - Shift arithmetic left
-fn sal(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+pub fn sal(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     cb.write_shift(
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
@@ -1614,7 +1618,7 @@ fn sal(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
 }
 
 /// sar - Shift arithmetic right (signed)
-fn sar(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+pub fn sar(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     cb.write_shift(
         0xD1, // opMemOnePref,
         0xD3, // opMemClPref,
@@ -1756,7 +1760,7 @@ void xchg(codeblock_t *cb, x86opnd_t rm_opnd, x86opnd_t r_opnd)
 */
 
 /// xor - Exclusive bitwise OR
-fn xor(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
+pub fn xor(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) {
     cb.write_rm_multi(
         0x30, // opMemReg8
         0x31, // opMemRegPref
