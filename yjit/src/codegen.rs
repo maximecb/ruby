@@ -45,7 +45,7 @@ pub struct JITState
     pc: *mut VALUE,
 
     // Side exit to the instruction being compiled. See :side-exit:.
-    side_exit_for_pc: CodePtr,
+    side_exit_for_pc: Option<CodePtr>,
 
     // Execution context when compilation started
     // This allows us to peek at run-time values
@@ -64,7 +64,7 @@ impl JITState {
             insn_idx: 0,
             opcode: 0,
             pc: std::ptr::null_mut::<VALUE>(),
-            side_exit_for_pc: CodePtr::null(),
+            side_exit_for_pc: None,
             record_boundary_patch_point: false,
         }
     }

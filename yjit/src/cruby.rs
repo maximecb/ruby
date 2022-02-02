@@ -25,8 +25,6 @@ pub struct IseqPtr(pub usize);
 pub struct EcPtr(pub usize);
 
 impl VALUE {
-    // TODO: these could be in a trait for VALUE
-
     // Return whether the value is truthy or falsy in Ruby -- only nil and false are falsy.
     pub fn test(self:VALUE) -> bool
     {
@@ -91,8 +89,6 @@ impl From<usize> for VALUE {
     }
 }
 
-//pub extern "C" fn insn_len(v : usize); // Can't use this until we link against CRuby properly
-
 pub const QFALSE:VALUE = VALUE(0);
 pub const QNIL:VALUE = VALUE(8);
 pub const QTRUE:VALUE = VALUE(20);
@@ -142,6 +138,8 @@ pub const RUBY_FIXNUM_MAX:isize = RUBY_LONG_MAX / 2;
 pub const RUBY_FIXNUM_FLAG:usize = 0x1;
 
 pub const SIZEOF_VALUE: usize = 8;
+
+//pub extern "C" fn insn_len(v : usize); // Can't use this until we link against CRuby properly
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;

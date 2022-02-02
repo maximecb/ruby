@@ -131,6 +131,11 @@ make_counters!(
 
 
 
+
+
+// Alan thinks exporting Ruby hash functions from C would be OK
+// Keep the stats code in Rust.
+//
 /*
 // Primitive called in yjit.rb. Export all YJIT statistics as a Ruby hash.
 static VALUE

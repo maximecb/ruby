@@ -1,6 +1,7 @@
 use std::rc::{Rc, Weak};
 use std::cell::*;
 use crate::cruby::*;
+use crate::asm::*;
 use crate::asm::x86_64::*;
 use crate::codegen::*;
 use crate::options::*;
@@ -206,23 +207,6 @@ pub struct BlockId
 /// Null block id constant
 pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
 
-/// Pointer to a piece of machine code
-/// We may later change this to wrap an u32
-pub struct CodePtr(*mut u8);
-
-// TODO: do we want constructor (new) or some from() methods for code pointers?
-impl CodePtr {
-    pub fn null() -> Self {
-        return CodePtr::from(0 as *mut u8);
-    }
-}
-
-impl From<*mut u8> for CodePtr {
-    fn from(value: *mut u8) -> Self {
-        return CodePtr(value);
-    }
-}
-
 /// Branch code shape enumeration
 enum BranchShape
 {
@@ -254,7 +238,7 @@ struct Branch
     blocks: [BlockRef; 2],
 
     // Jump target addresses
-    dst_addrs: [CodePtr; 2],
+    dst_addrs: [Option<CodePtr>; 2],
 
     // Branch code generation function
     gen_fn: BranchGenFn,
@@ -286,8 +270,8 @@ pub struct Block
     ctx: Context,
 
     // Positions where the generated code starts and ends
-    start_addr: CodePtr,
-    end_addr: CodePtr,
+    start_addr: Option<CodePtr>,
+    end_addr: Option<CodePtr>,
 
     // List of incoming branches (from predecessors)
     // These are reference counted (ownership shared between predecessor and successors)
@@ -306,7 +290,7 @@ pub struct Block
 
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.
-    entry_exit: CodePtr,
+    entry_exit: Option<CodePtr>,
 }
 
 /// Reference-counted pointer to a block that can be borrowed mutably
@@ -491,13 +475,13 @@ impl Block {
             blockid,
             end_idx: 0,
             ctx: Context::new(),
-            start_addr: CodePtr::null(),
-            end_addr: CodePtr::null(),
+            start_addr: None,
+            end_addr: None,
             incoming: Vec::new(),
             outgoing: Vec::new(),
             gc_object_offsets: Vec::new(),
             cme_dependencies: Vec::new(),
-            entry_exit: CodePtr::null()
+            entry_exit: None,
         };
 
         // Wrap the block in a reference counted refcell
