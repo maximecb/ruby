@@ -1,11 +1,6 @@
 use std::io::{Result, Write};
 use std::mem::transmute;
-
-// For mmapp(), sysconf()
-//#ifndef _WIN32
-//#include <unistd.h>
-//#include <sys/mman.h>
-//#endif
+use crate::asm::*;
 
 // Import the CodeBlock tests module
 mod tests;
@@ -387,6 +382,11 @@ pub fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
     uimm_opnd(ptr as u64)
 }
 
+pub fn code_ptr_opnd(code_ptr: CodePtr) -> X86Opnd
+{
+    uimm_opnd( code_ptr.raw_ptr() as u64)
+}
+
 /*
 // Allocate a block of executable memory
 static uint8_t *alloc_exec_mem(uint32_t mem_size)
@@ -487,6 +487,11 @@ impl CodeBlock
         }
     }
 
+    // Check if this code block has sufficient remaining capacity
+    pub fn has_capacity(&self, num_bytes: usize) -> bool {
+        self.write_pos + num_bytes < self.mem_size
+    }
+
     pub fn get_write_pos(&self) -> usize {
         self.write_pos
     }
@@ -528,7 +533,7 @@ impl CodeBlock
     */
 
     // Get a direct pointer into the executable memory block
-    pub fn get_ptr(&mut self, offset: usize) -> *mut u8 {
+    pub fn get_ptr(&mut self, offset: usize) -> CodePtr {
         todo!();
         // The unwrapping/bounds checking should happen here
         // because if we're calling this function with a
@@ -537,7 +542,7 @@ impl CodeBlock
     }
 
     // Get a direct pointer to the current write position
-    pub fn get_write_ptr(&mut self) -> *mut u8 {
+    pub fn get_write_ptr(&mut self) -> CodePtr {
          self.get_ptr(self.write_pos)
     }
 

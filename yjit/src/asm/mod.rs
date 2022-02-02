@@ -6,6 +6,10 @@ pub mod x86_64;
 pub struct CodePtr(*mut u8);
 
 impl CodePtr {
+    fn raw_ptr(self) -> *mut u8 {
+        let CodePtr(ptr) = self;
+        return ptr;
+    }
 }
 
 impl From<*mut u8> for CodePtr {

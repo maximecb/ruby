@@ -15,11 +15,10 @@ pub const REG_SP: X86Opnd = RBX;
 
 // Scratch registers used by YJIT
 pub const REG0: X86Opnd = RAX;
-//#define REG0_32 EAX
-//#define REG0_8 AL
+pub const REG0_32: X86Opnd = EAX;
+pub const REG0_8: X86Opnd = AL;
 pub const REG1: X86Opnd = RCX;
-//#define REG1 RCX
-//#define REG1_32 ECX
+pub const REG1_32: X86Opnd = ECX;
 
 // Code generation state
 pub struct JITState
@@ -585,16 +584,12 @@ gen_full_cfunc_return(void)
 /// Returns None if compilation fails.
 pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
 {
-    const MAX_PROLOGUE_SIZE: u32 = 1024;
+    const MAX_PROLOGUE_SIZE: usize = 1024;
 
-
-
-    // TODO: maybe we should add a cb.has_capacity(size) method?
-    //
     // Check if we have enough executable memory
-    //if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
-    //    return None;
-    //}
+    if !cb.has_capacity(MAX_PROLOGUE_SIZE) {
+        return None;
+    }
 
     let old_write_pos = cb.get_write_pos();
 
@@ -618,15 +613,13 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     /*
     // Load the current SP from the CFP into REG_SP
     mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
-
-    // Setup cfp->jit_return
-    // TODO: this could use an IP relative LEA instead of an 8 byte immediate
-    mov(cb, REG0, const_ptr_opnd(leave_exit_code));
-    mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
     */
 
+    // Setup cfp->jit_return
+    //mov(cb, REG0, code_ptr_opnd(leave_exit_code));
+    //mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
 
-    todo!();
+
 
 
     /*
@@ -642,9 +635,15 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
 
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
-
-    return code_ptr;
     */
+
+
+
+    todo!();
+
+
+
+    //return Some(code_ptr);
 }
 
 
