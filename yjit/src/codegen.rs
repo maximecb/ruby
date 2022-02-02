@@ -68,6 +68,14 @@ impl JITState {
         }
     }
 
+    pub fn get_opcode(self:&JITState) -> usize {
+        self.opcode
+    }
+
+    pub fn set_opcode(self:&mut JITState, opcode: usize) {
+        self.opcode = opcode;
+    }
+
     pub fn add_gc_object_offset(self:&mut JITState, ptr_offset:u32) {
         let mut gc_obj_vec: RefMut<_> = self.block.borrow_mut();
         gc_obj_vec.add_gc_object_offset(ptr_offset);
@@ -81,7 +89,7 @@ enum CodegenStatus {
 }
 
 // Code generation function signature
-type CodeGenFn = fn(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
 
 
 
@@ -834,20 +842,20 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
 
 
 
-fn gen_nop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Do nothing
     KeepCompiling
 }
 
-fn gen_pop(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_pop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
     KeepCompiling
 }
 
-fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     let dup_val = ctx.stack_pop(0);
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
@@ -860,7 +868,7 @@ fn gen_dup(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStat
 }
 
 // Swap top 2 stack entries
-fn gen_swap(jit: &JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+fn gen_swap(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
     stack_swap(ctx, cb, 0, 1, REG0, REG1);
     KeepCompiling
@@ -920,6 +928,14 @@ fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg:
     }
 }
 
+fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
+{
+    let opcode = jit.opcode;
+    let cst_val:usize = if opcode == OP_PUTOBJECT_INT2FIX_0_ { 0 } else { 1 };
+
+    jit_putobject(jit, ctx, cb, VALUE::from(cst_val));
+    KeepCompiling
+}
 
 #[cfg(test)]
 mod tests {
@@ -932,7 +948,7 @@ mod tests {
     fn test_gen_nop() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let status = gen_nop(&JITState::new(), &mut context, &mut cb);
+        let status = gen_nop(&mut JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -942,7 +958,7 @@ mod tests {
     #[test]
     fn test_gen_pop() {
         let mut context = Context::new_with_stack_size(1);
-        let status = gen_pop(&JITState::new(), &mut context, &mut CodeBlock::new());
+        let status = gen_pop(&mut JITState::new(), &mut context, &mut CodeBlock::new());
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -953,7 +969,7 @@ mod tests {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
         let mut cb = CodeBlock::new();
-        let status = gen_dup(&JITState::new(), &mut context, &mut cb);
+        let status = gen_dup(&mut JITState::new(), &mut context, &mut cb);
 
         assert!(matches!(KeepCompiling, status));
 
@@ -970,7 +986,7 @@ mod tests {
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
         let mut cb = CodeBlock::new();
-        let status = gen_swap(&JITState::new(), &mut context, &mut cb);
+        let status = gen_swap(&mut JITState::new(), &mut context, &mut cb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
         let (_, tmp_type_next) = context.get_opnd_mapping(StackOpnd(1));
@@ -991,6 +1007,21 @@ mod tests {
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Nil);
         assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_int2fix() {
+        let mut context = Context::new();
+        let mut cb = CodeBlock::new();
+        let mut jit = JITState::new();
+        jit.opcode = OP_PUTOBJECT_INT2FIX_0_;
+        let status = gen_putobject_int2fix(& mut jit, &mut context, &mut cb);
+
+        let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
+
+        // Right now we're not testing the generated machine code to make sure a literal 1 or 0 was pushed. I've checked locally.
+        assert!(matches!(KeepCompiling, status));
+        assert_eq!(tmp_type_top, Type::Fixnum);
     }
 }
 
@@ -1353,16 +1384,6 @@ gen_putstring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     x86opnd_t stack_top = ctx_stack_push(ctx, TYPE_STRING);
     mov(cb, stack_top, RAX);
 
-    return YJIT_KEEP_COMPILING;
-}
-
-static codegen_status_t
-gen_putobject_int2fix(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    int opcode = jit_get_opcode(jit);
-    int cst_val = (opcode == BIN(putobject_INT2FIX_0_))? 0:1;
-
-    jit_putobject(jit, ctx, INT2FIX(cst_val));
     return YJIT_KEEP_COMPILING;
 }
 
@@ -5042,6 +5063,10 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_NOP => Some(gen_nop),
         OP_POP => Some(gen_pop),
         OP_DUP => Some(gen_dup),
+        OP_SWAP => Some(gen_swap),
+        OP_PUTNIL => Some(gen_putnil),
+        OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
+        OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
 
         /*
         yjit_reg_op(BIN(dupn), gen_dupn);
