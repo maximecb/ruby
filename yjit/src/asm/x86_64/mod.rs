@@ -528,14 +528,18 @@ impl CodeBlock
     */
 
     // Get a direct pointer into the executable memory block
-    // fn get_ptr(&mut self, offset: usize) -> Result<*mut u8> {
-    //     self.mem_block.as_ptr(offset)
-    // }
+    pub fn get_ptr(&mut self, offset: usize) -> *mut u8 {
+        todo!();
+        // The unwrapping/bounds checking should happen here
+        // because if we're calling this function with a
+        // wrong offset, it's a compiler bug
+        //self.mem_block.as_ptr(offset)
+    }
 
     // Get a direct pointer to the current write position
-    // fn get_write_ptr(&mut self) -> Result<*mut u8> {
-    //     self.get_ptr(self.write_pos)
-    // }
+    pub fn get_write_ptr(&mut self) -> *mut u8 {
+         self.get_ptr(self.write_pos)
+    }
 
     pub fn write_byte(&mut self, byte: u8) {
         if self.write_pos < self.mem_size {
@@ -561,7 +565,7 @@ impl CodeBlock
     }
 
     // Write a signed integer over a given number of bits at the current position
-    fn write_int(&mut self, val: u64, num_bits: u32) {
+    pub fn write_int(&mut self, val: u64, num_bits: u32) {
         assert!(num_bits > 0);
         assert!(num_bits % 8 == 0);
 

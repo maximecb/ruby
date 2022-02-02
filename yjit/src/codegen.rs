@@ -587,17 +587,21 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
 {
     const MAX_PROLOGUE_SIZE: u32 = 1024;
 
+
+
+    // TODO: maybe we should add a cb.has_capacity(size) method?
+    //
     // Check if we have enough executable memory
     //if (cb->write_pos + MAX_PROLOGUE_SIZE >= cb->mem_size) {
-    //    return NULL;
+    //    return None;
     //}
 
-    //let old_write_pos = cb.write_pos;
+    let old_write_pos = cb.get_write_pos();
 
     // Align the current write position to cache line boundaries
     cb.align_pos(64);
 
-    //uint8_t *code_ptr = cb_get_ptr(cb, cb->write_pos);
+    let code_ptr = cb.get_write_ptr();
     //ADD_COMMENT(cb, "yjit entry");
 
     push(cb, REG_CFP);
@@ -605,10 +609,9 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     push(cb, REG_SP);
 
     // We are passed EC and CFP
-    //mov(cb, REG_EC, C_ARG_REGS[0]);
-    //mov(cb, REG_CFP, C_ARG_REGS[1]);
+    mov(cb, REG_EC, C_ARG_REGS[0]);
+    mov(cb, REG_CFP, C_ARG_REGS[1]);
 
-    todo!();
 
 
 
@@ -620,7 +623,13 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     // TODO: this could use an IP relative LEA instead of an 8 byte immediate
     mov(cb, REG0, const_ptr_opnd(leave_exit_code));
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
+    */
 
+
+    todo!();
+
+
+    /*
     // We're compiling iseqs that we *expect* to start at `insn_idx`. But in
     // the case of optional parameters, the interpreter can set the pc to a
     // different location depending on the optional parameters.  If an iseq
@@ -632,7 +641,7 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     }
 
     // Verify MAX_PROLOGUE_SIZE
-    RUBY_ASSERT_ALWAYS(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
+    assert!(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
 
     return code_ptr;
     */
