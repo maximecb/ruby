@@ -267,6 +267,7 @@ pub struct Block
     end_idx: u32,
 
     // Context at the start of the block
+    // This should never be mutated
     ctx: Context,
 
     // Positions where the generated code starts and ends
@@ -391,9 +392,8 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
     return best_version;
 }
 
-// Produce a generic context when the block version limit is hit for a blockid
-// Note that this will mutate the ctx argument
-fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
+/// Produce a generic context when the block version limit is hit for a blockid
+pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 {
     // Guard chains implement limits separately, do nothing
     if ctx.chain_depth > 0 {
@@ -489,6 +489,10 @@ impl Block {
         let block_ref = Rc::new(RefCell::new(block));
 
         return block_ref
+    }
+
+    pub fn get_blockid(&self) -> BlockId {
+        return self.blockid;
     }
 
     pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) {
@@ -883,13 +887,12 @@ impl Context {
 }
 
 // FIXME: the return type here should probably be a BlockRef?
+// FIXME: we might want to consider renaming this function to gen_block_series()?
 //
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
-fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
+fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<BlockRef>
 {
-    todo!();
-
     /*
     // Small array to keep track of all the blocks compiled per invocation. We
     // tend to have small batches since we often break up compilation with lazy
@@ -899,9 +902,19 @@ fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
     int compiled_count = 0;
     bool batch_success = true;
     block_t *block;
+    */
 
     // Generate code for the first block
-    block = gen_single_block(blockid, start_ctx, ec);
+    let block = Block::new(blockid);
+    gen_single_block(&block.borrow_mut(), start_ctx, ec);
+
+
+
+
+    todo!();
+
+
+    /*
     if (block) {
         // Track the block
         add_block_version(block);
@@ -982,7 +995,7 @@ fn gen_block_version(blockid: BlockId, ctx: &Context, ec: EcPtr) -> Block
 #if YJIT_STATS
         yjit_runtime_counters.compilation_failure++;
 #endif
-        return NULL;
+        return None;
     }
     */
 }

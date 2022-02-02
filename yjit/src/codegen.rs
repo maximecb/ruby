@@ -689,25 +689,21 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
         jump_block
     );
 }
+*/
 
 // Compile a sequence of bytecode instructions for a given basic block version.
 // Part of gen_block_version().
-static block_t *
-gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context_t *ec)
+// Note: this function will mutate its context while generating code,
+//       but the input start_ctx argument should remain immutable.
+pub fn gen_single_block(block: &Block, start_ctx: &Context, ec: EcPtr)
 {
-    RUBY_ASSERT(cb != NULL);
-    verify_blockid(blockid);
-
-    // Allocate the new block
-    block_t *block = calloc(1, sizeof(block_t));
-    if (!block) {
-        return NULL;
-    }
+    let blockid = block.get_blockid();
+    //verify_blockid(blockid);
 
     // Copy the starting context to avoid mutating it
-    ctx_t ctx_copy = *start_ctx;
-    ctx_t *ctx = &ctx_copy;
+    let ctx = limit_block_versions(blockid, start_ctx);
 
+    /*
     // Limit the number of specialized versions for this block
     *ctx = limit_block_versions(blockid, ctx);
 
@@ -832,7 +828,10 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
         yjit_free_block(block);
         return NULL;
     }
+    */
 
+    // Max says: we may want a feature for this called dump_insns? Can leave commented for now
+    /*
     if (YJIT_DUMP_MODE >= 2) {
         // Dump list of compiled instrutions
         fprintf(stderr, "Compiled the following for iseq=%p:\n", (void *)iseq);
@@ -842,13 +841,8 @@ gen_single_block(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context
             idx += insn_len(opcode);
         }
     }
-
-    return block;
+    */
 }
-*/
-
-
-
 
 fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
