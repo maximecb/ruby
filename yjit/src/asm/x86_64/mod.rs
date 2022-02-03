@@ -271,7 +271,7 @@ pub const C_ARG_REGS: [X86Opnd; 6] = [RDI, RSI, RDX, RCX, R8, R9];
 
 //===========================================================================
 
-// Compute the number of bits needed to encode a signed value
+/// Compute the number of bits needed to encode a signed value
 pub fn sig_imm_size(imm: i64) -> u8
 {
     // Compute the smallest size this immediate fits in
@@ -288,7 +288,7 @@ pub fn sig_imm_size(imm: i64) -> u8
     return 64;
 }
 
-// Compute the number of bits needed to encode an unsigned value
+/// Compute the number of bits needed to encode an unsigned value
 pub fn unsig_imm_size(imm: u64) -> u8
 {
     // Compute the smallest size this immediate fits in
@@ -324,6 +324,7 @@ pub fn mem_opnd(num_bits: u8, base_reg: X86Opnd, disp: i32) -> X86Opnd
     );
 }
 
+/// Memory operand with SIB (Scale Index Base) indexing
 pub fn mem_opnd_sib(num_bits: u8, base_opnd: X86Opnd, index_opnd: X86Opnd, scale: i32, disp: i32) -> X86Opnd {
     if let (X86Opnd::Reg(base_reg), X86Opnd::Reg(index_reg)) = (base_opnd, index_opnd) {
         let scale_exp: u8;
@@ -348,7 +349,7 @@ pub fn mem_opnd_sib(num_bits: u8, base_opnd: X86Opnd, index_opnd: X86Opnd, scale
     }
 }
 
-// Compute an offset to a given field of a struct
+/// Compute an offset to a given field of a struct
 macro_rules! offset_of {
     ($struct_type:ty, $field_name:tt) => {
         {
@@ -1407,17 +1408,6 @@ void movzx(codeblock_t *cb, x86opnd_t dst, x86opnd_t src)
     }
 }
 */
-
-// neg - Integer negation (multiplication by -1)
-pub fn neg(cb: &mut CodeBlock, opnd: X86Opnd) {
-    write_rm_unary(
-        cb,
-        0xF6, // opMemReg8
-        0xF7, // opMemRegPref
-        0x03,  // opExt
-        opnd
-    );
-}
 
 /// nop - Noop, one or multiple bytes long
 pub fn nop(cb: &mut CodeBlock, length: u32) {

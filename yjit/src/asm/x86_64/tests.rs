@@ -3,6 +3,7 @@
 use crate::asm::x86_64::*;
 use std::fmt;
 
+/// Produce hex string output from the bytes in a code block
 impl<'a> fmt::LowerHex for super::CodeBlock {
     fn fmt(&self, fmtr: &mut fmt::Formatter) -> fmt::Result {
         for byte in 0..self.write_pos {
@@ -12,6 +13,7 @@ impl<'a> fmt::LowerHex for super::CodeBlock {
     }
 }
 
+/// Check that the bytes for an instruction sequence match a hex string
 fn check_bytes<R>(bytes: &str, run: R) where R: FnOnce(&mut super::CodeBlock) {
     let mut cb = super::CodeBlock::new();
     run(&mut cb);
@@ -119,13 +121,9 @@ fn test_movsx() {
 }
 
 #[test]
-fn test_neg() {
-    check_bytes("48f7d8", |cb| neg(cb, RAX));
-}
-
-#[test]
 fn test_nop() {
     check_bytes("90", |cb| nop(cb, 1));
+    // TODO: we should test some multibyte nop encodings
 }
 
 #[test]
