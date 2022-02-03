@@ -41,7 +41,7 @@ macro_rules! incr_counter {
 }
 pub(crate) use incr_counter;
 
-/// Macro to get the a pointer to a given counter
+/// Macro to get a raw pointer to a given counter
 macro_rules! ptr_to_counter {
     ($counter_name:ident) => {
         unsafe {

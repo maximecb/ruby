@@ -393,7 +393,7 @@ fn find_block_version(blockid: BlockId, ctx: &Context) -> Option<BlockRef>
 }
 
 /// Produce a generic context when the block version limit is hit for a blockid
-pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
+fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 {
     // Guard chains implement limits separately, do nothing
     if ctx.chain_depth > 0 {
@@ -417,7 +417,7 @@ pub fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 }
 
 /// Keep track of a block version. Block should be fully constructed.
-pub fn add_block_version(blockref: BlockRef)
+fn add_block_version(blockref: BlockRef)
 {
     let block = blockref.borrow();
 
@@ -470,11 +470,11 @@ pub fn add_block_version(blockref: BlockRef)
 //static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Block {
-    pub fn new(blockid: BlockId, /*Context*/) -> BlockRef {
+    pub fn new(blockid: BlockId, ctx: &Context) -> BlockRef {
         let block = Block {
             blockid,
             end_idx: 0,
-            ctx: Context::new(),
+            ctx: *ctx,
             start_addr: None,
             end_addr: None,
             incoming: Vec::new(),
@@ -486,16 +486,16 @@ impl Block {
 
         // Wrap the block in a reference counted refcell
         // so that the block ownership can be shared
-        let block_ref = Rc::new(RefCell::new(block));
-
-        return block_ref
+        Rc::new(RefCell::new(block))
     }
 
     pub fn get_blockid(&self) -> BlockId {
-        return self.blockid;
+        self.blockid
     }
 
-    // TODO: get_context()
+    fn get_ctx(&self) -> Context {
+        self.ctx
+    }
 
     pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) {
         self.gc_object_offsets.push(ptr_offset);
@@ -906,9 +906,14 @@ fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option
     block_t *block;
     */
 
+
+
+    // Limit the number of specialized versions for this block
+    let block_ctx = limit_block_versions(blockid, start_ctx);
+
     // Generate code for the first block
-    let block = Block::new(blockid);
-    gen_single_block(&block.borrow_mut(), start_ctx, ec);
+    let block = Block::new(blockid, &block_ctx);
+    gen_single_block(&block.borrow_mut(), ec);
 
 
 
@@ -952,6 +957,9 @@ fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option
 
         batch_success = compiled_count < MAX_PER_BATCH;
         if (batch_success) {
+            // TODO: need to call limit_block_versions() here
+            //let block_ctx = limit_block_versions(requested_id, requested_ctx);
+
             block = gen_single_block(requested_id, requested_ctx, ec);
             batch_success = block;
         }

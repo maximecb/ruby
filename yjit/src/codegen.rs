@@ -58,7 +58,7 @@ pub struct JITState
 impl JITState {
     pub fn new() -> Self {
         JITState {
-            block: Block::new(BLOCKID_NULL),   // Rc<RefCell<Block>>
+            block: Block::new(BLOCKID_NULL, &Context::default()),   // Rc<RefCell<Block>>
             iseq: IseqPtr(0),
             insn_idx: 0,
             opcode: 0,
@@ -709,22 +709,12 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 // Part of gen_block_version().
 // Note: this function will mutate its context while generating code,
 //       but the input start_ctx argument should remain immutable.
-pub fn gen_single_block(block: &Block, start_ctx: &Context, ec: EcPtr)
+pub fn gen_single_block(block: &Block, ec: EcPtr)
 {
     let blockid = block.get_blockid();
     //verify_blockid(blockid);
 
-    // Copy the starting context to avoid mutating it
-    let ctx = limit_block_versions(blockid, start_ctx);
-
     /*
-    // Limit the number of specialized versions for this block
-    *ctx = limit_block_versions(blockid, ctx);
-
-    // Save the starting context on the block.
-    block->blockid = blockid;
-    block->ctx = *ctx;
-
     RUBY_ASSERT(!(blockid.idx == 0 && start_ctx->stack_size > 0));
 
     const rb_iseq_t *iseq = block->blockid.iseq;
@@ -741,6 +731,7 @@ pub fn gen_single_block(block: &Block, start_ctx: &Context, ec: EcPtr)
         .ec = ec
     };
 
+    // TODO: we probably want a set_start_addr method, callable only once
     // Mark the start position of the block
     block->start_addr = cb_get_write_ptr(cb);
 
