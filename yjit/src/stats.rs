@@ -41,6 +41,17 @@ macro_rules! incr_counter {
 }
 pub(crate) use incr_counter;
 
+/// Macro to get the a pointer to a given counter
+macro_rules! ptr_to_counter {
+    ($counter_name:ident) => {
+        unsafe {
+            let ptr: *mut u64 = &COUNTERS.$counter_name;
+            ptr;
+        }
+    };
+}
+pub(crate) use ptr_to_counter;
+
 // Declare all the counters we track
 make_counters!(
     exec_instruction,
@@ -243,19 +254,6 @@ pub extern "C" fn reset_stats_bang(ec: EcPtr, ruby_self: VALUE) -> VALUE {
 
 /*
 #if YJIT_STATS
-
-// Increment a profiling counter with counter_name
-#define GEN_COUNTER_INC(cb, counter_name) _gen_counter_inc(cb, &(yjit_runtime_counters . counter_name))
-static void
-_gen_counter_inc(codeblock_t *cb, int64_t *counter)
-{
-    if (!rb_yjit_opts.gen_stats) return;
-
-    // Use REG1 because there might be return value in REG0
-    mov(cb, REG1, const_ptr_opnd(counter));
-    cb_write_lock_prefix(cb); // for ractors.
-    add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
-}
 
 // Increment a counter then take an existing side exit.
 #define COUNTED_EXIT(jit, side_exit, counter_name) _counted_side_exit(jit, side_exit, &(yjit_runtime_counters . counter_name))

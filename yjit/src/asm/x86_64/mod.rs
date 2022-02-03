@@ -349,22 +349,6 @@ pub fn mem_opnd_sib(num_bits: u8, base_opnd: X86Opnd, index_opnd: X86Opnd, scale
     }
 }
 
-/// Compute an offset to a given field of a struct
-macro_rules! offset_of {
-    ($struct_type:ty, $field_name:tt) => {
-        {
-            // Null pointer to our struct type
-            let foo = (0 as * const $struct_type);
-
-            unsafe {
-                let ptr_field = (&(*foo).$field_name as *const _ as usize);
-                let ptr_base = (foo as usize);
-                ptr_field - ptr_base
-            }
-        }
-    };
-}
-
 /*
 // Struct member operand
 #define member_opnd(base_reg, struct_type, member_name) mem_opnd( \
@@ -383,6 +367,7 @@ macro_rules! offset_of {
 */
 
 /*
+// TODO: this should be a method, X86Opnd.resize() or X86Opnd.subreg()
 static x86opnd_t resize_opnd(x86opnd_t opnd, uint32_t num_bits)
 {
     assert (num_bits % 8 == 0);
@@ -559,11 +544,15 @@ impl CodeBlock
 
     // Get a direct pointer into the executable memory block
     pub fn get_ptr(&mut self, offset: usize) -> CodePtr {
-        todo!();
         // The unwrapping/bounds checking should happen here
         // because if we're calling this function with a
         // wrong offset, it's a compiler bug
-        //self.mem_block.as_ptr(offset)
+        assert!(offset < self.mem_size);
+
+        unsafe {
+            let ptr = self.mem_block.as_ptr().offset(offset as isize);
+            CodePtr(ptr)
+        }
     }
 
     // Get a direct pointer to the current write position
