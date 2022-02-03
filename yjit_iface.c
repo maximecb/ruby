@@ -1237,10 +1237,10 @@ rb_yjit_init(struct rb_yjit_options *options)
         return;
     }
 
-    if (1) {
-        void init_yjit(void);
-        init_yjit();
-    }
+#if 0
+    void init_yjit(void);
+    init_yjit();
+#endif
 
     rb_yjit_opts = *options;
     rb_yjit_opts.yjit_enabled = true;
