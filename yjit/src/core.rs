@@ -5,6 +5,7 @@ use crate::asm::*;
 use crate::asm::x86_64::*;
 use crate::codegen::*;
 use crate::options::*;
+use crate::stats::*;
 use InsnOpnd::*;
 use TempMapping::*;
 
@@ -426,11 +427,7 @@ fn add_block_version(blockref: BlockRef)
 
     let version_list = get_version_list(block.blockid);
 
-    //version_list.push(blockref.clone());
-
-
-
-
+    version_list.push(blockref.clone());
 
     /*
     {
@@ -455,19 +452,13 @@ fn add_block_version(blockref: BlockRef)
     }
     */
 
-    //#if YJIT_STATS
-    //yjit_runtime_counters.compiled_block_count++;
-    //#endif
+    incr_counter!(compiled_block_count);
 }
 
 //===========================================================================
 // I put the implementation of traits for core.rs types below
 // We can move these closer to the above structs later if we want.
 //===========================================================================
-
-// For exiting from YJIT frame from branch_stub_hit().
-// Filled by gen_code_for_exit_from_stub().
-//static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Block {
     pub fn new(blockid: BlockId, ctx: &Context) -> BlockRef {
@@ -493,7 +484,7 @@ impl Block {
         self.blockid
     }
 
-    fn get_ctx(&self) -> Context {
+    pub fn get_ctx(&self) -> Context {
         self.ctx
     }
 
@@ -517,6 +508,10 @@ impl Context {
 
     pub fn new() -> Self {
         return Self::new_with_stack_size(0);
+    }
+
+    pub fn get_stack_size(&self) -> u16 {
+        self.stack_size
     }
 
     /// Get an operand for the adjusted stack pointer address
@@ -888,9 +883,6 @@ impl Context {
     }
 }
 
-// FIXME: the return type here should probably be a BlockRef?
-// FIXME: we might want to consider renaming this function to gen_block_series()?
-//
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
 fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<BlockRef>
@@ -1002,9 +994,8 @@ fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option
             yjit_free_block(to_free);
         }
 
-#if YJIT_STATS
-        yjit_runtime_counters.compilation_failure++;
-#endif
+        incr_counter!(compilation_failure);
+
         return None;
     }
     */
@@ -1639,9 +1630,7 @@ invalidate_block_version(block_t *block)
 
     yjit_free_block(block);
 
-#if YJIT_STATS
-    yjit_runtime_counters.invalidation_count++;
-#endif
+    incr_counter!(invalidation_count);
 
     cb_mark_all_executable(ocb);
     cb_mark_all_executable(cb);

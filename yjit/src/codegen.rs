@@ -23,11 +23,6 @@ pub const REG1_32: X86Opnd = ECX;
 // Code generation state
 pub struct JITState
 {
-    // Inline and outlined code blocks we are
-    // currently generating code into
-    //codeblock_t* cb;
-    //codeblock_t* ocb;
-
     // Block version being compiled
     block: BlockRef,
 
@@ -114,92 +109,7 @@ pub fn jit_mov_gc_ptr(jit:&mut JITState, cb: &mut CodeBlock, reg:X86Opnd, ptr: V
     }
 }
 
-
-
-
-
-
-enum CodegenStatus {
-    EndBlock,
-    KeepCompiling,
-    CantCompile,
-}
-
-// Code generation function signature
-type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
-
-
-
-
-
-
-
-// Add a comment at the current position in the code block
-fn add_comment(cb: &mut CodeBlock, comment_str: &str)
-{
-    #[cfg(feature = "asm_comments")]
-    {
-        /*
-        // We can't add comments to the outlined code block
-        if (cb == ocb)
-            return;
-
-        // Avoid adding duplicate comment strings (can happen due to deferred codegen)
-        size_t num_comments = rb_darray_size(yjit_code_comments);
-        if (num_comments > 0) {
-            struct yjit_comment last_comment = rb_darray_get(yjit_code_comments, num_comments - 1);
-            if (last_comment.offset == cb->write_pos && strcmp(last_comment.comment, comment_str) == 0) {
-                return;
-            }
-        }
-
-        struct yjit_comment new_comment = (struct yjit_comment){ cb->write_pos, comment_str };
-        rb_darray_append(&yjit_code_comments, new_comment);
-        */
-    }
-}
-
-// Increment a profiling counter with counter_name
-macro_rules! gen_counter_incr {
-    ($cb:tt, $counter_name:ident) => {
-        // This is only enabled with the stats feature
-        #[cfg(feature = "stats")]
-        {
-            let ptr = ptr_to_counter!(counter_name);
-
-            if (!get_option!(gen_stats)) {
-                return;
-            }
-
-            // Use REG1 because there might be return value in REG0
-            mov(cb, REG1, const_ptr_opnd(ptr));
-            cb_write_lock_prefix(cb); // for ractors.
-            add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
-        }
-    };
-}
-
-
-
-
-
 /*
-// Code for exiting back to the interpreter from the leave instruction
-static void *leave_exit_code;
-
-// Code for full logic of returning from C method and exiting to the interpreter
-static uint32_t outline_full_cfunc_return_pos;
-
-// For implementing global code invalidation
-struct codepage_patch {
-    uint32_t inline_patch_pos;
-    uint32_t outlined_target_pos;
-};
-
-typedef rb_darray(struct codepage_patch) patch_array_t;
-
-static patch_array_t global_inval_patches = NULL;
-
 // Print the current source location for debugging purposes
 RBIMPL_ATTR_MAYBE_UNUSED()
 static void
@@ -274,6 +184,100 @@ jit_peek_at_local(jitstate_t *jit, ctx_t *ctx, int n)
     const VALUE *ep = jit->ec->cfp->ep;
     return ep[-VM_ENV_DATA_SIZE - local_table_size + n + 1];
 }
+*/
+
+
+
+
+
+
+
+
+
+enum CodegenStatus {
+    EndBlock,
+    KeepCompiling,
+    CantCompile,
+}
+
+// Code generation function signature
+type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus;
+
+
+
+
+
+
+
+// Add a comment at the current position in the code block
+fn add_comment(cb: &mut CodeBlock, comment_str: &str)
+{
+    #[cfg(feature = "asm_comments")]
+    {
+        /*
+        // We can't add comments to the outlined code block
+        if (cb == ocb)
+            return;
+
+        // Avoid adding duplicate comment strings (can happen due to deferred codegen)
+        size_t num_comments = rb_darray_size(yjit_code_comments);
+        if (num_comments > 0) {
+            struct yjit_comment last_comment = rb_darray_get(yjit_code_comments, num_comments - 1);
+            if (last_comment.offset == cb->write_pos && strcmp(last_comment.comment, comment_str) == 0) {
+                return;
+            }
+        }
+
+        struct yjit_comment new_comment = (struct yjit_comment){ cb->write_pos, comment_str };
+        rb_darray_append(&yjit_code_comments, new_comment);
+        */
+    }
+}
+
+// Increment a profiling counter with counter_name
+macro_rules! gen_counter_incr {
+    ($cb:tt, $counter_name:ident) => {
+        // This is only enabled with the stats feature
+        #[cfg(feature = "stats")]
+        {
+            let ptr = ptr_to_counter!(counter_name);
+
+            if (!get_option!(gen_stats)) {
+                return;
+            }
+
+            // Use REG1 because there might be return value in REG0
+            mov(cb, REG1, const_ptr_opnd(ptr));
+            cb_write_lock_prefix(cb); // for ractors.
+            add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
+        }
+    };
+}
+
+
+
+
+
+/*
+// Code for exiting back to the interpreter from the leave instruction
+static void *leave_exit_code;
+
+// For exiting from YJIT frame from branch_stub_hit().
+// Filled by gen_code_for_exit_from_stub().
+//static uint8_t *code_for_exit_from_stub = NULL;
+
+// Code for full logic of returning from C method and exiting to the interpreter
+static uint32_t outline_full_cfunc_return_pos;
+
+// For implementing global code invalidation
+struct codepage_patch {
+    uint32_t inline_patch_pos;
+    uint32_t outlined_target_pos;
+};
+
+typedef rb_darray(struct codepage_patch) patch_array_t;
+
+static patch_array_t global_inval_patches = NULL;
 
 // Save the incremented PC on the CFP
 // This is necessary when calleees can raise or allocate
@@ -714,14 +718,16 @@ pub fn gen_single_block(block: &Block, ec: EcPtr)
     let blockid = block.get_blockid();
     //verify_blockid(blockid);
 
-    /*
-    RUBY_ASSERT(!(blockid.idx == 0 && start_ctx->stack_size > 0));
+    assert!(!(blockid.idx == 0 && block.get_ctx().get_stack_size() > 0));
 
+    /*
     const rb_iseq_t *iseq = block->blockid.iseq;
     const unsigned int iseq_size = iseq->body->iseq_size;
     uint32_t insn_idx = block->blockid.idx;
     const uint32_t starting_insn_idx = insn_idx;
+    */
 
+    /*
     // Initialize a JIT state object
     jitstate_t jit = {
         .cb = cb,

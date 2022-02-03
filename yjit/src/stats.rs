@@ -19,13 +19,13 @@ macro_rules! make_counters {
     ($($counter_name:ident),+) => {
         // Struct containing the counter values
         #[derive(Default, Debug)]
-        struct Counters { $($counter_name: u64),+ }
+        pub struct Counters { $(pub $counter_name: u64),+ }
 
         // Counter names constant
         const COUNTER_NAMES: &'static [&'static str] = &[ $(stringify!($counter_name)),+ ];
 
         // Global counters instance, initialized to zero
-        static mut COUNTERS: Counters = Counters { $($counter_name: 0),+ };
+        pub static mut COUNTERS: Counters = Counters { $($counter_name: 0),+ };
     }
 }
 
