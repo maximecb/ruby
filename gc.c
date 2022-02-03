@@ -5000,6 +5000,7 @@ try_move2(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page,
         gc_move(objspace, src, dest, free_page->slot_size);
         gc_pin(objspace, src);
         FL_SET(src, FL_FROM_FREELIST);
+        free_page->free_slots--;
     } else {
         rb_bug("here be dragons");
     }
@@ -8259,6 +8260,10 @@ gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
             heap_add_freepage(dheap, dheap->sweeping_page);
         }
         dheap->sweeping_page = list_next(&dheap->pages, dheap->sweeping_page, page_node);
+    }
+
+    if (dheap->free_pages->free_slots == 0){
+        dheap->free_pages = dheap->free_pages->free_next;
     }
 
     return true;
