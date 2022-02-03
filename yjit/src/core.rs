@@ -470,7 +470,7 @@ pub fn add_block_version(blockref: BlockRef)
 //static uint8_t *code_for_exit_from_stub = NULL;
 
 impl Block {
-    pub fn new(blockid: BlockId) -> BlockRef {
+    pub fn new(blockid: BlockId, /*Context*/) -> BlockRef {
         let block = Block {
             blockid,
             end_idx: 0,
@@ -494,6 +494,8 @@ impl Block {
     pub fn get_blockid(&self) -> BlockId {
         return self.blockid;
     }
+
+    // TODO: get_context()
 
     pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) {
         self.gc_object_offsets.push(ptr_offset);
