@@ -5967,11 +5967,6 @@ gc_compact_start(rb_objspace_t *objspace)
         heap->compact_cursor_index = 0;
     }
 
-    rb_ractor_t *r = NULL;
-    list_for_each(&GET_VM()->ractor.set, r, vmlr_node) {
-        rb_gc_ractor_newobj_cache_clear(&r->newobj_cache);
-    }
-
     if (gc_prof_enabled(objspace)) {
         gc_profile_record *record = gc_prof_record(objspace);
         record->moved_objects = objspace->rcompactor.total_moved;
