@@ -1004,7 +1004,6 @@ fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option
 /// Generate a block version that is an entry point inserted into an iseq
 fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
-
     /*
     // If we aren't at PC 0, don't generate code
     // See yjit_pc_guard

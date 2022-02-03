@@ -89,10 +89,17 @@ impl From<usize> for VALUE {
     }
 }
 
+impl From<VALUE> for u64 {
+    fn from(value: VALUE) -> Self {
+        let VALUE(uimm) = value;
+        uimm as u64
+    }
+}
+
 pub const QFALSE:VALUE = VALUE(0);
-pub const QNIL:VALUE = VALUE(8);
-pub const QTRUE:VALUE = VALUE(20);
-pub const QUNDEF:VALUE = VALUE(52);
+pub const QNIL: VALUE = VALUE(8);
+pub const QTRUE: VALUE = VALUE(20);
+pub const QUNDEF: VALUE = VALUE(52);
 
 pub const RB_SYMBOL_FLAG: usize = 0x0c;
 
