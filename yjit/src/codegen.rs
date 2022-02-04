@@ -741,7 +741,7 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 // Part of gen_block_version().
 // Note: this function will mutate its context while generating code,
 //       but the input start_ctx argument should remain immutable.
-pub fn gen_single_block(block: &Block, ec: EcPtr)
+pub fn gen_single_block(block: &Block, ec: EcPtr) -> Result<(), ()>
 {
     let blockid = block.get_blockid();
     //verify_blockid(blockid);
@@ -869,7 +869,7 @@ pub fn gen_single_block(block: &Block, ec: EcPtr)
     }
     */
 
-    // Max says: we may want a feature for this called dump_insns? Can leave commented for now
+    // TODO: we may want a feature for this called dump_insns? Can leave commented for now
     /*
     if (YJIT_DUMP_MODE >= 2) {
         // Dump list of compiled instrutions
@@ -881,6 +881,9 @@ pub fn gen_single_block(block: &Block, ec: EcPtr)
         }
     }
     */
+
+    // Block compiled successfully
+    Ok(())
 }
 
 fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus

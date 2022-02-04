@@ -418,7 +418,7 @@ fn limit_block_versions(blockid: BlockId, ctx: &Context) -> Context
 }
 
 /// Keep track of a block version. Block should be fully constructed.
-fn add_block_version(blockref: BlockRef)
+fn add_block_version(blockref: &BlockRef)
 {
     let block = blockref.borrow();
 
@@ -885,46 +885,31 @@ impl Context {
 
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
-fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<BlockRef>
+fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<BlockRef>
 {
-    /*
-    // Small array to keep track of all the blocks compiled per invocation. We
-    // tend to have small batches since we often break up compilation with lazy
-    // stubs. Compilation is successful only if the whole batch is successful.
-    enum { MAX_PER_BATCH = 64 };
-    block_t *batch[MAX_PER_BATCH];
-    int compiled_count = 0;
-    bool batch_success = true;
-    block_t *block;
-    */
-
-
-
     // Limit the number of specialized versions for this block
     let block_ctx = limit_block_versions(blockid, start_ctx);
 
     // Generate code for the first block
     let block = Block::new(blockid, &block_ctx);
-    gen_single_block(&block.borrow_mut(), ec);
+    let result = gen_single_block(&block.borrow_mut(), ec);
+
+    if result.is_err() {
+        return None;
+    }
+
+    // Keep track of this block version
+    add_block_version(&block);
+
+    return Some(block);
 
 
 
 
-    todo!();
-
-
+    // TODO: not yet implemented for multiple blocks
 
 
     /*
-    if (block) {
-        // Track the block
-        add_block_version(block);
-
-        batch[compiled_count] = block;
-        compiled_count++;
-    }
-    batch_success = block;
-
     // For each successor block to compile
     while (batch_success) {
         // If the previous block compiled doesn't have outgoing branches, stop
@@ -1024,7 +1009,7 @@ fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr
     let code_ptr = gen_entry_prologue(cb, iseq);
 
     // Try to generate code for the entry block
-    let block = gen_block_version(blockid, &Context::default(), ec);
+    let block = gen_block_series(blockid, &Context::default(), ec);
 
     cb.mark_all_executable();
     //cb_mark_all_executable(ocb);
@@ -1203,7 +1188,7 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
             }
 
             // Compile the new block version
-            p_block = gen_block_version(target, target_ctx, ec);
+            p_block = gen_block_series(target, target_ctx, ec);
 
             if (!p_block && branch_modified) {
                 // We couldn't generate a new block for the branch, but we modified the branch.
@@ -1379,7 +1364,7 @@ gen_direct_jump(
         branch->end_addr = cb_get_write_ptr(cb);
     }
     else {
-        // This NULL target address signals gen_block_version() to compile the
+        // This NULL target address signals gen_block_series() to compile the
         // target block right after this one (fallthrough).
         branch->dst_addrs[0] = NULL;
         branch->shape = SHAPE_NEXT0;
