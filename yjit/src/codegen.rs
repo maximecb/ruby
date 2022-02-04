@@ -30,7 +30,7 @@ pub struct JITState
     iseq: IseqPtr,
 
     // Index of the current instruction being compiled
-    insn_idx: u32,
+    insn_idx: usize,
 
     // Opcode for the instruction being compiled
     opcode: usize,
@@ -684,10 +684,10 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     if (iseq->body->param.flags.has_opt) {
         yjit_pc_guard(cb, iseq);
     }
+    */
 
     // Verify MAX_PROLOGUE_SIZE
-    assert!(cb->write_pos - old_write_pos <= MAX_PROLOGUE_SIZE);
-    */
+    assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
 
     return Some(code_ptr);
 }

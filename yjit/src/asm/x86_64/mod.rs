@@ -681,7 +681,7 @@ impl CodeBlock
     }
     */
 
-    fn mark_position_writable(&mut self, write_pos: usize) {
+    pub fn mark_position_writable(&mut self, write_pos: usize) {
         // let page_size = page_size();
         // let aligned_position = (self.write_pos / page_size) * page_size;
 
@@ -691,7 +691,7 @@ impl CodeBlock
         // }
     }
 
-    fn mark_all_writable(&mut self) {
+    pub fn mark_all_writable(&mut self) {
         todo!();
 
         //if (mprotect(cb->mem_block_, cb->mem_size, PROT_READ | PROT_WRITE)) {
@@ -700,7 +700,7 @@ impl CodeBlock
         //}
     }
 
-    fn mark_all_executable(&mut self) {
+    pub fn mark_all_executable(&mut self) {
         self.current_aligned_write_pos = ALIGNED_WRITE_POSITION_NONE;
         // self.mem_block.mark_executable(0, self.mem_size).unwrap();
     }

@@ -265,7 +265,7 @@ pub struct Block
     blockid: BlockId,
 
     // Index one past the last instruction for this block in the iseq
-    end_idx: u32,
+    end_idx: usize,
 
     // Context at the start of the block
     // This should never be mutated
@@ -913,6 +913,8 @@ fn gen_block_version(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option
     todo!();
 
 
+
+
     /*
     if (block) {
         // Track the block
@@ -1015,33 +1017,32 @@ fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr
     // The entry context makes no assumptions about types
     let blockid = BlockId { iseq: iseq, idx: insn_idx };
 
-
-
-
     // TODO: why do we need rb_vm_barrier() here? this should be commented.
-    //rb_vm_barrier();
+    unsafe { rb_vm_barrier(); }
 
-
-
-    // FIXME: here we're trying to access a global code block, which is kind of problematic in Rust!
-    //
     // Write the interpreter entry prologue. Might be NULL when out of memory.
     let code_ptr = gen_entry_prologue(cb, iseq);
 
     // Try to generate code for the entry block
     let block = gen_block_version(blockid, &Context::default(), ec);
 
-
-
-
+    cb.mark_all_executable();
     //cb_mark_all_executable(ocb);
-    //cb_mark_all_executable(cb);
 
-    // If we couldn't generate any code
-    //if (!block || block->end_idx == insn_idx) {
-    //    return None;
-    //}
+    match block {
+        // Compilation failed
+        None => return None,
 
+        // If the block contains no Ruby instructions
+        Some(block) => {
+            let block = block.borrow_mut();
+            if block.end_idx == insn_idx {
+                return None
+            }
+        }
+    }
+
+    // Compilation successful and block not empty
     return code_ptr;
 }
 

@@ -4,10 +4,6 @@
 use crate::cruby::*;
 use crate::options::*;
 
-// Maxime says: I added a stats feature so we can conditionally
-// enable/disable the stats code:
-// #[cfg(feature = "stats")]
-
 // TODO
 //extern const int rb_vm_max_insn_name_size;
 
@@ -142,96 +138,91 @@ make_counters!(
 
 //===========================================================================
 
-
-
-
 /// Primitive called in yjit.rb. Export all YJIT statistics as a Ruby hash.
 #[no_mangle]
-pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE
-{
+pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE {
     // Return Qnil if YJIT isn't enabled
     if !get_option!(yjit_enabled) {
         return Qnil;
     }
 
+    unsafe {
+        let hash = rb_hash_new();
 
-    todo!();
+        RB_VM_LOCK_ENTER();
 
-
-    /*
-    VALUE hash = rb_hash_new();
-
-    RB_VM_LOCK_ENTER();
-
-    {
-        VALUE key = ID2SYM(rb_intern("inline_code_size"));
-        VALUE value = LL2NUM((long long)cb->write_pos);
-        rb_hash_aset(hash, key, value);
-
-        key = ID2SYM(rb_intern("outlined_code_size"));
-        value = LL2NUM((long long)ocb->write_pos);
-        rb_hash_aset(hash, key, value);
-    }
-    */
-
-    /*
-    #if YJIT_STATS
-    if (rb_yjit_opts.gen_stats) {
-        // Indicate that the complete set of stats is available
-        rb_hash_aset(hash, ID2SYM(rb_intern("all_stats")), Qtrue);
-
-        int64_t *counter_reader = (int64_t *)&yjit_runtime_counters;
-        int64_t *counter_reader_end = &yjit_runtime_counters.last_member;
-
-        // For each counter in yjit_counter_names, add that counter as
-        // a key/value pair.
-
-        // Iterate through comma separated counter name list
-        char *name_reader = yjit_counter_names;
-        char *counter_name_end = yjit_counter_names + sizeof(yjit_counter_names);
-        while (name_reader < counter_name_end && counter_reader < counter_reader_end) {
-            if (*name_reader == ',' || *name_reader == ' ') {
-                name_reader++;
-                continue;
-            }
-
-            // Compute length of counter name
-            int name_len;
-            char *name_end;
-            {
-                name_end = strchr(name_reader, ',');
-                if (name_end == NULL) break;
-                name_len = (int)(name_end - name_reader);
-            }
-
-            // Put counter into hash
-            VALUE key = ID2SYM(rb_intern2(name_reader, name_len));
-            VALUE value = LL2NUM((long long)*counter_reader);
+        /*
+        {
+            VALUE key = ID2SYM(rb_intern("inline_code_size"));
+            VALUE value = LL2NUM((long long)cb->write_pos);
             rb_hash_aset(hash, key, value);
 
-            counter_reader++;
-            name_reader = name_end;
-        }
-
-        // For each entry in exit_op_count, add a stats entry with key "exit_INSTRUCTION_NAME"
-        // and the value is the count of side exits for that instruction.
-
-        char key_string[rb_vm_max_insn_name_size + 6]; // Leave room for "exit_" and a final NUL
-        for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
-            const char *i_name = insn_name(i); // Look up Ruby's NUL-terminated insn name string
-            snprintf(key_string, rb_vm_max_insn_name_size + 6, "%s%s", "exit_", i_name);
-
-            VALUE key = ID2SYM(rb_intern(key_string));
-            VALUE value = LL2NUM((long long)exit_op_count[i]);
+            key = ID2SYM(rb_intern("outlined_code_size"));
+            value = LL2NUM((long long)ocb->write_pos);
             rb_hash_aset(hash, key, value);
         }
+        */
+
+        // If the stats feature is enabled and we're generating stats
+        #[cfg(feature = "stats")]
+        if get_option!(gen_stats) {
+
+            /*
+            // Indicate that the complete set of stats is available
+            rb_hash_aset(hash, ID2SYM(rb_intern("all_stats")), Qtrue);
+
+            int64_t *counter_reader = (int64_t *)&yjit_runtime_counters;
+            int64_t *counter_reader_end = &yjit_runtime_counters.last_member;
+
+            // For each counter in yjit_counter_names, add that counter as
+            // a key/value pair.
+
+            // Iterate through comma separated counter name list
+            char *name_reader = yjit_counter_names;
+            char *counter_name_end = yjit_counter_names + sizeof(yjit_counter_names);
+            while (name_reader < counter_name_end && counter_reader < counter_reader_end) {
+                if (*name_reader == ',' || *name_reader == ' ') {
+                    name_reader++;
+                    continue;
+                }
+
+                // Compute length of counter name
+                int name_len;
+                char *name_end;
+                {
+                    name_end = strchr(name_reader, ',');
+                    if (name_end == NULL) break;
+                    name_len = (int)(name_end - name_reader);
+                }
+
+                // Put counter into hash
+                VALUE key = ID2SYM(rb_intern2(name_reader, name_len));
+                VALUE value = LL2NUM((long long)*counter_reader);
+                rb_hash_aset(hash, key, value);
+
+                counter_reader++;
+                name_reader = name_end;
+            }
+
+            // For each entry in exit_op_count, add a stats entry with key "exit_INSTRUCTION_NAME"
+            // and the value is the count of side exits for that instruction.
+
+            char key_string[rb_vm_max_insn_name_size + 6]; // Leave room for "exit_" and a final NUL
+            for (int i = 0; i < VM_INSTRUCTION_SIZE; i++) {
+                const char *i_name = insn_name(i); // Look up Ruby's NUL-terminated insn name string
+                snprintf(key_string, rb_vm_max_insn_name_size + 6, "%s%s", "exit_", i_name);
+
+                VALUE key = ID2SYM(rb_intern(key_string));
+                VALUE value = LL2NUM((long long)exit_op_count[i]);
+                rb_hash_aset(hash, key, value);
+            }
+            */
+        }
+
+        RB_VM_LOCK_LEAVE();
+
+        return hash;
     }
-    #endif
-
-    RB_VM_LOCK_LEAVE();
-
-    return hash;
-    */
 }
 
 /// Primitive called in yjit.rb. Zero out all the counters.
@@ -251,19 +242,17 @@ pub extern "C" fn rb_yjit_collect_vm_usage_insn() {
     incr_counter!(vm_insns_count);
 }
 
+#[no_mangle]
+pub extern "C" fn rb_yjit_collect_binding_alloc() {
+    incr_counter!(binding_allocations);
+}
+
+#[no_mangle]
+pub extern "C" fn rb_yjit_collect_binding_set() {
+    incr_counter!(binding_set);
+}
+
 /*
-void
-rb_yjit_collect_binding_alloc(void)
-{
-    yjit_runtime_counters.binding_allocations++;
-}
-
-void
-rb_yjit_collect_binding_set(void)
-{
-    yjit_runtime_counters.binding_set++;
-}
-
 static const VALUE *
 yjit_count_side_exit_op(const VALUE *exit_pc)
 {
