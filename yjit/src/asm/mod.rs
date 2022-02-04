@@ -39,3 +39,54 @@ pub(crate) use offset_of;
 // TODO: need a field_size_of macro, to compute the size of a struct field in bytes
 
 // TODO: move CodeBlock here so it can be shared between x86/ARM
+
+
+
+
+
+mod demo_typed_assemblers {
+    use std::marker::PhantomData;
+
+    struct Assembler<T> {
+        _marker: PhantomData<T>,
+    }
+
+    impl<T> Assembler<T> {
+        fn new() -> Self {
+            Assembler::<T> { _marker: PhantomData::<T> {} }
+        }
+    }
+
+    // Distinguish between inline and outlined assembler types
+    // Have the type system enforce the distinction
+    struct AsmTypeInline {}
+    struct AsmTypeOutlined {}
+    type InlineAsm = Assembler<AsmTypeInline>;
+    type OutlinedAsm = Assembler<AsmTypeOutlined>;
+
+    // Downside:
+    // Forces us to add generic parameters to all the functions that could apply to
+    // either type of assembler
+    // However, we could wrap these in a trait X86Asm<T> if we want
+    fn mov<T>(cb: Assembler<T>) {
+    }
+
+    fn foo_cb(cb: InlineAsm) {
+    }
+
+    fn foo_ocb(cb: OutlinedAsm) {
+    }
+
+    fn bar() {
+        let cb = InlineAsm::new();
+        let ocb = OutlinedAsm::new();
+
+        // Succeeds
+        foo_cb(cb);
+        foo_ocb(ocb);
+
+        // Fails
+        //foo_cb(ocb);
+        //foo_ocb(cb);
+    }
+}
