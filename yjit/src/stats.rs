@@ -140,23 +140,25 @@ make_counters!(
     gbpp_block_handler_not_iseq
 );
 
+//===========================================================================
 
 
 
 
-// Alan thinks exporting Ruby hash functions from C would be OK
-// Keep the stats code in Rust.
-//
-/*
-// Primitive called in yjit.rb. Export all YJIT statistics as a Ruby hash.
-static VALUE
-get_yjit_stats(rb_execution_context_t *ec, VALUE self)
+/// Primitive called in yjit.rb. Export all YJIT statistics as a Ruby hash.
+#[no_mangle]
+pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE
 {
     // Return Qnil if YJIT isn't enabled
-    if (cb == NULL) {
+    if !get_option!(yjit_enabled) {
         return Qnil;
     }
 
+
+    todo!();
+
+
+    /*
     VALUE hash = rb_hash_new();
 
     RB_VM_LOCK_ENTER();
@@ -170,8 +172,10 @@ get_yjit_stats(rb_execution_context_t *ec, VALUE self)
         value = LL2NUM((long long)ocb->write_pos);
         rb_hash_aset(hash, key, value);
     }
+    */
 
-#if YJIT_STATS
+    /*
+    #if YJIT_STATS
     if (rb_yjit_opts.gen_stats) {
         // Indicate that the complete set of stats is available
         rb_hash_aset(hash, ID2SYM(rb_intern("all_stats")), Qtrue);
@@ -222,63 +226,26 @@ get_yjit_stats(rb_execution_context_t *ec, VALUE self)
             rb_hash_aset(hash, key, value);
         }
     }
-#endif
+    #endif
 
     RB_VM_LOCK_LEAVE();
 
     return hash;
+    */
 }
-*/
 
-
-
-
-// Primitive called in yjit.rb. Zero out all the counters.
+/// Primitive called in yjit.rb. Zero out all the counters.
 #[no_mangle]
-pub extern "C" fn reset_stats_bang(ec: EcPtr, ruby_self: VALUE) -> VALUE {
+pub extern "C" fn rb_yjit_reset_stats_bang(ec: EcPtr, ruby_self: VALUE) -> VALUE {
     unsafe {
         EXIT_OP_COUNT = [0; VM_INSTRUCTION_SIZE];
         COUNTERS = Counters::default();
     }
 
-    todo!(); // missing Qnil const
-    //return Qnil;
+    return Qnil;
 }
 
-
-
-
-
-
-
-
-/*
-#if YJIT_STATS
-
-// Increment a counter then take an existing side exit.
-#define COUNTED_EXIT(jit, side_exit, counter_name) _counted_side_exit(jit, side_exit, &(yjit_runtime_counters . counter_name))
-static uint8_t *
-_counted_side_exit(jitstate_t* jit, uint8_t *existing_side_exit, int64_t *counter)
-{
-    if (!rb_yjit_opts.gen_stats) return existing_side_exit;
-
-    uint8_t *start = cb_get_ptr(jit->ocb, jit->ocb->write_pos);
-    _gen_counter_inc(jit->ocb, counter);
-    jmp_ptr(jit->ocb, existing_side_exit);
-    return start;
-}
-
-#else
-
-#define GEN_COUNTER_INC(cb, counter_name) ((void)0)
-#define COUNTED_EXIT(jit, side_exit, counter_name) side_exit
-
-#endif // if YJIT_STATS
-*/
-
-
-
-
+/// Increment the number of instructions executed by the interpreter
 #[no_mangle]
 pub extern "C" fn rb_yjit_collect_vm_usage_insn() {
     incr_counter!(vm_insns_count);

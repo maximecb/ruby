@@ -49,9 +49,9 @@ impl Type {
                 Type::Fixnum
             } else if val.nil_p() {
                 Type::Nil
-            } else if val == QTRUE {
+            } else if val == Qtrue {
                 Type::True
-            } else if val == QFALSE {
+            } else if val == Qfalse {
                 Type::False
             } else if val.static_sym_p() {
                 Type::ImmSymbol

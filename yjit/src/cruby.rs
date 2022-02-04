@@ -29,7 +29,7 @@ impl VALUE {
     pub fn test(self:VALUE) -> bool
     {
         let VALUE(cval) = self;
-        let VALUE(qnilval) = QNIL;
+        let VALUE(qnilval) = Qnil;
         (cval & !qnilval) != 0
     }
 
@@ -67,7 +67,7 @@ impl VALUE {
 
     // Returns true or false depending on whether the value is nil
     pub fn nil_p(self:VALUE) -> bool {
-        self == QNIL
+        self == Qnil
     }
 
     // Read the flags bits from the RBasic object, then return a Ruby type enum (e.g. RUBY_T_ARRAY)
@@ -96,10 +96,15 @@ impl From<VALUE> for u64 {
     }
 }
 
-pub const QFALSE:VALUE = VALUE(0);
-pub const QNIL: VALUE = VALUE(8);
-pub const QTRUE: VALUE = VALUE(20);
-pub const QUNDEF: VALUE = VALUE(52);
+// Non-idiomatic capitalization for consistency with CRuby code
+#[allow(non_upper_case_globals)]
+pub const Qfalse: VALUE = VALUE(0);
+#[allow(non_upper_case_globals)]
+pub const Qnil: VALUE = VALUE(8);
+#[allow(non_upper_case_globals)]
+pub const Qtrue: VALUE = VALUE(20);
+#[allow(non_upper_case_globals)]
+pub const Qundef: VALUE = VALUE(52);
 
 pub const RB_SYMBOL_FLAG: usize = 0x0c;
 

@@ -254,6 +254,27 @@ macro_rules! gen_counter_incr {
     };
 }
 
+/*
+#if YJIT_STATS
+
+// Increment a counter then take an existing side exit.
+#define COUNTED_EXIT(jit, side_exit, counter_name) _counted_side_exit(jit, side_exit, &(yjit_runtime_counters . counter_name))
+static uint8_t *
+_counted_side_exit(jitstate_t* jit, uint8_t *existing_side_exit, int64_t *counter)
+{
+    if (!rb_yjit_opts.gen_stats) return existing_side_exit;
+
+    uint8_t *start = cb_get_ptr(jit->ocb, jit->ocb->write_pos);
+    _gen_counter_inc(jit->ocb, counter);
+    jmp_ptr(jit->ocb, existing_side_exit);
+    return start;
+}
+
+#endif // if YJIT_STATS
+*/
+
+
+
 
 
 
@@ -443,7 +464,7 @@ fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
     pop(ocb, REG_EC);
     pop(ocb, REG_CFP);
 
-    mov(ocb, RAX, uimm_opnd(u64::from(QUNDEF)));
+    mov(ocb, RAX, uimm_opnd(u64::from(Qundef)));
     ret(ocb);
 
     return code_ptr;
@@ -941,7 +962,7 @@ fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16,
 
 fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
-    jit_putobject(jit, ctx, cb, QNIL);
+    jit_putobject(jit, ctx, cb, Qnil);
     KeepCompiling
 }
 
