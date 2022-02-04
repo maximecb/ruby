@@ -254,24 +254,34 @@ macro_rules! gen_counter_incr {
     };
 }
 
-/*
-#if YJIT_STATS
+// Increment a counter then take an existing side exit
+macro_rules! counted_exit {
+    ($cb:tt, $existing_side_exit:tt, $counter_name:ident) => {
+        {
+            // TODO: we should check here that cb is an outlined code block
+            todo!();
 
-// Increment a counter then take an existing side exit.
-#define COUNTED_EXIT(jit, side_exit, counter_name) _counted_side_exit(jit, side_exit, &(yjit_runtime_counters . counter_name))
-static uint8_t *
-_counted_side_exit(jitstate_t* jit, uint8_t *existing_side_exit, int64_t *counter)
-{
-    if (!rb_yjit_opts.gen_stats) return existing_side_exit;
+            // The counter is only incremented when stats are enabled
+            #[cfg(not(feature = "stats"))]
+            {
+                return $existing_side_exit;
+            }
+            if (!get_option!(gen_stats)) {
+                return $existing_side_exit;
+            }
 
-    uint8_t *start = cb_get_ptr(jit->ocb, jit->ocb->write_pos);
-    _gen_counter_inc(jit->ocb, counter);
-    jmp_ptr(jit->ocb, existing_side_exit);
-    return start;
+            let code_ptr = cb.get_write_ptr();
+
+            // Increment the counter
+            gen_counter_incr!($cb, $counter_name);
+
+            todo!();
+            //jmp_ptr(cb, existing_side_exit);
+
+            return code_ptr;
+        }
+    };
 }
-
-#endif // if YJIT_STATS
-*/
 
 
 
@@ -1236,8 +1246,6 @@ gen_duphash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-VALUE rb_vm_splat_array(VALUE flag, VALUE ary);
-
 // call to_a on the array on the stack
 static codegen_status_t
 gen_splatarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
@@ -1351,8 +1359,8 @@ gen_expandarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Move the array from the stack into REG0 and check that it's an array.
     mov(cb, REG0, array_opnd);
-    guard_object_is_heap(cb, REG0, ctx, COUNTED_EXIT(jit, side_exit, expandarray_not_array));
-    guard_object_is_array(cb, REG0, REG1, ctx, COUNTED_EXIT(jit, side_exit, expandarray_not_array));
+    guard_object_is_heap(cb, REG0, ctx, counted_exit!(jit, side_exit, expandarray_not_array));
+    guard_object_is_array(cb, REG0, REG1, ctx, counted_exit!(jit, side_exit, expandarray_not_array));
 
     // If we don't actually want any values, then just return.
     if (num == 0) {
@@ -1374,7 +1382,7 @@ gen_expandarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     // Only handle the case where the number of values in the array is greater
     // than or equal to the number of values requested.
     cmp(cb, REG1, imm_opnd(num));
-    jl_ptr(cb, COUNTED_EXIT(jit, side_exit, expandarray_rhs_too_small));
+    jl_ptr(cb, counted_exit!(jit, side_exit, expandarray_rhs_too_small));
 
     // Load the address of the embedded array into REG1.
     // (struct RArray *)(obj)->as.ary
@@ -1918,7 +1926,7 @@ gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE compt
         add_comment(cb, "guard embedded getivar");
         x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
         test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-        jit_chain_guard(JCC_JZ, jit, &starting_context, max_chain_depth, COUNTED_EXIT(jit, side_exit, getivar_megamorphic));
+        jit_chain_guard(JCC_JZ, jit, &starting_context, max_chain_depth, counted_exit!(jit, side_exit, getivar_megamorphic));
 
         // Load the variable
         x86opnd_t ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
@@ -1941,14 +1949,14 @@ gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE compt
         add_comment(cb, "guard extended getivar");
         x86opnd_t flags_opnd = member_opnd(REG0, struct RBasic, flags);
         test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-        jit_chain_guard(JCC_JNZ, jit, &starting_context, max_chain_depth, COUNTED_EXIT(jit, side_exit, getivar_megamorphic));
+        jit_chain_guard(JCC_JNZ, jit, &starting_context, max_chain_depth, counted_exit!(jit, side_exit, getivar_megamorphic));
 
         // check that the extended table is big enough
         if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
             // Check that the slot is inside the extended table (num_slots > index)
             x86opnd_t num_slots = mem_opnd(32, REG0, offsetof(struct RObject, as.heap.numiv));
             cmp(cb, num_slots, imm_opnd(ivar_index));
-            jle_ptr(cb, COUNTED_EXIT(jit, side_exit, getivar_idx_out_of_range));
+            jle_ptr(cb, counted_exit!(jit, side_exit, getivar_idx_out_of_range));
         }
 
         // Get a pointer to the extended table
@@ -2437,7 +2445,7 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         // Bail if idx is not a FIXNUM
         mov(cb, REG1, idx_opnd);
         test(cb, REG1, imm_opnd(RUBY_FIXNUM_FLAG));
-        jz_ptr(cb, COUNTED_EXIT(jit, side_exit, oaref_arg_not_fixnum));
+        jz_ptr(cb, counted_exit!(jit, side_exit, oaref_arg_not_fixnum));
 
         // Call VALUE rb_ary_entry_internal(VALUE ary, long offset).
         // It never raises or allocates, so we don't need to write to cfp->pc.
@@ -3236,7 +3244,7 @@ jit_protected_callee_ancestry_guard(jitstate_t *jit, codeblock_t *cb, const rb_c
     // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
     call_ptr(cb, REG0, (void *)&rb_obj_is_kind_of);
     test(cb, RAX, RAX);
-    jz_ptr(cb, COUNTED_EXIT(jit, side_exit, send_se_protected_check_failed));
+    jz_ptr(cb, counted_exit!(jit, side_exit, send_se_protected_check_failed));
 }
 
 // Return true when the codegen function generates code.
@@ -3483,7 +3491,7 @@ gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const 
     // REG_CFP <= REG_SP + 4 * sizeof(VALUE) + sizeof(rb_control_frame_t)
     lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * 4 + 2 * sizeof(rb_control_frame_t)));
     cmp(cb, REG_CFP, REG0);
-    jle_ptr(cb, COUNTED_EXIT(jit, side_exit, send_se_cf_overflow));
+    jle_ptr(cb, counted_exit!(jit, side_exit, send_se_cf_overflow));
 
     // Points to the receiver operand on the stack
     x86opnd_t recv = ctx_stack_opnd(ctx, argc);
@@ -3883,7 +3891,7 @@ gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
     add_comment(cb, "stack overflow check");
     lea(cb, REG0, ctx_sp_opnd(ctx, sizeof(VALUE) * (num_locals + iseq->body->stack_max) + 2 * sizeof(rb_control_frame_t)));
     cmp(cb, REG_CFP, REG0);
-    jle_ptr(cb, COUNTED_EXIT(jit, side_exit, send_se_cf_overflow));
+    jle_ptr(cb, counted_exit!(jit, side_exit, send_se_cf_overflow));
 
     if (doing_kw_call) {
         // Here we're calling a method with keyword arguments and specifying
@@ -4511,7 +4519,7 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     x86opnd_t ep_me_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * VM_ENV_DATA_INDEX_ME_CREF);
     jit_mov_gc_ptr(jit, cb, REG1, (VALUE)me);
     cmp(cb, ep_me_opnd, REG1);
-    jne_ptr(cb, COUNTED_EXIT(jit, side_exit, invokesuper_me_changed));
+    jne_ptr(cb, counted_exit!(jit, side_exit, invokesuper_me_changed));
 
     if (!block) {
         // Guard no block passed
@@ -4524,7 +4532,7 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         // EP is in REG0 from above
         x86opnd_t ep_specval_opnd = mem_opnd(64, REG0, SIZEOF_VALUE * VM_ENV_DATA_INDEX_SPECVAL);
         cmp(cb, ep_specval_opnd, imm_opnd(VM_BLOCK_HANDLER_NONE));
-        jne_ptr(cb, COUNTED_EXIT(jit, side_exit, invokesuper_block));
+        jne_ptr(cb, counted_exit!(jit, side_exit, invokesuper_block));
     }
 
     // Points to the receiver operand on the stack
@@ -4550,45 +4558,56 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     RUBY_ASSERT_ALWAYS(false);
 }
+*/
 
-static codegen_status_t
-gen_leave(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+// TODO: complete this
+#[allow(unreachable_code)]
+fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock) -> CodegenStatus
 {
-    // Only the return value should be on the stack
-    RUBY_ASSERT(ctx->stack_size == 1);
+    todo!();
 
+    // Only the return value should be on the stack
+    assert!(ctx.get_stack_size() == 1);
+
+
+    /*
     // Create a side-exit to fall back to the interpreter
     uint8_t *side_exit = yjit_side_exit(jit, ctx);
 
     // Load environment pointer EP from CFP
     mov(cb, REG1, member_opnd(REG_CFP, rb_control_frame_t, ep));
+    */
+
+
 
     // Check for interrupts
     add_comment(cb, "check for interrupts");
-    yjit_check_ints(cb, COUNTED_EXIT(jit, side_exit, leave_se_interrupt));
+    //yjit_check_ints(cb, counted_exit!(jit, side_exit, leave_se_interrupt));
 
     // Load the return value
-    mov(cb, REG0, ctx_stack_pop(ctx, 1));
+    mov(cb, REG0, ctx.stack_pop(1));
 
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
-    add(cb, REG_CFP, imm_opnd(sizeof(rb_control_frame_t)));
-    mov(cb, member_opnd(REG_EC, rb_execution_context_t, cfp), REG_CFP);
+    //add(cb, REG_CFP, imm_opnd(sizeof(rb_control_frame_t)));
+    //mov(cb, member_opnd(REG_EC, rb_execution_context_t, cfp), REG_CFP);
 
     // Reload REG_SP for the caller and write the return value.
     // Top of the stack is REG_SP[0] since the caller has sp_offset=1.
-    mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
+    //mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
     mov(cb, mem_opnd(64, REG_SP, 0), REG0);
 
     // Jump to the JIT return address on the frame that was just popped
-    const int32_t offset_to_jit_return = -((int32_t)sizeof(rb_control_frame_t)) + (int32_t)offsetof(rb_control_frame_t, jit_return);
-    jmp_rm(cb, mem_opnd(64, REG_CFP, offset_to_jit_return));
+    //const int32_t offset_to_jit_return = -((int32_t)sizeof(rb_control_frame_t)) + (int32_t)offsetof(rb_control_frame_t, jit_return);
+    //jmp_rm(cb, mem_opnd(64, REG_CFP, offset_to_jit_return));
 
-    return YJIT_END_BLOCK;
+
+
+
+    EndBlock
 }
 
-RUBY_EXTERN rb_serial_t ruby_vm_global_constant_state;
-
+/*
 static codegen_status_t
 gen_getglobal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 {
@@ -4861,7 +4880,7 @@ gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
         // Check the result. _Bool is one byte in SysV.
         test(cb, AL, AL);
-        jz_ptr(cb, COUNTED_EXIT(jit, side_exit, opt_getinlinecache_miss));
+        jz_ptr(cb, counted_exit!(jit, side_exit, opt_getinlinecache_miss));
 
         // Push ic->entry->value
         mov(cb, REG0, const_ptr_opnd((void *)ic));
@@ -4911,7 +4930,7 @@ gen_getblockparamproxy(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Bail when VM_ENV_FLAGS(ep, VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM) is non zero
     test(cb, mem_opnd(64, REG0, SIZEOF_VALUE * VM_ENV_DATA_INDEX_FLAGS), imm_opnd(VM_FRAME_FLAG_MODIFIED_BLOCK_PARAM));
-    jnz_ptr(cb, COUNTED_EXIT(jit, side_exit, gbpp_block_param_modified));
+    jnz_ptr(cb, counted_exit!(jit, side_exit, gbpp_block_param_modified));
 
     // Load the block handler for the current frame
     // note, VM_ASSERT(VM_ENV_LOCAL_P(ep))
@@ -4922,7 +4941,7 @@ gen_getblockparamproxy(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Bail unless VM_BH_ISEQ_BLOCK_P(bh). This also checks for null.
     cmp(cb, REG0_8, imm_opnd(0x1));
-    jnz_ptr(cb, COUNTED_EXIT(jit, side_exit, gbpp_block_handler_not_iseq));
+    jnz_ptr(cb, counted_exit!(jit, side_exit, gbpp_block_handler_not_iseq));
 
     // Push rb_block_param_proxy. It's a root, so no need to use jit_mov_gc_ptr.
     mov(cb, REG0, const_ptr_opnd((void *)rb_block_param_proxy));
@@ -5215,7 +5234,11 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
         yjit_reg_op(BIN(send), gen_send);
         yjit_reg_op(BIN(invokesuper), gen_invokesuper);
-        yjit_reg_op(BIN(leave), gen_leave);
+        */
+
+        //OP_LEAVE => Some(gen_leave),
+
+        /*
         yjit_reg_op(BIN(getglobal), gen_getglobal);
         yjit_reg_op(BIN(setglobal), gen_setglobal);
         yjit_reg_op(BIN(anytostring), gen_anytostring);
@@ -5231,10 +5254,11 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
     }
 }
 
-// TODO: implement pattern matching for this
-// see yjit_reg_method in the C code
+/// Register codegen functions for some Ruby core methods
 fn get_method_gen_fn()
 {
+    // TODO: implement pattern matching for this
+
     /*
     // Specialization for C methods. See yjit_reg_method() for details.
     yjit_reg_method(rb_cBasicObject, "!", jit_rb_obj_not);
