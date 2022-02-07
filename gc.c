@@ -9189,7 +9189,11 @@ gc_start(rb_objspace_t *objspace, unsigned int reason)
     objspace->flags.immediate_sweep = !!(reason & GPR_FLAG_IMMEDIATE_SWEEP);
 
     /* Explicitly enable compaction (GC.compact) */
-    objspace->flags.during_compacting = !!(reason & GPR_FLAG_COMPACT);
+    if (do_full_mark && ruby_enable_autocompact) {
+        objspace->flags.during_compacting = TRUE;
+    } else {
+        objspace->flags.during_compacting = !!(reason & GPR_FLAG_COMPACT);
+    }
 
     if (!heap_allocated_pages) return FALSE; /* heap is not ready */
     if (!(reason & GPR_FLAG_METHOD) && !ready_to_gc(objspace)) return TRUE; /* GC is not allowed */
