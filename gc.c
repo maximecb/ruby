@@ -4978,7 +4978,7 @@ try_move_plane(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *page,
 static bool
 try_move2(rb_objspace_t *objspace, rb_heap_t *heap, struct heap_page *free_page, VALUE src)
 {
-    if (!free_page) {
+    if (!gc_is_moveable_obj(objspace, src) || !free_page) {
         return false;
     }
     GC_ASSERT(MARKED_IN_BITMAP(GET_HEAP_MARK_BITS(src), src));
