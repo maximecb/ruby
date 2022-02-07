@@ -21,7 +21,7 @@ struct LabelRef
 // TODO: move CodeBlock into src/asm/mod.rs so it can be shared
 // TODO: we will later rename this to Assembler, but for now, keep the name the same for easier porting
 //
-/// Block of memory into which instructions can be written
+/// Block of memory into which instructions can be assembled
 pub struct CodeBlock
 {
     // Memory block

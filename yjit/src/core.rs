@@ -885,14 +885,14 @@ impl Context {
 
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
-fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<BlockRef>
+fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> Option<BlockRef>
 {
     // Limit the number of specialized versions for this block
     let block_ctx = limit_block_versions(blockid, start_ctx);
 
     // Generate code for the first block
     let block = Block::new(blockid, &block_ctx);
-    let result = gen_single_block(&block.borrow_mut(), ec);
+    let result = gen_single_block(&block.borrow_mut(), ec, cb, ocb);
 
     if result.is_err() {
         return None;
@@ -990,7 +990,7 @@ fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<
 
 /// Generate a block version that is an entry point inserted into an iseq
 /// NOTE: this function assumes that the VM lock has been taken
-fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
+fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
     /*
     // If we aren't at PC 0, don't generate code
@@ -1000,20 +1000,24 @@ fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr
     }
     */
 
+    // TODO: why do we need rb_vm_barrier() here? this should be commented.
+    unsafe { rb_vm_barrier(); }
+
     // The entry context makes no assumptions about types
     let blockid = BlockId { iseq: iseq, idx: insn_idx };
 
-    // TODO: why do we need rb_vm_barrier() here? this should be commented.
-    unsafe { rb_vm_barrier(); }
+    // Get the inline code block
+    let cb = CodegenGlobals::get_inline_cb();
+    let ocb = CodegenGlobals::get_outlined_cb();
 
     // Write the interpreter entry prologue. Might be NULL when out of memory.
     let code_ptr = gen_entry_prologue(cb, iseq);
 
     // Try to generate code for the entry block
-    let block = gen_block_series(blockid, &Context::default(), ec);
+    let block = gen_block_series(blockid, &Context::default(), ec, cb, ocb);
 
     cb.mark_all_executable();
-    //cb_mark_all_executable(ocb);
+    ocb.mark_all_executable();
 
     match block {
         // Compilation failed

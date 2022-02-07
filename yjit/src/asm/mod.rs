@@ -38,12 +38,21 @@ pub(crate) use offset_of;
 
 // TODO: need a field_size_of macro, to compute the size of a struct field in bytes
 
-// TODO: move CodeBlock here so it can be shared between x86/ARM
+// TODO: move CodeBlock struct & impl here so it can be shared between x86/ARM assemblers
 
 
 
 
 
+
+
+
+
+
+
+
+
+// TODO(Maxime): we can revisit this idea once we're further along in the porting work
 mod demo_typed_assemblers {
     use std::marker::PhantomData;
 
