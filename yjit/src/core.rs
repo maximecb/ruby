@@ -989,6 +989,7 @@ fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr) -> Option<
 }
 
 /// Generate a block version that is an entry point inserted into an iseq
+/// NOTE: this function assumes that the VM lock has been taken
 fn gen_entry_point(cb: &mut CodeBlock, iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
     /*
