@@ -8013,29 +8013,11 @@ gc_marks_step(rb_objspace_t *objspace, size_t slots)
 }
 #endif
 
-static rb_heap_t *
-gc_compact_destination_heap(rb_objspace_t *objspace, VALUE p)
-{
-    switch(BUILTIN_TYPE(p)) {
-        /* case T_STRING: */
-        /*     { */
-        /*         size_t memsize = obj_memsize_of(p, 0); */
-        /*         size_t idx = size_pool_idx_for_size(memsize); */
-        /*         return SIZE_POOL_EDEN_HEAP(&size_pools[idx]); */
-        /*         *pool = &size_pools[idx]; */
-        /*     } */
-        default:
-            return &GET_HEAP_PAGE(p)->size_pool->eden_heap;
-    }
-}
-
 static bool
 gc_compact_move_optimal(rb_objspace_t *objspace, rb_heap_t *heap, VALUE src)
 {
     GC_ASSERT(BUILTIN_TYPE(src) != T_MOVED);
-
-    // first work out which heap this object wants to move to
-    rb_heap_t *dheap = gc_compact_destination_heap(objspace, src);
+    rb_heap_t *dheap = heap;
 
     if (dheap->sweeping_page == dheap->compact_cursor) {
         return false;
