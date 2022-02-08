@@ -6,9 +6,10 @@ use crate::codegen::*;
 pub extern "C" fn init_yjit() {
     println!("Entering init_yjit() function");
 
-    init_core();
-
     CodegenGlobals::init();
+
+    // TODO:
+    //Invariants::init() ?
 
     println!("Leaving init_yjit() function");
 }

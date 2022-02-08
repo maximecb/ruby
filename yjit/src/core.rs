@@ -1629,11 +1629,6 @@ invalidate_block_version(block_t *block)
 }
 */
 
-pub fn init_core() {
-    //gen_code_for_exit_from_stub();
-    todo!();
-}
-
 #[cfg(test)]
 mod tests {
     use crate::core::*;
