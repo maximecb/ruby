@@ -964,16 +964,16 @@ fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16,
     let opnd0 = ctx.stack_opnd(offset0 as i32);
     let opnd1 = ctx.stack_opnd(offset1 as i32);
 
-    let mapping0 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset0));
-    let mapping1 = ctx.get_opnd_mapping(InsnOpnd::StackOpnd(offset1));
+    let mapping0 = ctx.get_opnd_mapping(StackOpnd(offset0));
+    let mapping1 = ctx.get_opnd_mapping(StackOpnd(offset1));
 
     mov(cb, REG0, opnd0);
     mov(cb, REG1, opnd1);
     mov(cb, opnd0, REG1);
     mov(cb, opnd1, REG0);
 
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset0), mapping1);
-    ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
+    ctx.set_opnd_mapping(StackOpnd(offset0), mapping1);
+    ctx.set_opnd_mapping(StackOpnd(offset1), mapping0);
 }
 
 fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -1027,6 +1027,49 @@ fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     let arg:VALUE = jit_get_arg(jit, 0);
 
     jit_putobject(jit, ctx, cb, arg);
+    KeepCompiling
+}
+
+// set Nth stack entry to stack top
+fn gen_setn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let nval:VALUE = jit_get_arg(jit, 0);
+    let VALUE(n) = nval;
+
+    let top_val:X86Opnd = ctx.stack_pop(0);
+    let dst_opnd:X86Opnd = ctx.stack_opnd(n.try_into().unwrap());
+    mov(cb, REG0, top_val);
+    mov(cb, dst_opnd, REG0);
+
+    let mapping = ctx.get_opnd_mapping(StackOpnd(0));
+    ctx.set_opnd_mapping(StackOpnd(n.try_into().unwrap()), mapping);
+
+    KeepCompiling
+}
+
+// get nth stack value, then push it
+fn gen_topn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let nval:VALUE = jit_get_arg(jit, 0);
+    let VALUE(n) = nval;
+
+    let top_n_val = ctx.stack_opnd(n.try_into().unwrap());
+    let mapping = ctx.get_opnd_mapping(StackOpnd(n.try_into().unwrap()));
+
+    let loc0 = ctx.stack_push_mapping(mapping);
+    mov(cb, REG0, top_n_val);
+    mov(cb, loc0, REG0);
+
+    KeepCompiling
+}
+
+// Pop n values off the stack
+fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    let nval:VALUE = jit_get_arg(jit, 0);
+    let VALUE(n) = nval;
+
+    ctx.stack_pop(n);
     KeepCompiling
 }
 
@@ -1201,53 +1244,84 @@ mod tests {
         assert!(matches!(KeepCompiling, status));
         assert_eq!(tmp_type_top, Type::Fixnum);
     }
+
+    #[test]
+    fn test_gen_setn() {
+        let mut context = Context::new();
+        context.stack_push(Type::Fixnum);
+        context.stack_push(Type::Flonum);
+        context.stack_push(Type::String);
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+
+        let mut value_array: [u64; 2] = [ 0, 2 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_setn(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+
+        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(0)));
+
+        assert!(cb.get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_gen_topn() {
+        let mut context = Context::new();
+        context.stack_push(Type::Flonum);
+        context.stack_push(Type::String);
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+
+        let mut value_array: [u64; 2] = [ 0, 1 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_topn(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(2)));
+        assert_eq!(Type::String, context.get_opnd_type(StackOpnd(1)));
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
+
+        assert!(cb.get_write_pos() > 0); // Write some movs
+    }
+
+    #[test]
+    fn test_gen_adjuststack() {
+        let mut context = Context::new();
+        context.stack_push(Type::Flonum);
+        context.stack_push(Type::String);
+        context.stack_push(Type::Fixnum);
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+
+        let mut value_array: [u64; 3] = [ 0, 2, 0 ];
+        let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
+
+        let mut jit = JITState::new();
+        jit.set_pc(pc);
+
+        let status = gen_adjuststack(&mut jit, &mut context, &mut cb, &mut ocb);
+
+        assert!(matches!(KeepCompiling, status));
+
+        assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
+
+        assert!(cb.get_write_pos() == 0); // No instructions written
+    }
 }
 
 /*
-// set Nth stack entry to stack top
-static codegen_status_t
-gen_setn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
-
-    // Set the destination
-    x86opnd_t top_val = ctx_stack_pop(ctx, 0);
-    x86opnd_t dst_opnd = ctx_stack_opnd(ctx, (int32_t)n);
-    mov(cb, REG0, top_val);
-    mov(cb, dst_opnd, REG0);
-
-    temp_type_mapping_t mapping = ctx_get_opnd_mapping(ctx, OPND_STACK(0));
-    ctx_set_opnd_mapping(ctx, OPND_STACK(n), mapping);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-// get nth stack value, then push it
-static codegen_status_t
-gen_topn(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    int32_t n = (int32_t)jit_get_arg(jit, 0);
-
-    // Get top n type / operand
-    x86opnd_t top_n_val = ctx_stack_opnd(ctx, n);
-    temp_type_mapping_t mapping = ctx_get_opnd_mapping(ctx, OPND_STACK(n));
-
-    x86opnd_t loc0 = ctx_stack_push_mapping(ctx, mapping);
-    mov(cb, REG0, top_n_val);
-    mov(cb, loc0, REG0);
-
-    return YJIT_KEEP_COMPILING;
-}
-
-// Pop n values off the stack
-static codegen_status_t
-gen_adjuststack(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
-{
-    rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
-    ctx_stack_pop(ctx, n);
-    return YJIT_KEEP_COMPILING;
-}
-
 // new array initialized from top N values
 static codegen_status_t
 gen_newarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
@@ -5224,13 +5298,11 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_PUTOBJECT => Some(gen_putobject),
         OP_PUTOBJECT_INT2FIX_0_ => Some(gen_putobject_int2fix),
         OP_PUTOBJECT_INT2FIX_1_ => Some(gen_putobject_int2fix),
+        OP_SETN => Some(gen_setn),
+        OP_TOPN => Some(gen_topn),
+        OP_ADJUSTSTACK => Some(gen_adjuststack),
 
         /*
-        yjit_reg_op(BIN(dupn), gen_dupn);
-        yjit_reg_op(BIN(swap), gen_swap);
-        yjit_reg_op(BIN(setn), gen_setn);
-        yjit_reg_op(BIN(topn), gen_topn);
-        yjit_reg_op(BIN(adjuststack), gen_adjuststack);
         yjit_reg_op(BIN(newarray), gen_newarray);
         yjit_reg_op(BIN(duparray), gen_duparray);
         yjit_reg_op(BIN(duphash), gen_duphash);
@@ -5239,11 +5311,8 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(newhash), gen_newhash);
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
-        yjit_reg_op(BIN(putnil), gen_putnil);
         yjit_reg_op(BIN(putobject), gen_putobject);
         yjit_reg_op(BIN(putstring), gen_putstring);
-        yjit_reg_op(BIN(putobject_INT2FIX_0_), gen_putobject_int2fix);
-        yjit_reg_op(BIN(putobject_INT2FIX_1_), gen_putobject_int2fix);
         yjit_reg_op(BIN(putself), gen_putself);
         yjit_reg_op(BIN(putspecialobject), gen_putspecialobject);
         yjit_reg_op(BIN(getlocal), gen_getlocal);
