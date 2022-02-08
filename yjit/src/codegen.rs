@@ -282,7 +282,10 @@ macro_rules! counted_exit {
 
 
 
-
+// FIXME: there is no longer a cb on the JITState object, so these
+// should take a &mut CodeBlock argument instead of JITState
+// Should also rename to be no longer jit_*
+//
 /*
 // Save the incremented PC on the CFP
 // This is necessary when calleees can raise or allocate
@@ -331,7 +334,14 @@ record_global_inval_patch(const codeblock_t *cb, uint32_t outline_block_target_p
     struct codepage_patch patch_point = { cb->write_pos, outline_block_target_pos };
     if (!rb_darray_append(&global_inval_patches, patch_point)) rb_bug("allocation failed");
 }
+*/
 
+
+
+
+
+
+/*
 // Verify the ctx's types and mappings against the compile-time stack, self,
 // and locals.
 static void
@@ -435,12 +445,7 @@ yjit_gen_exit(VALUE *exit_pc, ctx_t *ctx, codeblock_t *cb)
 // interpreter state.
 fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
 {
-    // TODO: we may want to have different types for the CB & OCB
-
     let code_ptr = ocb.get_write_ptr();
-
-    // TODO: should init the global variable in init_codegen()
-    //code_for_exit_from_stub = ocb.get_write_ptr();
 
     gen_counter_incr!(cb, exit_from_branch_stub);
 
@@ -654,6 +659,9 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     // Setup cfp->jit_return
     //mov(cb, REG0, code_ptr_opnd(leave_exit_code));
     //mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
+
+
+
 
 
 
@@ -4027,6 +4035,7 @@ gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
         // explicitly given a value and have a non-constant default.
         mov(cb, ctx_stack_opnd(ctx, -1), imm_opnd(INT2FIX(unspecified_bits)));
     }
+
     // Points to the receiver operand on the stack
     x86opnd_t recv = ctx_stack_opnd(ctx, argc);
 
@@ -5320,13 +5329,13 @@ pub struct CodegenGlobals
     outlined_cb: CodeBlock,
 
     /// Code for exiting back to the interpreter from the leave instruction
-    pub leave_exit_code: CodePtr,
+    leave_exit_code: CodePtr,
 
-    /*
     // For exiting from YJIT frame from branch_stub_hit().
     // Filled by gen_code_for_exit_from_stub().
-    //static uint8_t *code_for_exit_from_stub = NULL;
+    exit_stub_code: CodePtr,
 
+    /*
     // Code for full logic of returning from C method and exiting to the interpreter
     static uint32_t outline_full_cfunc_return_pos;
 
@@ -5374,12 +5383,15 @@ impl CodegenGlobals {
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
+        let exit_stub_code = gen_code_for_exit_from_stub(&mut ocb);
+
         unsafe {
             CODEGEN_GLOBALS = Some(
                 CodegenGlobals {
                     inline_cb: cb,
                     outlined_cb: ocb,
                     leave_exit_code: leave_exit_code,
+                    exit_stub_code: exit_stub_code,
                 }
             )
         }
