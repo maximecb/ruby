@@ -399,11 +399,15 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
         }
     }
 }
+*/
 
 // Generate an exit to return to the interpreter
-static uint32_t
-yjit_gen_exit(VALUE *exit_pc, ctx_t *ctx, codeblock_t *cb)
+fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 {
+    todo!();
+
+    /*
+    // FIXME: make this function return a CodePtr instead
     const uint32_t code_pos = cb->write_pos;
 
     add_comment(cb, "exit to interpreter");
@@ -436,8 +440,8 @@ yjit_gen_exit(VALUE *exit_pc, ctx_t *ctx, codeblock_t *cb)
     ret(cb);
 
     return code_pos;
+    */
 }
-*/
 
 // Fill code_for_exit_from_stub. This is used by branch_stub_hit() to exit
 // to the interpreter when it cannot service a stub by generating new code.
@@ -459,7 +463,6 @@ fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
     return code_ptr;
 }
 
-/*
 // :side-exit:
 // Get an exit for the current instruction in the outlined block. The code
 // for each instruction often begins with several guards before proceeding
@@ -472,18 +475,19 @@ fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
 // moment, so there is one unique side exit for each context. Note that
 // it's incorrect to jump to the side exit after any ctx stack push/pop operations
 // since they change the logic required for reconstructing interpreter state.
-static uint8_t *
-yjit_side_exit(jitstate_t *jit, ctx_t *ctx)
+fn get_side_exit(jit: &mut JITState, ocb: &mut CodeBlock, ctx: &Context) -> CodePtr
 {
-    if (!jit->side_exit_for_pc) {
-        codeblock_t *ocb = jit->ocb;
-        uint32_t pos = yjit_gen_exit(jit->pc, ctx, ocb);
-        jit->side_exit_for_pc = cb_get_ptr(ocb, pos);
+    match jit.side_exit_for_pc {
+        None => {
+            let exit_code = gen_exit(jit.pc, ctx, ocb);
+            jit.side_exit_for_pc = Some(exit_code);
+            exit_code
+        },
+        Some(code_ptr) => code_ptr
     }
-
-    return jit->side_exit_for_pc;
 }
 
+/*
 // Ensure that there is an exit for the start of the block being compiled.
 // Block invalidation uses this exit.
 static void
@@ -495,11 +499,11 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
     if (jit->insn_idx == block->blockid.idx) {
         // We are compiling the first instruction in the block.
         // Generate the exit with the cache in jitstate.
-        block->entry_exit = yjit_side_exit(jit, &block->ctx);
+        block->entry_exit = get_side_exit(jit, &block->ctx);
     }
     else {
         VALUE *pc = yjit_iseq_pc_at_idx(block->blockid.iseq, block->blockid.idx);
-        uint32_t pos = yjit_gen_exit(pc, &block->ctx, ocb);
+        uint32_t pos = gen_exit(pc, &block->ctx, ocb);
         block->entry_exit = cb_get_ptr(ocb, pos);
     }
 }
@@ -714,7 +718,7 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 
     // We are at the end of the current instruction. Record the boundary.
     if (jit->record_boundary_patch_point) {
-        uint32_t exit_pos = yjit_gen_exit(jit->pc + insn_len(jit->opcode), &reset_depth, jit->ocb);
+        uint32_t exit_pos = gen_exit(jit->pc + insn_len(jit->opcode), &reset_depth, jit->ocb);
         record_global_inval_patch(jit->cb, exit_pos);
         jit->record_boundary_patch_point = false;
     }
@@ -783,7 +787,7 @@ pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut 
         // If previous instruction requested to record the boundary
         if (jit.record_boundary_patch_point) {
             // Generate an exit to this instruction and record it
-            uint32_t exit_pos = yjit_gen_exit(jit.pc, ctx, ocb);
+            uint32_t exit_pos = gen_exit(jit.pc, ctx, ocb);
             record_global_inval_patch(cb, exit_pos);
             jit.record_boundary_patch_point = false;
         }
@@ -820,7 +824,7 @@ pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut 
             // TODO: if the codegen function makes changes to ctx and then return YJIT_CANT_COMPILE,
             // the exit this generates would be wrong. We could save a copy of the entry context
             // and assert that ctx is the same here.
-            uint32_t exit_off = yjit_gen_exit(jit.pc, ctx, cb);
+            uint32_t exit_off = gen_exit(jit.pc, ctx, cb);
 
             // If this is the first instruction in the block, then we can use
             // the exit for block->entry_exit.
@@ -1379,7 +1383,7 @@ gen_expandarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         return YJIT_CANT_COMPILE;
     }
 
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // num is the number of requested values. If there aren't enough in the
     // array then we're going to push on nils.
@@ -1642,7 +1646,7 @@ gen_setlocal_wc0(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED));
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
     jnz_ptr(cb, side_exit);
@@ -1712,7 +1716,7 @@ gen_setlocal_generic(jitstate_t *jit, ctx_t *ctx, uint32_t local_idx, uint32_t l
     test(cb, flags_opnd, imm_opnd(VM_ENV_FLAG_WB_REQUIRED));
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // if (flags & VM_ENV_FLAG_WB_REQUIRED) != 0
     jnz_ptr(cb, side_exit);
@@ -2028,7 +2032,7 @@ gen_getinstancevariable(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     VALUE comptime_val_klass = CLASS_OF(comptime_val);
 
     // Generate a side exit
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // Guard that the receiver has the same class as the one from compile time.
     mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
@@ -2253,7 +2257,7 @@ gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
     if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_LT)) {
             return YJIT_CANT_COMPILE;
@@ -2397,7 +2401,7 @@ gen_opt_eq(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     if (gen_equality_specialized(jit, ctx, side_exit)) {
         jit_jump_to_next_insn(jit, ctx);
@@ -2445,7 +2449,7 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     VALUE comptime_recv = jit_peek_at_stack(jit, ctx, 1);
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     if (CLASS_OF(comptime_recv) == rb_cArray && RB_FIXNUM_P(comptime_idx)) {
         if (!assume_bop_not_redefined(jit, ARRAY_REDEFINED_OP_FLAG, BOP_AREF)) {
@@ -2551,7 +2555,7 @@ gen_opt_aset(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     x86opnd_t val = ctx_stack_opnd(ctx, 0);
 
     if (CLASS_OF(comptime_recv) == rb_cArray && FIXNUM_P(comptime_key)) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         // Guard receiver is an Array
         mov(cb, REG0, recv);
@@ -2585,7 +2589,7 @@ gen_opt_aset(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
         return YJIT_END_BLOCK;
     }
     else if (CLASS_OF(comptime_recv) == rb_cHash) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         // Guard receiver is a Hash
         mov(cb, REG0, recv);
@@ -2629,7 +2633,7 @@ gen_opt_and(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_AND)) {
             return YJIT_CANT_COMPILE;
@@ -2673,7 +2677,7 @@ gen_opt_or(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_OR)) {
             return YJIT_CANT_COMPILE;
@@ -2717,7 +2721,7 @@ gen_opt_minus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_MINUS)) {
             return YJIT_CANT_COMPILE;
@@ -2763,7 +2767,7 @@ gen_opt_plus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_PLUS)) {
             return YJIT_CANT_COMPILE;
@@ -2817,7 +2821,7 @@ gen_opt_mod(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     // Note that this modifies REG_SP, which is why we do it first
     jit_prepare_routine_call(jit, ctx, REG0);
 
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // Get the operands from the stack
     x86opnd_t arg1 = ctx_stack_pop(ctx, 1);
@@ -2960,7 +2964,7 @@ gen_branchif(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Check for interrupts, but only on backward branches that may create loops
     if (jump_offset < 0) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
         yjit_check_ints(cb, side_exit);
     }
 
@@ -3016,7 +3020,7 @@ gen_branchunless(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Check for interrupts, but only on backward branches that may create loops
     if (jump_offset < 0) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
         yjit_check_ints(cb, side_exit);
     }
 
@@ -3072,7 +3076,7 @@ gen_branchnil(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Check for interrupts, but only on backward branches that may create loops
     if (jump_offset < 0) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
         yjit_check_ints(cb, side_exit);
     }
 
@@ -3108,7 +3112,7 @@ gen_jump(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     // Check for interrupts, but only on backward branches that may create loops
     if (jump_offset < 0) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
         yjit_check_ints(cb, side_exit);
     }
 
@@ -3512,7 +3516,7 @@ gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const 
     //print_ptr(cb, recv);
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // Check for interrupts
     yjit_check_ints(cb, side_exit);
@@ -3884,7 +3888,7 @@ gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
     const int num_locals = iseq->body->local_table_size - num_params;
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // Check for interrupts
     yjit_check_ints(cb, side_exit);
@@ -4293,7 +4297,7 @@ gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t
     VALUE comptime_recv_klass = CLASS_OF(comptime_recv);
 
     // Guard that the receiver has the same class as the one from compile time
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // Points to the receiver operand on the stack
     x86opnd_t recv = ctx_stack_opnd(ctx, argc);
@@ -4539,7 +4543,7 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 
     // Guard that the receiver has the same class as the one from compile time
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     if (jit->ec->cfp->ep[VM_ENV_DATA_INDEX_ME_CREF] != (VALUE)me) {
         // This will be the case for super within a block
@@ -4602,10 +4606,12 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
     assert!(ctx.get_stack_size() == 1);
 
 
-    /*
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
+
+
+    /*
     // Load environment pointer EP from CFP
     mov(cb, REG1, member_opnd(REG_CFP, rb_control_frame_t, ep));
     */
@@ -4712,7 +4718,7 @@ gen_objtostring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     VALUE comptime_recv = jit_peek_at_stack(jit, ctx, 0);
 
     if (RB_TYPE_P(comptime_recv, T_STRING)) {
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         mov(cb, REG0, recv);
         jit_guard_known_klass(jit, ctx, CLASS_OF(comptime_recv), OPND_STACK(0), comptime_recv, SEND_MAX_DEPTH, side_exit);
@@ -4902,7 +4908,7 @@ gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
     if (ice->ic_cref) {
         // Cache is keyed on a certain lexical scope. Use the interpreter's cache.
-        uint8_t *side_exit = yjit_side_exit(jit, ctx);
+        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         // Call function to verify the cache. It doesn't allocate or call methods.
         bool rb_vm_ic_hit_p(IC ic, const VALUE *reg_ep);
@@ -4952,7 +4958,7 @@ gen_getblockparamproxy(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 {
     // A mirror of the interpreter code. Checking for the case
     // where it's pushing rb_block_param_proxy.
-    uint8_t *side_exit = yjit_side_exit(jit, ctx);
+    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
     // EP level
     uint32_t level = (uint32_t)jit_get_arg(jit, 1);
