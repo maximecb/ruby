@@ -651,13 +651,12 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
 
 
 
-    const OFFSET_CONTROL_FRAME_SP: i32 = 0;
 
     // Load the current SP from the CFP into REG_SP
     //mov(cb, REG_SP,  member_opnd!(REG_CFP, rb_control_frame_t, sp));
 
     // Setup cfp->jit_return
-    //mov(cb, REG0, code_ptr_opnd(leave_exit_code));
+    mov(cb, REG0, code_ptr_opnd(CodegenGlobals::get_leave_exit_code()));
     //mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
 
 
@@ -5333,7 +5332,7 @@ pub struct CodegenGlobals
 
     // For exiting from YJIT frame from branch_stub_hit().
     // Filled by gen_code_for_exit_from_stub().
-    exit_stub_code: CodePtr,
+    stub_exit_code: CodePtr,
 
     /*
     // Code for full logic of returning from C method and exiting to the interpreter
@@ -5383,7 +5382,7 @@ impl CodegenGlobals {
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
-        let exit_stub_code = gen_code_for_exit_from_stub(&mut ocb);
+        let stub_exit_code = gen_code_for_exit_from_stub(&mut ocb);
 
         unsafe {
             CODEGEN_GLOBALS = Some(
@@ -5391,7 +5390,7 @@ impl CodegenGlobals {
                     inline_cb: cb,
                     outlined_cb: ocb,
                     leave_exit_code: leave_exit_code,
-                    exit_stub_code: exit_stub_code,
+                    stub_exit_code: stub_exit_code,
                 }
             )
         }
@@ -5412,5 +5411,9 @@ impl CodegenGlobals {
     /// Get a mutable reference to the outlined code block
     pub fn get_outlined_cb() -> &'static mut CodeBlock {
         &mut CodegenGlobals::get_instance().outlined_cb
+    }
+
+    pub fn get_leave_exit_code() -> CodePtr {
+        CodegenGlobals::get_instance().leave_exit_code
     }
 }

@@ -7,19 +7,17 @@ use std::convert::From;
 // Temporary, these external bindings will likely be auto-generated
 // and textually included in this file
 extern "C" {
-    pub fn RB_VM_LOCK_ENTER();
-    pub fn RB_VM_LOCK_LEAVE();
-    pub fn rb_vm_barrier();
 
+    // Alan suggests calling these from the C side, not exporting them to Rust
+    //pub fn RB_VM_LOCK_ENTER();
+    //pub fn RB_VM_LOCK_LEAVE();
+    //pub fn rb_vm_barrier();
 
     //int insn = rb_vm_insn_addr2opcode((const void *)*exit_pc);
-
 
     //pub fn rb_intern(???) -> ???
     //pub fn ID2SYM(id: VALUE) -> VALUE;
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
-
-
 
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;

@@ -3,11 +3,13 @@ pub mod x86_64;
 /// Pointer to a piece of machine code
 /// We may later change this to wrap an u32
 /// Note: there is no NULL constant for CodePtr. You should use Option<CodePtr> instead.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
 pub struct CodePtr(*const u8);
 
 impl CodePtr {
-    fn raw_ptr(self) -> *const u8 {
-        let CodePtr(ptr) = self;
+    pub fn raw_ptr(&self) -> *const u8 {
+        let CodePtr(ptr) = *self;
         return ptr;
     }
 }

@@ -139,6 +139,7 @@ make_counters!(
 //===========================================================================
 
 /// Primitive called in yjit.rb. Export all YJIT statistics as a Ruby hash.
+/// This should be wrapped on the C side with RB_VM_LOCK_ENTER()
 #[no_mangle]
 pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE {
     // Return Qnil if YJIT isn't enabled
@@ -149,7 +150,7 @@ pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE {
     unsafe {
         let hash = rb_hash_new();
 
-        RB_VM_LOCK_ENTER();
+        //RB_VM_LOCK_ENTER();
 
         /*
         {
@@ -219,7 +220,7 @@ pub extern "C" fn rb_yjit_get_yjit_stats(ec: EcPtr, ruby_self: VALUE) -> VALUE {
             */
         }
 
-        RB_VM_LOCK_LEAVE();
+        //RB_VM_LOCK_LEAVE();
 
         return hash;
     }

@@ -990,7 +990,7 @@ fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut C
 
 /// Generate a block version that is an entry point inserted into an iseq
 /// NOTE: this function assumes that the VM lock has been taken
-fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
+pub fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
 {
     /*
     // If we aren't at PC 0, don't generate code
@@ -999,9 +999,6 @@ fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
         return NULL;
     }
     */
-
-    // TODO: why do we need rb_vm_barrier() here? this should be commented.
-    unsafe { rb_vm_barrier(); }
 
     // The entry context makes no assumptions about types
     let blockid = BlockId { iseq: iseq, idx: insn_idx };
