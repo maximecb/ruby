@@ -885,7 +885,7 @@ impl Context {
 
 // Immediately compile a series of block versions at a starting point and
 // return the starting block.
-fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> Option<BlockRef>
+fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Option<BlockRef>
 {
     // Limit the number of specialized versions for this block
     let block_ctx = limit_block_versions(blockid, start_ctx);
@@ -1014,7 +1014,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<Code
     let block = gen_block_series(blockid, &Context::default(), ec, cb, ocb);
 
     cb.mark_all_executable();
-    ocb.mark_all_executable();
+    ocb.unwrap().mark_all_executable();
 
     match block {
         // Compilation failed

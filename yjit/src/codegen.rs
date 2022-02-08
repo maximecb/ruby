@@ -28,7 +28,7 @@ enum CodegenStatus {
 }
 
 /// Code generation function signature
-type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus;
+type CodeGenFn = fn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus;
 
 /// Code generation state
 /// This struct only lives while code is being generated
@@ -250,9 +250,11 @@ macro_rules! gen_counter_incr {
 
 // Increment a counter then take an existing side exit
 macro_rules! counted_exit {
-    ($cb:tt, $existing_side_exit:tt, $counter_name:ident) => {
+    ($ocb:tt, $existing_side_exit:tt, $counter_name:ident) => {
         {
-            // TODO: we should check here that cb is an outlined code block
+            // Side-exits can only be generated in the outlined code block
+            let ocb = ocb.uwnrap();
+
             todo!();
 
             // The counter is only incremented when stats are enabled
@@ -264,10 +266,10 @@ macro_rules! counted_exit {
                 return $existing_side_exit;
             }
 
-            let code_ptr = cb.get_write_ptr();
+            let code_ptr = ocb.get_write_ptr();
 
             // Increment the counter
-            gen_counter_incr!($cb, $counter_name);
+            gen_counter_incr!($ocb, $counter_name);
 
             todo!();
             //jmp_ptr(cb, existing_side_exit);
@@ -447,8 +449,9 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 // to the interpreter when it cannot service a stub by generating new code.
 // Before coming here, branch_stub_hit() takes care of fully reconstructing
 // interpreter state.
-fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
+fn gen_code_for_exit_from_stub(ocb: &mut OutlinedCb) -> CodePtr
 {
+    let ocb = ocb.unwrap();
     let code_ptr = ocb.get_write_ptr();
 
     gen_counter_incr!(cb, exit_from_branch_stub);
@@ -475,11 +478,11 @@ fn gen_code_for_exit_from_stub(ocb: &mut CodeBlock) -> CodePtr
 // moment, so there is one unique side exit for each context. Note that
 // it's incorrect to jump to the side exit after any ctx stack push/pop operations
 // since they change the logic required for reconstructing interpreter state.
-fn get_side_exit(jit: &mut JITState, ocb: &mut CodeBlock, ctx: &Context) -> CodePtr
+fn get_side_exit(jit: &mut JITState, ocb: &mut OutlinedCb, ctx: &Context) -> CodePtr
 {
     match jit.side_exit_for_pc {
         None => {
-            let exit_code = gen_exit(jit.pc, ctx, ocb);
+            let exit_code = gen_exit(jit.pc, ctx, ocb.unwrap());
             jit.side_exit_for_pc = Some(exit_code);
             exit_code
         },
@@ -604,21 +607,22 @@ gen_full_cfunc_return(void)
 
 /// Generate a continuation for leave that exits to the interpreter at REG_CFP->pc.
 /// This is used by gen_leave() and gen_entry_prologue()
-fn gen_leave_exit(cb: &mut CodeBlock) -> CodePtr
+fn gen_leave_exit(ocb: &mut OutlinedCb) -> CodePtr
 {
-    let code_ptr = cb.get_write_ptr();
+    let ocb = ocb.unwrap();
+    let code_ptr = ocb.get_write_ptr();
 
     // Note, gen_leave() fully reconstructs interpreter state and leaves the
     // return value in RAX before coming here.
 
     // Every exit to the interpreter should be counted
-    gen_counter_incr!(cb, leave_interp_return);
+    gen_counter_incr!(ocb, leave_interp_return);
 
-    pop(cb, REG_SP);
-    pop(cb, REG_EC);
-    pop(cb, REG_CFP);
+    pop(ocb, REG_SP);
+    pop(ocb, REG_EC);
+    pop(ocb, REG_CFP);
 
-    ret(cb);
+    ret(ocb);
 
     return code_ptr;
 }
@@ -736,7 +740,7 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 // Part of gen_block_version().
 // Note: this function will mutate its context while generating code,
 //       but the input start_ctx argument should remain immutable.
-pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> Result<(), ()>
+pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Result<(), ()>
 {
     let blockid = block.get_blockid();
     //verify_blockid(blockid);
@@ -881,20 +885,20 @@ pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut 
     Ok(())
 }
 
-fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_nop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Do nothing
     KeepCompiling
 }
 
-fn gen_pop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_pop(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Decrement SP
     ctx.stack_pop(1);
     KeepCompiling
 }
 
-fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let dup_val = ctx.stack_pop(0);
     let (mapping, tmp_type) = ctx.get_opnd_mapping(StackOpnd(0));
@@ -907,7 +911,7 @@ fn gen_dup(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut 
 }
 
 // duplicate stack top n elements
-fn gen_dupn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_dupn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let nval:VALUE = jit_get_arg(jit, 0);
     let VALUE(n) = nval;
@@ -935,7 +939,7 @@ fn gen_dupn(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 }
 
 // Swap top 2 stack entries
-fn gen_swap(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_swap(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     stack_swap(ctx, cb, 0, 1, REG0, REG1);
     KeepCompiling
@@ -958,7 +962,7 @@ fn stack_swap(ctx: &mut Context, cb: &mut CodeBlock, offset0: u16, offset1: u16,
     ctx.set_opnd_mapping(InsnOpnd::StackOpnd(offset1), mapping0);
 }
 
-fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_putnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     jit_putobject(jit, ctx, cb, Qnil);
     KeepCompiling
@@ -995,7 +999,7 @@ fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg:
     }
 }
 
-fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let opcode = jit.opcode;
     let cst_val:usize = if opcode == OP_PUTOBJECT_INT2FIX_0_ { 0 } else { 1 };
@@ -1004,7 +1008,7 @@ fn gen_putobject_int2fix(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
     KeepCompiling
 }
 
-fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     let arg:VALUE = jit_get_arg(jit, 0);
 
@@ -1021,16 +1025,16 @@ mod tests {
 
     #[test]
     fn test_gen_leave_exit() {
-        let mut cb = CodeBlock::new();
-        gen_leave_exit(&mut cb);
-        assert!(cb.get_write_pos() > 0);
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        gen_leave_exit(&mut ocb);
+        assert!(ocb.unwrap().get_write_pos() > 0);
     }
 
     #[test]
     fn test_gen_nop() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
         let status = gen_nop(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
@@ -1041,7 +1045,9 @@ mod tests {
     #[test]
     fn test_gen_pop() {
         let mut context = Context::new_with_stack_size(1);
-        let status = gen_pop(&mut JITState::new(), &mut context, &mut CodeBlock::new(), &mut CodeBlock::new());
+        let mut cb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let status = gen_pop(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
         assert_eq!(context.diff(&Context::new()), 0);
@@ -1052,7 +1058,7 @@ mod tests {
         let mut context = Context::new();
         context.stack_push(Type::Fixnum);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
         let status = gen_dup(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
@@ -1070,7 +1076,7 @@ mod tests {
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let mut value_array: [u64; 2] = [ 0, 2 ]; // We only compile for n == 2
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
@@ -1096,7 +1102,7 @@ mod tests {
         context.stack_push(Type::Fixnum);
         context.stack_push(Type::Flonum);
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let status = gen_swap(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
 
@@ -1112,7 +1118,7 @@ mod tests {
     fn test_putnil() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
         let status = gen_putnil(&mut JITState::new(), &mut context, &mut cb, &mut ocb);
 
         let (_, tmp_type_top) = context.get_opnd_mapping(StackOpnd(0));
@@ -1127,7 +1133,7 @@ mod tests {
         // Test gen_putobject with Qtrue
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let VALUE(qtrue_value) = Qtrue;
         let mut value_array: [u64; 2] = [ 0, qtrue_value as u64 ];
@@ -1149,7 +1155,7 @@ mod tests {
         // Test gen_putobject with a Fixnum to test another conditional branch
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         // The Fixnum 7 is encoded as 7 * 2 + 1, or 15
         let mut value_array: [u64; 2] = [ 0, 15 ];
@@ -1170,7 +1176,7 @@ mod tests {
     fn test_int2fix() {
         let mut context = Context::new();
         let mut cb = CodeBlock::new();
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
         let mut jit = JITState::new();
         jit.opcode = OP_PUTOBJECT_INT2FIX_0_;
         let status = gen_putobject_int2fix(& mut jit, &mut context, &mut cb, &mut ocb);
@@ -4596,9 +4602,12 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 */
 
+
+
+
 // TODO: complete this
 #[allow(unreachable_code)]
-fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut CodeBlock) -> CodegenStatus
+fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     todo!();
 
@@ -4644,6 +4653,11 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
 
     EndBlock
 }
+
+
+
+
+
 
 /*
 static codegen_status_t
@@ -5331,7 +5345,7 @@ pub struct CodegenGlobals
     inline_cb: CodeBlock,
 
     /// Outlined code block (slow path)
-    outlined_cb: CodeBlock,
+    outlined_cb: OutlinedCb,
 
     /// Code for exiting back to the interpreter from the leave instruction
     leave_exit_code: CodePtr,
@@ -5384,7 +5398,7 @@ impl CodegenGlobals {
 
         let cb = CodeBlock::new();
 
-        let mut ocb = CodeBlock::new();
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
@@ -5415,7 +5429,7 @@ impl CodegenGlobals {
     }
 
     /// Get a mutable reference to the outlined code block
-    pub fn get_outlined_cb() -> &'static mut CodeBlock {
+    pub fn get_outlined_cb() -> &'static mut OutlinedCb {
         &mut CodegenGlobals::get_instance().outlined_cb
     }
 

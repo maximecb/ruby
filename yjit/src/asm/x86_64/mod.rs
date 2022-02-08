@@ -603,6 +603,27 @@ impl CodeBlock
     }
 }
 
+/// Wrapper struct so we can use the type system to distinguish
+/// Between the inlined and outlined code blocks
+pub struct OutlinedCb
+{
+    // This must remain private
+    cb: CodeBlock,
+}
+
+impl OutlinedCb
+{
+    pub fn wrap(cb: CodeBlock) -> Self {
+        OutlinedCb {
+            cb: cb
+        }
+    }
+
+    pub fn unwrap<'a> (&'a mut self) -> &'a mut CodeBlock {
+        &mut self.cb
+    }
+}
+
 /// Write the REX byte
 fn write_rex(cb: &mut CodeBlock, w_flag: bool, reg_no: u8, idx_reg_no: u8, rm_reg_no: u8) {
     // 0 1 0 0 w r x b
