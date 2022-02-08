@@ -2,7 +2,7 @@ use std::io::{Result, Write};
 use std::mem;
 use crate::asm::*;
 
-// Import the CodeBlock tests module
+// Import the assembler tests module
 mod tests;
 
 // 1 is not aligned so this won't match any pages
@@ -397,91 +397,6 @@ pub fn code_ptr_opnd(code_ptr: CodePtr) -> X86Opnd
     uimm_opnd( code_ptr.raw_ptr() as u64)
 }
 
-/*
-// Allocate a block of executable memory
-static uint8_t *alloc_exec_mem(uint32_t mem_size)
-{
-#ifndef _WIN32
-    uint8_t *mem_block;
-
-    // On Linux
-    #if defined(MAP_FIXED_NOREPLACE) && defined(_SC_PAGESIZE)
-        // Align the requested address to page size
-        uint32_t page_size = (uint32_t)sysconf(_SC_PAGESIZE);
-        uint8_t *req_addr = align_ptr((uint8_t*)&alloc_exec_mem, page_size);
-
-        do {
-            // Try to map a chunk of memory as executable
-            mem_block = (uint8_t*)mmap(
-                (void*)req_addr,
-                mem_size,
-                PROT_READ | PROT_EXEC,
-                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED_NOREPLACE,
-                -1,
-                0
-            );
-
-            // If we succeeded, stop
-            if (mem_block != MAP_FAILED) {
-                break;
-            }
-
-            // +4MB
-            req_addr += 4 * 1024 * 1024;
-        } while (req_addr < (uint8_t*)&alloc_exec_mem + INT32_MAX);
-
-    // On MacOS and other platforms
-    #else
-        // Try to map a chunk of memory as executable
-        mem_block = (uint8_t*)mmap(
-            (void*)alloc_exec_mem,
-            mem_size,
-            PROT_READ | PROT_EXEC,
-            MAP_PRIVATE | MAP_ANONYMOUS,
-            -1,
-            0
-        );
-    #endif
-
-    // Fallback
-    if (mem_block == MAP_FAILED) {
-        // Try again without the address hint (e.g., valgrind)
-        mem_block = (uint8_t*)mmap(
-            NULL,
-            mem_size,
-            PROT_READ | PROT_EXEC,
-            MAP_PRIVATE | MAP_ANONYMOUS,
-            -1,
-            0
-            );
-    }
-
-    // Check that the memory mapping was successful
-    if (mem_block == MAP_FAILED) {
-        perror("mmap call failed");
-        exit(-1);
-    }
-
-    codeblock_t block;
-    codeblock_t *cb = &block;
-
-    cb_init(cb, mem_block, mem_size);
-
-    // Fill the executable memory with PUSH DS (0x1E) so that
-    // executing uninitialized memory will fault with #UD in
-    // 64-bit mode.
-    cb_mark_all_writable(cb);
-    memset(mem_block, 0x1E, mem_size);
-    cb_mark_all_executable(cb);
-
-    return mem_block;
-#else
-    // Windows not supported for now
-    return NULL;
-#endif
-}
-*/
-
 impl CodeBlock
 {
     pub fn new() -> Self {
@@ -620,14 +535,16 @@ impl CodeBlock
 
     /// Write a label at the current address
     pub fn write_label(&mut self, label_idx: usize) {
-        // assert (label_idx < MAX_LABELS);
+        // TODO: make sure that label_idx is valid
+        // TODO: add an asseer here
+
         self.label_addrs[label_idx] = self.write_pos;
     }
 
     // Add a label reference at the current write position
     pub fn label_ref(&mut self, label_idx: usize) {
-        // assert (label_idx < MAX_LABELS);
-        // assert (cb->num_refs < MAX_LABEL_REFS);
+        // TODO: make sure that label_idx is valid
+        // TODO: add an asseer here
 
         // Keep track of the reference
         self.label_refs.push(LabelRef { pos: self.write_pos, label_idx });
