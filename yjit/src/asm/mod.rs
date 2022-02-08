@@ -12,6 +12,11 @@ impl CodePtr {
         let CodePtr(ptr) = *self;
         return ptr;
     }
+
+    fn into_i64(&self) -> i64 {
+        let CodePtr(ptr) = self;
+        *ptr as i64
+    }
 }
 
 impl From<*mut u8> for CodePtr {
