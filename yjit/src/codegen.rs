@@ -65,10 +65,10 @@ pub struct JITState
 }
 
 impl JITState {
-    pub fn new() -> Self {
+    pub fn new(blockref: &BlockRef) -> Self {
         JITState {
-            block: Block::new(BLOCKID_NULL, &Context::default()),   // Rc<RefCell<Block>>
-            iseq: IseqPtr(0),
+            block: blockref.clone(),
+            iseq: IseqPtr(0), // TODO: initialize this from the blockid
             insn_idx: 0,
             opcode: 0,
             pc: std::ptr::null_mut::<VALUE>(),
@@ -756,36 +756,27 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
 // Part of gen_block_version().
 // Note: this function will mutate its context while generating code,
 //       but the input start_ctx argument should remain immutable.
-pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Result<(), ()>
+pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> Result<(), ()>
 {
+    let mut block = blockref.borrow_mut();
     let blockid = block.get_blockid();
     //verify_blockid(blockid);
 
     assert!(!(blockid.idx == 0 && block.get_ctx().get_stack_size() > 0));
 
-    /*
-    const rb_iseq_t *iseq = block->blockid.iseq;
-    const unsigned int iseq_size = iseq->body->iseq_size;
-    uint32_t insn_idx = block->blockid.idx;
-    const uint32_t starting_insn_idx = insn_idx;
-    */
+    //const rb_iseq_t *iseq = block->blockid.iseq;
+    //const unsigned int iseq_size = iseq->body->iseq_size;
+    let insn_idx = blockid.idx;
+    let starting_insn_idx = insn_idx;
 
     // Initialize a JIT state object
-    let mut jit = JITState::new();
+    let mut jit = JITState::new(blockref);
     jit.iseq = blockid.iseq;
     jit.ec = Some(ec);
-    /*
-    jitstate_t jit = {
-        .block = block,
-        .iseq = iseq,
-    };
-    */
 
-
-
-    // TODO: we probably want a set_start_addr method, callable only once
     // Mark the start position of the block
-    //block->start_addr = cb_get_write_ptr(cb);
+    block.set_start_addr(cb.get_write_ptr());
+
 
 
 
@@ -872,23 +863,33 @@ pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut 
             break;
         }
     }
+    */
+
+
+
 
     // Mark the end position of the block
-    block->end_addr = cb_get_write_ptr(cb);
+    block.set_end_addr(cb.get_write_ptr());
 
     // Store the index of the last instruction in the block
-    block->end_idx = insn_idx;
+    block.set_end_idx(insn_idx);
 
     // We currently can't handle cases where the request is for a block that
     // doesn't go to the next instruction.
-    RUBY_ASSERT(!jit.record_boundary_patch_point);
+    assert!(!jit.record_boundary_patch_point);
 
+
+
+    /*
     // If code for the block doesn't fit, free the block and fail.
     if (cb->dropped_bytes || ocb->dropped_bytes) {
         yjit_free_block(block);
-        return NULL;
+        return Err(());
     }
     */
+
+
+
 
     // TODO: we may want a feature for this called dump_insns? Can leave commented for now
     /*
@@ -1119,7 +1120,13 @@ mod tests {
     use crate::asm::x86_64::*;
 
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
-        return (JITState::new(), Context::new(), CodeBlock::new(), OutlinedCb::wrap(CodeBlock::new()));
+        let block = Block::new(BLOCKID_NULL, &Context::default());
+        return (
+            JITState::new(&block),
+            Context::new(),
+            CodeBlock::new(),
+            OutlinedCb::wrap(CodeBlock::new())
+        );
     }
 
     #[test]

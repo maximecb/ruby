@@ -164,10 +164,10 @@ pub enum InsnOpnd {
     StackOpnd(u16),
 }
 
-/**
-Code generation context
-Contains information we can use to specialize/optimize code
-*/
+
+/// Code generation context
+/// Contains information we can use to specialize/optimize code
+/// There are a lot of context objects so we try to keep the size small.
 #[derive(Copy, Clone, Default, Debug)]
 pub struct Context
 {
@@ -194,15 +194,16 @@ pub struct Context
     temp_mapping: [TempMapping; MAX_TEMP_TYPES],
 }
 
-// Tuple of (iseq, idx) used to identify basic blocks
+/// Tuple of (iseq, idx) used to identify basic blocks
+/// There are a lot of blockid objects so we try to keep the size small.
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub struct BlockId
 {
-    // Instruction sequence
+    /// Instruction sequence
     pub iseq: IseqPtr,
 
-    // Index in the iseq where the block starts
-    pub idx: usize,
+    /// Index in the iseq where the block starts
+    pub idx: u32,
 }
 
 /// Null block id constant
@@ -220,7 +221,7 @@ enum BranchShape
 type BranchGenFn = fn(cb: &CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
-/// Note: care must be taken to minimize the size of branch_t objects
+/// Note: care must be taken to minimize the size of branch objects
 struct Branch
 {
     // Block this is attached to
@@ -265,7 +266,7 @@ pub struct Block
     blockid: BlockId,
 
     // Index one past the last instruction for this block in the iseq
-    end_idx: usize,
+    end_idx: u32,
 
     // Context at the start of the block
     // This should never be mutated
@@ -343,20 +344,22 @@ fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 fn get_version_list(blockid: BlockId) -> &'static mut VersionList
 {
     let payload = get_iseq_payload(blockid.iseq);
+    let insn_idx = blockid.idx as usize;
 
     // Expand the version map as necessary
-    if blockid.idx >= payload.version_map.len() {
-        payload.version_map.resize(blockid.idx + 1, VersionList::default());
+    if insn_idx >= payload.version_map.len() {
+        payload.version_map.resize(insn_idx + 1, VersionList::default());
     }
 
-    return payload.version_map.get_mut(blockid.idx).unwrap()
+    return payload.version_map.get_mut(insn_idx).unwrap();
 }
 
 // Count the number of block versions matching a given blockid
 fn get_num_versions(blockid: BlockId) -> usize
 {
+    let insn_idx = blockid.idx as usize;
     let payload = get_iseq_payload(blockid.iseq);
-    return payload.version_map[blockid.idx].len();
+    return payload.version_map[insn_idx].len();
 }
 
 /// Retrieve a basic block version for an (iseq, idx) tuple
@@ -486,6 +489,31 @@ impl Block {
 
     pub fn get_ctx(&self) -> Context {
         self.ctx
+    }
+
+    /// Set the starting address in the generated code for the block
+    /// This can be done only once for a block
+    pub fn set_start_addr(&mut self, addr: CodePtr) {
+        assert!(self.start_addr.is_none());
+        self.start_addr = Some(addr);
+    }
+
+    /// Set the end address in the generated for the block
+    /// This can be done only once for a block
+    pub fn set_end_addr(&mut self, addr: CodePtr) {
+        // The end address can only be set after the start address is set
+        assert!(self.start_addr.is_some());
+
+        // TODO: assert constraint that blocks can shrink but not grow in length
+
+        self.end_addr = Some(addr);
+    }
+
+    /// Set the index of the last instruction in the block
+    /// This can be done only once for a block
+    pub fn set_end_idx(&mut self, end_idx: u32) {
+        assert!(self.end_idx == 0);
+        self.end_idx = end_idx;
     }
 
     pub fn add_gc_object_offset(self:&mut Block, ptr_offset:u32) {
@@ -892,8 +920,9 @@ fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut C
 
     // Generate code for the first block
     let block = Block::new(blockid, &block_ctx);
-    let result = gen_single_block(&block.borrow_mut(), ec, cb, ocb);
+    let result = gen_single_block(&block, ec, cb, ocb);
 
+    // If compilation failed
     if result.is_err() {
         return None;
     }
@@ -990,7 +1019,7 @@ fn gen_block_series(blockid: BlockId, start_ctx: &Context, ec: EcPtr, cb: &mut C
 
 /// Generate a block version that is an entry point inserted into an iseq
 /// NOTE: this function assumes that the VM lock has been taken
-pub fn gen_entry_point(iseq: IseqPtr, insn_idx: usize, ec: EcPtr) -> Option<CodePtr>
+pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePtr>
 {
     /*
     // If we aren't at PC 0, don't generate code
