@@ -405,6 +405,8 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
 }
 */
 
+
+#[allow(unreachable_code)]
 // Generate an exit to return to the interpreter
 fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 {
@@ -412,19 +414,17 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 
     add_comment(cb, "exit to interpreter");
 
-    /*
     // Generate the code to exit to the interpreters
     // Write the adjusted SP back into the CFP
-    if (ctx->sp_offset != 0) {
-        x86opnd_t stack_pointer = ctx_sp_opnd(ctx, 0);
+    if ctx.get_sp_offset() != 0 {
+        let stack_pointer = ctx.sp_opnd(0);
         lea(cb, REG_SP, stack_pointer);
-        mov(cb, member_opnd(REG_CFP, rb_control_frame_t, sp), REG_SP);
+        mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SP), REG_SP);
     }
 
     // Update CFP->PC
-    mov(cb, RAX, const_ptr_opnd(exit_pc));
-    mov(cb, member_opnd(REG_CFP, rb_control_frame_t, pc), RAX);
-    */
+    //mov(cb, RAX, const_ptr_opnd(exit_pc as *const u8));
+    mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC), RAX);
 
     // Accumulate stats about interpreter exits
     #[cfg(feature = "stats")]
@@ -437,17 +437,14 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
     pop(cb, REG_EC);
     pop(cb, REG_CFP);
 
-    mov(cb, RAX, uimm_opnd(Qundef.into()));
+    //mov(cb, RAX, uimm_opnd(Qundef.into()));
     ret(cb);
 
 
+    todo!("missing uimm");
 
 
-    todo!();
-
-
-
-    //return code_ptr();
+    return code_ptr;
 }
 
 // Fill code_for_exit_from_stub. This is used by branch_stub_hit() to exit
@@ -1134,6 +1131,15 @@ mod tests {
         let mut ocb = OutlinedCb::wrap(CodeBlock::new());
         gen_leave_exit(&mut ocb);
         assert!(ocb.unwrap().get_write_pos() > 0);
+    }
+
+    #[test]
+    fn test_gen_exit() {
+        let (_, ctx, mut cb, _) = setup_codegen();
+
+        // TODO: missing encoding of uimm operands
+        //gen_exit(0 as *mut VALUE, &ctx, &mut cb);
+        //assert!(cb.get_write_pos() > 0);
     }
 
     #[test]
@@ -4708,17 +4714,16 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
 {
     todo!();
 
+
+
     // Only the return value should be on the stack
     assert!(ctx.get_stack_size() == 1);
-
 
     // Create a side-exit to fall back to the interpreter
     let side_exit = get_side_exit(jit, ocb, ctx);
 
-    /*
     // Load environment pointer EP from CFP
-    mov(cb, REG1, member_opnd(REG_CFP, rb_control_frame_t, ep));
-    */
+    mov(cb, REG1, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_EP));
 
     // Check for interrupts
     add_comment(cb, "check for interrupts");
@@ -4731,6 +4736,8 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
     // Note: the return PC is already in the previous CFP
     //add(cb, REG_CFP, imm_opnd(sizeof(rb_control_frame_t)));
     //mov(cb, member_opnd(REG_EC, rb_execution_context_t, cfp), REG_CFP);
+
+
 
     // Reload REG_SP for the caller and write the return value.
     // Top of the stack is REG_SP[0] since the caller has sp_offset=1.

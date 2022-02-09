@@ -239,7 +239,15 @@ pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
 
-pub const RUBY_OFFSET_CFP_SELF:i32 = 24;
+// Constants from rb_control_frame_t vm_core.h
+pub const RUBY_OFFSET_CFP_PC: i32 = 0;
+pub const RUBY_OFFSET_CFP_SP: i32 = 8;
+pub const RUBY_OFFSET_CFP_ISEQ: i32 = 16;
+pub const RUBY_OFFSET_CFP_SELF: i32 = 24;
+pub const RUBY_OFFSET_CFP_EP: i32 = 32;
+pub const RUBY_OFFSET_CFP_BLOCK_CODE: i32 = 40;
+pub const RUBY_OFFSET_CFP_BLOCK_BP: i32 = 48;
+pub const RUBY_OFFSET_CFP_JIT_RETURN: i32 = 64;
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;

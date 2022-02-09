@@ -542,6 +542,10 @@ impl Context {
         self.stack_size
     }
 
+    pub fn get_sp_offset(&self) -> i16 {
+        self.sp_offset
+    }
+
     /// Get an operand for the adjusted stack pointer address
     pub fn sp_opnd(&self, offset_bytes: usize) -> X86Opnd
     {
