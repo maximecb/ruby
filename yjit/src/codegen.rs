@@ -426,15 +426,12 @@ fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
     mov(cb, member_opnd(REG_CFP, rb_control_frame_t, pc), RAX);
     */
 
-    /*
     // Accumulate stats about interpreter exits
-    #if YJIT_STATS
-    if (rb_yjit_opts.gen_stats) {
+    #[cfg(feature = "stats")]
+    if get_option!(gen_stats) {
         mov(cb, RDI, const_ptr_opnd(exit_pc));
-        call_ptr(cb, RSI, (void *)&yjit_count_side_exit_op);
+        call_ptr(cb, RSI, CodePtr(yjit_count_side_exit_op));
     }
-    #endif
-    */
 
     pop(cb, REG_SP);
     pop(cb, REG_EC);
@@ -518,14 +515,16 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
         block->entry_exit = cb_get_ptr(ocb, pos);
     }
 }
+*/
 
+/*
 // Generate a runtime guard that ensures the PC is at the start of the iseq,
 // otherwise take a side exit.  This is to handle the situation of optional
 // parameters.  When a function with optional parameters is called, the entry
 // PC for the method isn't necessarily 0, but we always generated code that
 // assumes the entry point is 0.
 static void
-yjit_pc_guard(codeblock_t *cb, const rb_iseq_t *iseq)
+gen_pc_guard(codeblock_t *cb, const rb_iseq_t *iseq)
 {
     RUBY_ASSERT(cb != NULL);
 
@@ -551,7 +550,9 @@ yjit_pc_guard(codeblock_t *cb, const rb_iseq_t *iseq)
     cb_write_label(cb, pc_is_zero);
     cb_link_labels(cb);
 }
+*/
 
+/*
 // The code we generate in gen_send_cfunc() doesn't fire the c_return TracePoint event
 // like the interpreter. When tracing for c_return is enabled, we patch the code after
 // the C method return to call into this to fire the event.
@@ -689,7 +690,7 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     // compiled for is the same PC that the interpreter wants us to run with.
     // If they don't match, then we'll take a side exit.
     if (iseq->body->param.flags.has_opt) {
-        yjit_pc_guard(cb, iseq);
+        gen_pc_guard(cb, iseq);
     }
     */
 
@@ -698,8 +699,6 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
 
     return Some(code_ptr);
 }
-
-
 
 // Generate code to check for interrupts and take a side-exit.
 // Warning: this function clobbers REG0
@@ -771,20 +770,26 @@ pub fn gen_single_block(block: &Block, ec: EcPtr, cb: &mut CodeBlock, ocb: &mut 
     const uint32_t starting_insn_idx = insn_idx;
     */
 
-    /*
     // Initialize a JIT state object
+    let mut jit = JITState::new();
+    jit.iseq = blockid.iseq;
+    jit.ec = Some(ec);
+    /*
     jitstate_t jit = {
-        .cb = cb,
-        .ocb = ocb,
         .block = block,
         .iseq = iseq,
-        .ec = ec
     };
+    */
+
+
 
     // TODO: we probably want a set_start_addr method, callable only once
     // Mark the start position of the block
-    block->start_addr = cb_get_write_ptr(cb);
+    //block->start_addr = cb_get_write_ptr(cb);
 
+
+
+    /*
     // For each instruction to compile
     while (insn_idx < iseq_size) {
         // Get the current pc and opcode
@@ -1261,11 +1266,7 @@ mod tests {
 
     #[test]
     fn test_putself() {
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
-        let mut jit = JITState::new();
-
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         let status = gen_putself(&mut jit, &mut context, &mut cb, &mut ocb);
 
         assert!(matches!(KeepCompiling, status));
@@ -1274,13 +1275,10 @@ mod tests {
 
     #[test]
     fn test_putspecialobject() {
-        let mut context = Context::new();
-        let mut cb = CodeBlock::new();
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
 
         let mut value_array: [u64; 2] = [ 0, VM_SPECIAL_OBJECT_VMCORE as u64 ];
         let pc: *mut VALUE = &mut value_array as *mut u64 as *mut VALUE;
-        let mut jit = JITState::new();
         jit.set_pc(pc);
 
         let status = gen_putspecialobject(&mut jit, &mut context, &mut cb, &mut ocb);

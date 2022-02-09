@@ -253,12 +253,12 @@ pub extern "C" fn rb_yjit_collect_binding_set() {
     incr_counter!(binding_set);
 }
 
-/*
-static const VALUE *
-yjit_count_side_exit_op(const VALUE *exit_pc)
+#[no_mangle]
+pub extern "C" fn yjit_count_side_exit_op(exit_pc: *const VALUE) -> *const VALUE
 {
-    int insn = rb_vm_insn_addr2opcode((const void *)*exit_pc);
-    exit_op_count[insn]++;
+    // FIXME
+    //int insn = rb_vm_insn_addr2opcode((const void *)*exit_pc);
+    //exit_op_count[insn]++;
+
     return exit_pc; // This function must return exit_pc!
 }
-*/
