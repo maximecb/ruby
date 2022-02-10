@@ -98,8 +98,18 @@ fn test_jge_label() {
 
 #[test]
 fn test_jmp_label() {
+    // Forward jump
+    check_bytes("e900000000", |cb| {
+        let label_idx = cb.new_label("next".to_owned());
+        jmp_label(cb, label_idx);
+        cb.write_label(label_idx);
+        cb.link_labels();
+    });
+
+    // Backwards jump
     check_bytes("e9fbffffff", |cb| {
         let label_idx = cb.new_label("loop".to_owned());
+        cb.write_label(label_idx);
         jmp_label(cb, label_idx);
         cb.link_labels();
     });

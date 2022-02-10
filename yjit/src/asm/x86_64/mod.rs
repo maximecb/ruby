@@ -1109,7 +1109,7 @@ fn write_jcc_ptr(cb: &mut CodeBlock, op0: u8, op1: u8, dst_ptr: CodePtr) {
 
     if rel64 >= i32::MIN.into() && rel64 <= i32::MAX.into() {
         // Write the relative 32-bit jump offset
-        cb.write_int(rel64.try_into().unwrap(), 32);
+        cb.write_int(rel64 as u64, 32);
     }
     else {
         // Offset doesn't fit in 4 bytes. Report error.
