@@ -994,9 +994,7 @@ fn jit_putobject(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, arg:
         // Immediates will not move and do not need to be tracked for GC
         // Thanks to this we can mov directly to memory when possible.
 
-        // TODO: change to uimm_opnd, though it doesn't matter for simple things like nil
-        assert!(arg_value <= 0xFF_FF_FF_FF); // More than 32 bits? Our hack bit us. Runtime panic, so we'll fix it.
-        let imm = imm_opnd(arg_value as i64);
+        let imm = uimm_opnd(arg_value as u64);
 
         // 64-bit immediates can't be directly written to memory
         if arg_value <= 0xFF_FF_FF_FF {
@@ -1108,8 +1106,6 @@ fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    //use crate::codegen::*;
     use crate::asm::x86_64::*;
 
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
@@ -1132,7 +1128,6 @@ mod tests {
     #[test]
     fn test_gen_exit() {
         let (_, ctx, mut cb, _) = setup_codegen();
-
         gen_exit(0 as *mut VALUE, &ctx, &mut cb);
         assert!(cb.get_write_pos() > 0);
     }
@@ -5422,11 +5417,6 @@ fn get_method_gen_fn()
     */
 }
 
-
-
-
-
-
 /// Global state needed for code generation
 pub struct CodegenGlobals
 {
@@ -5478,22 +5468,22 @@ impl CodegenGlobals {
 
         ocb = &outline_block;
         cb_init(ocb, mem_block + mem_size/2, mem_size/2);
-
-        // Generate the interpreter exit code for leave
-        leave_exit_code = yjit_gen_leave_exit(cb);
-
-        // Generate full exit code for C func
-        gen_full_cfunc_return();
-        cb_mark_all_executable(cb);
         */
 
-        let cb = CodeBlock::new();
+        let mut cb = CodeBlock::new();
 
         let mut ocb = OutlinedCb::wrap(CodeBlock::new());
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
         let stub_exit_code = gen_code_for_exit_from_stub(&mut ocb);
+
+        // TODO
+        // Generate full exit code for C func
+        //gen_full_cfunc_return();
+
+        cb.mark_all_executable();
+        ocb.unwrap().mark_all_executable();
 
         unsafe {
             CODEGEN_GLOBALS = Some(
