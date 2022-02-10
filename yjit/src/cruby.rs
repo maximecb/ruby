@@ -329,8 +329,15 @@ pub const RUBY_OFFSET_CFP_ISEQ: i32 = 16;
 pub const RUBY_OFFSET_CFP_SELF: i32 = 24;
 pub const RUBY_OFFSET_CFP_EP: i32 = 32;
 pub const RUBY_OFFSET_CFP_BLOCK_CODE: i32 = 40;
-pub const RUBY_OFFSET_CFP_BLOCK_BP: i32 = 48;
-pub const RUBY_OFFSET_CFP_JIT_RETURN: i32 = 64;
+pub const RUBY_OFFSET_CFP_BP: i32 = 48;
+pub const RUBY_OFFSET_CFP_JIT_RETURN: i32 = 56;
+pub const RUBY_SIZEOF_CFP: usize = 64;
+
+// Constants from rb_execution_context_t vm_core.h
+pub const RUBY_OFFSET_EC_CFP: i32 = 16;
+pub const RUBY_OFFSET_EC_INTERRUPT_FLAG: i32 = 32; // rb_atomic_t (u32)
+pub const RUBY_OFFSET_EC_INTERRUPT_MASK: i32 = 36; // rb_atomic_t (u32)
+pub const RUBY_OFFSET_EC_THREAD_PTR: i32 = 48;
 
 // TODO: need to dynamically autogenerate constants for all the YARV opcodes from insns.def
 pub const OP_NOP:usize = 0;
