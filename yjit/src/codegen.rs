@@ -5465,10 +5465,11 @@ static mut CODEGEN_GLOBALS: Option<CodegenGlobals> = None;
 impl CodegenGlobals {
     /// Initialize the codegen globals
     pub fn init() {
+        // Executable memory size in MiB
+        let mem_size = get_option!(exec_mem_size) * 1024 * 1024;
+        let mem_size: u32 = mem_size.try_into().unwrap();
 
-        // TODO --yjit-exec-mem-size command line option
-        const MEM_SIZE: u32 = 256 * 1024 * 1024;
-        let mem_block: *mut u8 = unsafe { crate::cruby::alloc_exec_mem(MEM_SIZE) };
+        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size) };
         dbg!(mem_block);
 
         /*

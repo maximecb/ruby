@@ -1219,10 +1219,20 @@ rb_yjit_init(struct rb_yjit_options *options)
         return;
     }
 
-    void rb_yjit_init_in_rust(void);
+    //
+    // TODO: need to make sure that command-line options are set by CRuby before calling rb_yjit_init_rust()
+    //
 
-    return rb_yjit_init_in_rust(); // let the Rust do the rest.
+    // Call the Rust initialization code
+    void rb_yjit_init_rust(void);
+    return rb_yjit_init_rust();
 
+
+
+
+
+
+    /*
     rb_yjit_opts = *options;
     rb_yjit_opts.yjit_enabled = true;
 
@@ -1293,4 +1303,9 @@ rb_yjit_init(struct rb_yjit_options *options)
     (void)yjit_get_cb;
     (void)yjit_get_ocb;
     (void)yjit_get_code_page;
+    */
+
+
+
+
 }
