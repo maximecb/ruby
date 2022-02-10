@@ -700,20 +700,10 @@ fn gen_check_ints(cb: &mut CodeBlock, side_exit: CodePtr)
     // Check for interrupts
     // see RUBY_VM_CHECK_INTS(ec) macro
     add_comment(cb, "RUBY_VM_CHECK_INTS(ec)");
-
-    // TODO
-    //mov(cb, REG0_32, member_opnd(REG_EC, rb_execution_context_t, interrupt_mask));
-
+    mov(cb, REG0_32, mem_opnd(32, REG_EC, RUBY_OFFSET_EC_INTERRUPT_MASK));
     not(cb, REG0_32);
-
-    // TODO
-    //test(cb, member_opnd(REG_EC, rb_execution_context_t, interrupt_flag), REG0_32);
-
+    test(cb, mem_opnd(32, REG_EC, RUBY_OFFSET_EC_INTERRUPT_FLAG), REG0_32);
     jnz_ptr(cb, side_exit);
-
-
-
-    todo!();
 }
 
 /*
@@ -1133,6 +1123,13 @@ mod tests {
     }
 
     #[test]
+    fn test_get_side_exit() {
+        let (mut jit, ctx, _, mut ocb) = setup_codegen();
+        get_side_exit(&mut jit, &mut ocb, &ctx);
+        assert!(ocb.unwrap().get_write_pos() > 0);
+    }
+
+    #[test]
     fn test_gen_nop() {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
         let status = gen_nop(&mut jit, &mut context, &mut cb, &mut ocb);
@@ -1351,6 +1348,14 @@ mod tests {
         assert_eq!(Type::Flonum, context.get_opnd_type(StackOpnd(0)));
 
         assert!(cb.get_write_pos() == 0); // No instructions written
+    }
+
+    #[test]
+    fn test_gen_leave() {
+        //let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
+        // Return value
+        //context.stack_push(Type::Fixnum);
+        //gen_leave(&mut jit, &mut context, &mut cb, &mut ocb);
     }
 }
 
@@ -4698,14 +4703,8 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 
 
-// TODO: complete this
-#[allow(unreachable_code)]
 fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    todo!();
-
-
-
     // Only the return value should be on the stack
     assert!(ctx.get_stack_size() == 1);
 
@@ -4724,22 +4723,17 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
 
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
-    //add(cb, REG_CFP, imm_opnd(sizeof(rb_control_frame_t)));
-    //mov(cb, member_opnd(REG_EC, rb_execution_context_t, cfp), REG_CFP);
-
-
+    add(cb, REG_CFP, uimm_opnd(RUBY_SIZEOF_CONTROL_FRAME as u64));
+    mov(cb, mem_opnd(64, REG_EC, RUBY_OFFSET_EC_CFP), REG_CFP);
 
     // Reload REG_SP for the caller and write the return value.
     // Top of the stack is REG_SP[0] since the caller has sp_offset=1.
-    //mov(cb, REG_SP, member_opnd(REG_CFP, rb_control_frame_t, sp));
+    mov(cb, REG_SP, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SP));
     mov(cb, mem_opnd(64, REG_SP, 0), REG0);
 
     // Jump to the JIT return address on the frame that was just popped
-    //const int32_t offset_to_jit_return = -((int32_t)sizeof(rb_control_frame_t)) + (int32_t)offsetof(rb_control_frame_t, jit_return);
-    //jmp_rm(cb, mem_opnd(64, REG_CFP, offset_to_jit_return));
-
-
-
+    let offset_to_jit_return = -(RUBY_SIZEOF_CONTROL_FRAME as i32) + (RUBY_OFFSET_CFP_JIT_RETURN as i32);
+    jmp_rm(cb, mem_opnd(64, REG_CFP, offset_to_jit_return));
 
     EndBlock
 }
