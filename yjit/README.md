@@ -23,9 +23,29 @@ cargo doc --document-private-items --open # build documentation site and open it
 cargo fmt                         # reformat the source code (idempotent)
 ```
 
+## Using Rust-YJIT
+
+* Do a "make distclean" first
+* Supply CC=clang and the "--enable-yjit=dev" parameter to configure
+* Make sure you're running on x86_64 hardware and Linux or MacOS
+* Run "make -j miniruby" then "./miniruby --yjit"
+* Just "make" will currently fail. That's expected.
+
+### Adding C bindings to Rust-YJIT
+
+On an Intel-based host configured with CC=clang, you can run "make yjit-bindgen" to create or update YJIT's C bindings in
+yjit/src/cruby_bindings.inc.rs. The list of allowed and blocked symbols can be found in yjit/bindgen/src/main.rs.
+
+If you add one or more functions as allowlisted, keep in mind that you may need to list appropriate types as opaque or blocklist to avoid extensive additional bindings being added.
+
 ## Are you going to use Rust in other parts of CRuby?
 
 No.
+
+## Current Limitations of Rust-YJIT
+
+* Requires Clang
+* USE_FLONUM == 1                // Affects how VALUEs are encoded
 
 [rust-install]: https://www.rust-lang.org/tools/install
 [editor-tools]: https://www.rust-lang.org/tools
