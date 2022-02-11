@@ -506,15 +506,16 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
 }
 */
 
-/*
 // Generate a runtime guard that ensures the PC is at the start of the iseq,
 // otherwise take a side exit.  This is to handle the situation of optional
 // parameters.  When a function with optional parameters is called, the entry
 // PC for the method isn't necessarily 0, but we always generated code that
 // assumes the entry point is 0.
-static void
-gen_pc_guard(codeblock_t *cb, const rb_iseq_t *iseq)
+fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr)
 {
+    todo!();
+
+    /*
     RUBY_ASSERT(cb != NULL);
 
     mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, pc));
@@ -538,8 +539,8 @@ gen_pc_guard(codeblock_t *cb, const rb_iseq_t *iseq)
     // PC should be at the beginning
     cb_write_label(cb, pc_is_zero);
     cb_link_labels(cb);
+    */
 }
-*/
 
 /*
 // The code we generate in gen_send_cfunc() doesn't fire the c_return TracePoint event
@@ -659,19 +660,15 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     mov(cb, REG0, code_ptr_opnd(CodegenGlobals::get_leave_exit_code()));
     mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_JIT_RETURN), REG0);
 
-
-
-    /*
     // We're compiling iseqs that we *expect* to start at `insn_idx`. But in
     // the case of optional parameters, the interpreter can set the pc to a
     // different location depending on the optional parameters.  If an iseq
     // has optional parameters, we'll add a runtime check that the PC we've
     // compiled for is the same PC that the interpreter wants us to run with.
     // If they don't match, then we'll take a side exit.
-    if (iseq->body->param.flags.has_opt) {
-        gen_pc_guard(cb, iseq);
-    }
-    */
+    //if get_iseq_flags_has_opt(iseq) != 0 {
+    //    gen_pc_guard(cb, iseq);
+    //}
 
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
@@ -733,8 +730,8 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
 
     assert!(!(blockid.idx == 0 && block.get_ctx().get_stack_size() > 0));
 
-    //const rb_iseq_t *iseq = block->blockid.iseq;
-    //const unsigned int iseq_size = iseq->body->iseq_size;
+    let iseq = blockid.iseq;
+    let iseq_size = unsafe { get_iseq_body_size(iseq) };
     let insn_idx = blockid.idx;
     let starting_insn_idx = insn_idx;
 
@@ -746,12 +743,9 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
     // Mark the start position of the block
     block.set_start_addr(cb.get_write_ptr());
 
-
-
-
-    /*
     // For each instruction to compile
-    while (insn_idx < iseq_size) {
+    while insn_idx < iseq_size {
+        /*
         // Get the current pc and opcode
         VALUE *pc = yjit_iseq_pc_at_idx(iseq, insn_idx);
         int opcode = yjit_opcode_at_pc(iseq, pc);
@@ -763,13 +757,15 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
             jit_jump_to_next_insn(&jit, ctx);
             break;
         }
+        */
 
         // Set the current instruction
         jit.insn_idx = insn_idx;
-        jit.opcode = opcode;
-        jit.pc = pc;
-        jit.side_exit_for_pc = NULL;
+        //jit.opcode = opcode;
+        //jit.pc = pc;
+        //jit.side_exit_for_pc = NULL;
 
+        /*
         // If previous instruction requested to record the boundary
         if (jit.record_boundary_patch_point) {
             // Generate an exit to this instruction and record it
@@ -777,12 +773,14 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
             record_global_inval_patch(cb, exit_pos);
             jit.record_boundary_patch_point = false;
         }
+        */
 
         // Verify our existing assumption (DEBUG)
-        if (jit_at_current_insn(&jit)) {
-            verify_ctx(&jit, ctx);
-        }
+        //if (jit_at_current_insn(&jit)) {
+        //    verify_ctx(&jit, ctx);
+        //}
 
+        /*
         // Lookup the codegen function for this instruction
         codegen_fn gen_fn = gen_fns[opcode];
         codegen_status_t status = YJIT_CANT_COMPILE;
@@ -823,19 +821,18 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
         // For now, reset the chain depth after each instruction as only the
         // first instruction in the block can concern itself with the depth.
         ctx->chain_depth = 0;
+        */
 
         // Move to the next instruction to compile
-        insn_idx += insn_len(opcode);
+        //insn_idx += insn_len(opcode);
 
+        /*
         // If the instruction terminates this block
         if (status == YJIT_END_BLOCK) {
             break;
         }
+        */
     }
-    */
-
-
-
 
     // Mark the end position of the block
     block.set_end_addr(cb.get_write_ptr());

@@ -87,6 +87,9 @@ use std::convert::From;
 // and textually included in this file
 extern "C" {
 
+    #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
+    pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
+
     // Alan suggests calling these from the C side, not exporting them to Rust
     //pub fn RB_VM_LOCK_ENTER();
     //pub fn RB_VM_LOCK_LEAVE();
@@ -101,11 +104,12 @@ extern "C" {
     #[link_name = "rb_yarv_insn_len"]
     pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
 
+    // TODO: export these functions from the C side
+    pub fn get_iseq_body_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
+
     pub fn rb_hash_new() -> VALUE;
     pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
-
-    #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
-    pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
 }
 
 pub fn insn_len(opcode:usize) -> u32
