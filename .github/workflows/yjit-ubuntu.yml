@@ -25,8 +25,9 @@ jobs:
       # For now we can't run cargo test --offline because it complains about the
       # capstone dependency, even though the dependency is optional
       #- run: cargo test --offline
-      - run: cargo test
+      - run: RUST_BACKTRACE=1 cargo test
         working-directory: yjit
+      # TODO: run cargo test with all featured enabled as well
   make:
     strategy:
       matrix:
