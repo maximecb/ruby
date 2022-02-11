@@ -1356,7 +1356,7 @@ mod tests {
     #[test]
     fn test_gen_leave() {
         let (mut jit, mut context, mut cb, mut ocb) = setup_codegen();
-        // Return value
+        // Push return value
         context.stack_push(Type::Fixnum);
         gen_leave(&mut jit, &mut context, &mut cb, &mut ocb);
     }
@@ -4703,9 +4703,6 @@ gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 */
 
-
-
-
 fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Only the return value should be on the stack
@@ -4717,7 +4714,6 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
     // Load environment pointer EP from CFP
     mov(cb, REG1, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_EP));
 
-
     // Check for interrupts
     add_comment(cb, "check for interrupts");
     gen_check_ints(cb, counted_exit!(ocb, side_exit, leave_se_interrupt));
@@ -4725,24 +4721,15 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
     // Load the return value
     mov(cb, REG0, ctx.stack_pop(1));
 
-
-
-    // FIXME: error in the assembler wrt add encoding
-    // TODO(Maxime)
-
-
     // Pop the current frame (ec->cfp++)
     // Note: the return PC is already in the previous CFP
-    //add(cb, REG_CFP, uimm_opnd(RUBY_SIZEOF_CONTROL_FRAME as u64));
-    //mov(cb, mem_opnd(64, REG_EC, RUBY_OFFSET_EC_CFP), REG_CFP);
-
-
+    add(cb, REG_CFP, uimm_opnd(RUBY_SIZEOF_CONTROL_FRAME as u64));
+    mov(cb, mem_opnd(64, REG_EC, RUBY_OFFSET_EC_CFP), REG_CFP);
 
     // Reload REG_SP for the caller and write the return value.
     // Top of the stack is REG_SP[0] since the caller has sp_offset=1.
     mov(cb, REG_SP, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SP));
     mov(cb, mem_opnd(64, REG_SP, 0), REG0);
-
 
     // Jump to the JIT return address on the frame that was just popped
     let offset_to_jit_return = -(RUBY_SIZEOF_CONTROL_FRAME as i32) + (RUBY_OFFSET_CFP_JIT_RETURN as i32);
@@ -4750,11 +4737,6 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
 
     EndBlock
 }
-
-
-
-
-
 
 /*
 static codegen_status_t
