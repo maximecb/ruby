@@ -104,8 +104,10 @@ extern "C" {
     #[link_name = "rb_yarv_insn_len"]
     pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
 
+    #[link_name = "rb_iseq_encoded_size"]
+    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+
     // TODO: export these functions from the C side
-    pub fn get_iseq_body_size(iseq: IseqPtr) -> std::os::raw::c_uint;
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
 
     pub fn rb_hash_new() -> VALUE;

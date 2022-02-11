@@ -75,6 +75,12 @@ rb_yarv_insn_len(VALUE insn)
     return insn_len(insn);
 }
 
+unsigned int
+rb_iseq_encoded_size(const rb_iseq_t *iseq)
+{
+    return iseq->body->iseq_size;
+}
+
 #if YJIT_STATS
 // Comments for generated code
 struct yjit_comment {

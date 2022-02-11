@@ -731,7 +731,7 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
     assert!(!(blockid.idx == 0 && block.get_ctx().get_stack_size() > 0));
 
     let iseq = blockid.iseq;
-    let iseq_size = unsafe { get_iseq_body_size(iseq) };
+    let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
     let insn_idx = blockid.idx;
     let starting_insn_idx = insn_idx;
 
@@ -747,8 +747,8 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
     while insn_idx < iseq_size {
 
         // Get the current pc and opcode
-        //VALUE *pc = yjit_iseq_pc_at_idx(iseq, insn_idx);
-        //int opcode = yjit_opcode_at_pc(iseq, pc);
+        //let pc = iseq_pc_at_idx(iseq, insn_idx);
+        //let opcode = opcode_at_pc(iseq, pc);
         //assert!(opcode >= 0 && opcode < VM_INSTRUCTION_SIZE);
 
 
