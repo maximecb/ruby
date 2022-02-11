@@ -1364,8 +1364,7 @@ mod tests {
 
 /*
 // new array initialized from top N values
-static codegen_status_t
-gen_newarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
 
@@ -1388,8 +1387,7 @@ gen_newarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 
 // dup array
-static codegen_status_t
-gen_duparray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_duparray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE ary = jit_get_arg(jit, 0);
 
@@ -1407,8 +1405,7 @@ gen_duparray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 
 // dup hash
-static codegen_status_t
-gen_duphash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE hash = jit_get_arg(jit, 0);
 
@@ -1426,8 +1423,7 @@ gen_duphash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 
 // call to_a on the array on the stack
-static codegen_status_t
-gen_splatarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE flag = (VALUE) jit_get_arg(jit, 0);
 
@@ -1450,8 +1446,7 @@ gen_splatarray(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 }
 
 // new range initialized from top 2 values
-static codegen_status_t
-gen_newrange(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_newrange(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t flag = (rb_num_t)jit_get_arg(jit, 0);
 
@@ -1586,8 +1581,7 @@ fn gen_expandarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
 /*
 // new hash initialized from top N values
-static codegen_status_t
-gen_newhash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t num = (int32_t)jit_get_arg(jit, 0);
 
@@ -1627,8 +1621,7 @@ gen_newhash(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_putstring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE put_val = jit_get_arg(jit, 0);
 
@@ -1673,8 +1666,7 @@ slot_to_local_idx(const rb_iseq_t *iseq, int32_t slot_idx)
     return (uint32_t)local_idx;
 }
 
-static codegen_status_t
-gen_getlocal_wc0(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Compute the offset from BP to the local
     int32_t slot_idx = (int32_t)jit_get_arg(jit, 0);
@@ -1694,8 +1686,7 @@ gen_getlocal_wc0(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_getlocal_generic(ctx_t *ctx, uint32_t local_idx, uint32_t level)
+fn gen_getlocal_generic(ctx_t *ctx, uint32_t local_idx, uint32_t level)
 {
     gen_get_ep(cb, REG0, level);
 
@@ -1711,23 +1702,20 @@ gen_getlocal_generic(ctx_t *ctx, uint32_t local_idx, uint32_t level)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_getlocal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t idx = (int32_t)jit_get_arg(jit, 0);
     int32_t level = (int32_t)jit_get_arg(jit, 1);
     return gen_getlocal_generic(ctx, idx, level);
 }
 
-static codegen_status_t
-gen_getlocal_wc1(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t idx = (int32_t)jit_get_arg(jit, 0);
     return gen_getlocal_generic(ctx, idx, 1);
 }
 
-static codegen_status_t
-gen_setlocal_wc0(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_setlocal_wc0(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     /*
     vm_env_write(const VALUE *ep, int index, VALUE v)
@@ -1775,8 +1763,7 @@ gen_setlocal_wc0(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 // Push Qtrue or Qfalse depending on whether the given keyword was supplied by
 // the caller
-static codegen_status_t
-gen_checkkeyword(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // When a keyword is unspecified past index 32, a hash will be used
     // instead. This can only happen in iseqs taking more than 32 keywords.
@@ -1812,8 +1799,7 @@ gen_checkkeyword(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_setlocal_generic(jitstate_t *jit, ctx_t *ctx, uint32_t local_idx, uint32_t level)
+fn gen_setlocal_generic(jitstate_t *jit, ctx_t *ctx, uint32_t local_idx, uint32_t level)
 {
     // Load environment pointer EP at level
     gen_get_ep(cb, REG0, level);
@@ -1839,16 +1825,14 @@ gen_setlocal_generic(jitstate_t *jit, ctx_t *ctx, uint32_t local_idx, uint32_t l
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_setlocal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_setlocal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t idx = (int32_t)jit_get_arg(jit, 0);
     int32_t level = (int32_t)jit_get_arg(jit, 1);
     return gen_setlocal_generic(jit, ctx, idx, level);
 }
 
-static codegen_status_t
-gen_setlocal_wc1(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_setlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t idx = (int32_t)jit_get_arg(jit, 0);
     return gen_setlocal_generic(jit, ctx, idx, 1);
@@ -1965,8 +1949,7 @@ VALUE rb_vm_set_ivar_idx(VALUE obj, uint32_t idx, VALUE val);
 //   - receiver is in REG0
 //   - receiver has the same class as CLASS_OF(comptime_receiver)
 //   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
-static codegen_status_t
-gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_name)
+fn gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_name)
 {
     // Save the PC and SP because the callee may allocate
     // Note that this modifies REG_SP, which is why we do it first
@@ -1995,8 +1978,7 @@ gen_set_ivar(jitstate_t *jit, ctx_t *ctx, VALUE recv, VALUE klass, ID ivar_name)
 //   - receiver is in REG0
 //   - receiver has the same class as CLASS_OF(comptime_receiver)
 //   - no stack push or pops to ctx since the entry to the codegen of the instruction being compiled
-static codegen_status_t
-gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE comptime_receiver, ID ivar_name, insn_opnd_t reg0_opnd, uint8_t *side_exit)
+fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE comptime_receiver, ID ivar_name, insn_opnd_t reg0_opnd, uint8_t *side_exit)
 {
     VALUE comptime_val_klass = CLASS_OF(comptime_receiver);
     const ctx_t starting_context = *ctx; // make a copy for use with jit_chain_guard
@@ -2124,8 +2106,7 @@ gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE compt
     return YJIT_END_BLOCK;
 }
 
-static codegen_status_t
-gen_getinstancevariable(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2151,8 +2132,7 @@ gen_getinstancevariable(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 void rb_vm_setinstancevariable(const rb_iseq_t *iseq, VALUE obj, ID id, VALUE val, IVC ic);
 
-static codegen_status_t
-gen_setinstancevariable(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_setinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     ID id = (ID)jit_get_arg(jit, 0);
     IVC ic = (IVC)jit_get_arg(jit, 1);
@@ -2177,8 +2157,7 @@ gen_setinstancevariable(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 bool rb_vm_defined(rb_execution_context_t *ec, rb_control_frame_t *reg_cfp, rb_num_t op_type, VALUE obj, VALUE v);
 
-static codegen_status_t
-gen_defined(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t op_type = (rb_num_t)jit_get_arg(jit, 0);
     VALUE obj = (VALUE)jit_get_arg(jit, 1);
@@ -2215,8 +2194,7 @@ gen_defined(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_checktype(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     enum ruby_value_type type_val = (enum ruby_value_type)jit_get_arg(jit, 0);
     // Only three types are emitted by compile.c
@@ -2276,8 +2254,7 @@ gen_checktype(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_concatstrings(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
 
@@ -2349,8 +2326,7 @@ guard_two_fixnums(ctx_t *ctx, uint8_t *side_exit)
 // Conditional move operation used by comparison operators
 typedef void (*cmov_fn)(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1);
 
-static codegen_status_t
-gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
+fn gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
 {
     // Defer compilation so we can specialize base on a runtime receiver
     if (!jit_at_current_insn(jit)) {
@@ -2395,26 +2371,22 @@ gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
     }
 }
 
-static codegen_status_t
-gen_opt_lt(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_lt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_fixnum_cmp(jit, ctx, cmovl);
 }
 
-static codegen_status_t
-gen_opt_le(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_le(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_fixnum_cmp(jit, ctx, cmovle);
 }
 
-static codegen_status_t
-gen_opt_ge(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_ge(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_fixnum_cmp(jit, ctx, cmovge);
 }
 
-static codegen_status_t
-gen_opt_gt(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_gt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_fixnum_cmp(jit, ctx, cmovg);
 }
@@ -2498,8 +2470,7 @@ gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
     }
 }
 
-static codegen_status_t
-gen_opt_eq(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_eq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize base on a runtime receiver
     if (!jit_at_current_insn(jit)) {
@@ -2521,8 +2492,7 @@ gen_opt_eq(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 static codegen_status_t gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t *block);
 
-static codegen_status_t
-gen_opt_neq(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_neq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // opt_neq is passed two rb_call_data as arguments:
     // first for ==, second for !=
@@ -2530,8 +2500,7 @@ gen_opt_neq(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return gen_send_general(jit, ctx, cd, NULL);
 }
 
-static codegen_status_t
-gen_opt_aref(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     struct rb_call_data * cd = (struct rb_call_data *)jit_get_arg(jit, 0);
     int32_t argc = (int32_t)vm_ci_argc(cd->ci);
@@ -2644,8 +2613,7 @@ gen_opt_aref(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_aset(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2725,8 +2693,7 @@ gen_opt_aset(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_and(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_and(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2769,8 +2736,7 @@ gen_opt_and(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_or(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_or(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2813,8 +2779,7 @@ gen_opt_or(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_minus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_minus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2859,8 +2824,7 @@ gen_opt_minus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_plus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_plus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
@@ -2905,15 +2869,13 @@ gen_opt_plus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_opt_mult(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_mult(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_div(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_div(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
@@ -2921,8 +2883,7 @@ gen_opt_div(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 
 VALUE rb_vm_opt_mod(VALUE recv, VALUE obj);
 
-static codegen_status_t
-gen_opt_mod(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_mod(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Save the PC and SP because the callee may allocate bignums
     // Note that this modifies REG_SP, which is why we do it first
@@ -2950,29 +2911,25 @@ gen_opt_mod(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_opt_ltlt(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_ltlt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_nil_p(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_nil_p(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_empty_p(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_empty_p(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_str_freeze(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_str_freeze(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     if (!assume_bop_not_redefined(jit, STRING_REDEFINED_OP_FLAG, BOP_FREEZE)) {
         return YJIT_CANT_COMPILE;
@@ -2988,8 +2945,7 @@ gen_opt_str_freeze(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_opt_str_uminus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_str_uminus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     if (!assume_bop_not_redefined(jit, STRING_REDEFINED_OP_FLAG, BOP_UMINUS)) {
         return YJIT_CANT_COMPILE;
@@ -3005,32 +2961,27 @@ gen_opt_str_uminus(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_opt_not(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_not(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_size(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_size(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_length(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_length(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_regexpmatch2(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_regexpmatch2(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     return gen_opt_send_without_block(jit, ctx, cb);
 }
 
-static codegen_status_t
-gen_opt_case_dispatch(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_case_dispatch(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Normally this instruction would lookup the key in a hash and jump to an
     // offset based on that.
@@ -3064,8 +3015,7 @@ gen_branchif_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t
     }
 }
 
-static codegen_status_t
-gen_branchif(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
 
@@ -3120,8 +3070,7 @@ gen_branchunless_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uin
     }
 }
 
-static codegen_status_t
-gen_branchunless(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_branchunless(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
 
@@ -3176,8 +3125,7 @@ gen_branchnil_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_
     }
 }
 
-static codegen_status_t
-gen_branchnil(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_branchnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
 
@@ -3212,8 +3160,7 @@ gen_branchnil(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_END_BLOCK;
 }
 
-static codegen_status_t
-gen_jump(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
 
@@ -3571,8 +3518,7 @@ c_method_tracing_currently_enabled(const jitstate_t *jit)
     return tracing_events & (RUBY_EVENT_C_CALL | RUBY_EVENT_C_RETURN);
 }
 
-static codegen_status_t
-gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, const int32_t argc, VALUE *recv_known_klass)
+fn gen_send_cfunc(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, const int32_t argc, VALUE *recv_known_klass)
 {
     const rb_method_cfunc_t *cfunc = UNALIGNED_MEMBER_PTR(cme->def, body.cfunc);
 
@@ -3835,8 +3781,7 @@ rb_leaf_builtin_function(const rb_iseq_t *iseq)
     return (const struct rb_builtin_function *)iseq->body->iseq_encoded[1];
 }
 
-static codegen_status_t
-gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, int32_t argc)
+fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, rb_iseq_t *block, int32_t argc)
 {
     const rb_iseq_t *iseq = def_iseq_ptr(cme->def);
 
@@ -4279,8 +4224,7 @@ gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const r
     return YJIT_END_BLOCK;
 }
 
-static codegen_status_t
-gen_struct_aref(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass) {
+fn gen_struct_aref(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass) {
     if (vm_ci_argc(ci) != 0) {
         return YJIT_CANT_COMPILE;
     }
@@ -4327,8 +4271,7 @@ gen_struct_aref(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const
     return YJIT_END_BLOCK;
 }
 
-static codegen_status_t
-gen_struct_aset(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass) {
+fn gen_struct_aset(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const rb_callable_method_entry_t *cme, VALUE comptime_recv, VALUE comptime_recv_klass) {
     if (vm_ci_argc(ci) != 1) {
         return YJIT_CANT_COMPILE;
     }
@@ -4359,8 +4302,7 @@ gen_struct_aset(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const
 const rb_callable_method_entry_t *
 rb_aliased_callable_method_entry(const rb_callable_method_entry_t *me);
 
-static codegen_status_t
-gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t *block)
+fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t *block)
 {
     // Relevant definitions:
     // rb_execution_context_t       : vm_core.h
@@ -4551,23 +4493,20 @@ gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t
     }
 }
 
-static codegen_status_t
-gen_opt_send_without_block(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_send_without_block(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
     return gen_send_general(jit, ctx, cd, NULL);
 }
 
-static codegen_status_t
-gen_send(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_send(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
     rb_iseq_t *block = (rb_iseq_t *)jit_get_arg(jit, 1);
     return gen_send_general(jit, ctx, cd, block);
 }
 
-static codegen_status_t
-gen_invokesuper(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_invokesuper(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
     rb_iseq_t *block = (rb_iseq_t *)jit_get_arg(jit, 1);
@@ -4739,8 +4678,7 @@ fn gen_leave(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mu
 }
 
 /*
-static codegen_status_t
-gen_getglobal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     ID gid = jit_get_arg(jit, 0);
 
@@ -4757,8 +4695,7 @@ gen_getglobal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_setglobal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_setglobal(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     ID gid = jit_get_arg(jit, 0);
 
@@ -4777,8 +4714,7 @@ gen_setglobal(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_anytostring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_anytostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Save the PC and SP because we might make a Ruby call for
     // Kernel#set_trace_var
@@ -4799,8 +4735,7 @@ gen_anytostring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_objtostring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_objtostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     if (!jit_at_current_insn(jit)) {
         defer_compilation(jit, ctx);
@@ -4824,8 +4759,7 @@ gen_objtostring(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     }
 }
 
-static codegen_status_t
-gen_toregexp(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_toregexp(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t opt = jit_get_arg(jit, 0);
     rb_num_t cnt = jit_get_arg(jit, 1);
@@ -4864,8 +4798,7 @@ gen_toregexp(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_getspecial(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getspecial(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // This takes two arguments, key and type
     // key is only used when type == 0
@@ -4940,8 +4873,7 @@ gen_getspecial(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 VALUE
 rb_vm_getclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *cfp, ID id, ICVARC ic);
 
-static codegen_status_t
-gen_getclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
+fn gen_getclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
 {
     // rb_vm_getclassvariable can raise exceptions.
     jit_prepare_routine_call(jit, ctx, REG0);
@@ -4962,8 +4894,7 @@ gen_getclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
 VALUE
 rb_vm_setclassvariable(const rb_iseq_t *iseq, const rb_control_frame_t *cfp, ID id, VALUE val, ICVARC ic);
 
-static codegen_status_t
-gen_setclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
+fn gen_setclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
 {
     // rb_vm_setclassvariable can raise exceptions.
     jit_prepare_routine_call(jit, ctx, REG0);
@@ -4979,8 +4910,7 @@ gen_setclassvariable(jitstate_t* jit, ctx_t* ctx, codeblock_t* cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_getinlinecache(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE jump_offset = jit_get_arg(jit, 0);
     VALUE const_cache_as_value = jit_get_arg(jit, 1);
@@ -5046,8 +4976,7 @@ gen_opt_getinlinecache(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 // Push the explict block parameter onto the temporary stack. Part of the
 // interpreter's scheme for avoiding Proc allocations when delegating
 // explict block parameters.
-static codegen_status_t
-gen_getblockparamproxy(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_getblockparamproxy(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // A mirror of the interpreter code. Checking for the case
     // where it's pushing rb_block_param_proxy.
@@ -5083,8 +5012,7 @@ gen_getblockparamproxy(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
     return YJIT_KEEP_COMPILING;
 }
 
-static codegen_status_t
-gen_invokebuiltin(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_invokebuiltin(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     const struct rb_builtin_function *bf = (struct rb_builtin_function *)jit_get_arg(jit, 0);
 
@@ -5120,8 +5048,7 @@ gen_invokebuiltin(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
 // opt_invokebuiltin_delegate calls a builtin function, like
 // invokebuiltin does, but instead of taking arguments from the top of the
 // stack uses the argument locals (and self) from the current method.
-static codegen_status_t
-gen_opt_invokebuiltin_delegate(jitstate_t *jit, ctx_t *ctx, codeblock_t *cb)
+fn gen_opt_invokebuiltin_delegate(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     const struct rb_builtin_function *bf = (struct rb_builtin_function *)jit_get_arg(jit, 0);
     int32_t start_index = (int32_t)jit_get_arg(jit, 1);
