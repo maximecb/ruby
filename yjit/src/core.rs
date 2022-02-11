@@ -458,6 +458,23 @@ fn add_block_version(blockref: &BlockRef)
     incr_counter!(compiled_block_count);
 }
 
+/*
+// Remove a block version
+static void
+block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
+{
+    block_t **element;
+    rb_darray_foreach(block_array, idx, element) {
+        if (*element == block) {
+            rb_darray_remove_unordered(block_array, idx);
+            return;
+        }
+    }
+
+    RUBY_ASSERT(false);
+}
+*/
+
 //===========================================================================
 // I put the implementation of traits for core.rs types below
 // We can move these closer to the above structs later if we want.
@@ -1119,7 +1136,7 @@ regenerate_branch(codeblock_t *cb, branch_t *branch)
 */
 
 // Create a new outgoing branch entry for a block
-fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
+fn make_branch_entry(block: &mut Block, src_ctx: &Context, gen_fn: BranchGenFn) -> Branch {
 
     todo!();
 
@@ -1281,18 +1298,19 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
     // Return a pointer to the compiled block version
     return dst_addr;
 }
+*/
 
 // Get a version or stub corresponding to a branch target
-static uint8_t *
-get_branch_target(
-    blockid_t target,
-    const ctx_t *ctx,
-    branch_t *branch,
-    uint32_t target_idx
-)
+fn  get_branch_target(
+    target: BlockId,
+    ctx: &Context,
+    branch: &Branch,
+    target_idx: u32
+) -> CodePtr
 {
-    //fprintf(stderr, "get_branch_target, block (%p, %d)\n", target.iseq, target.idx);
+    todo!();
 
+    /*
     block_t *p_block = find_block_version(target, ctx);
 
     // If the block already exists
@@ -1327,8 +1345,10 @@ get_branch_target(
     RUBY_ASSERT(cb_get_ptr(ocb, ocb->write_pos) - stub_addr <= MAX_CODE_SIZE);
 
     return stub_addr;
+    */
 }
 
+/*
 static void
 gen_branch(
     jitstate_t *jit,
@@ -1373,14 +1393,17 @@ gen_jump_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t sha
         break;
     }
 }
+*/
 
-static void
-gen_direct_jump(
-    jitstate_t *jit,
-    const ctx_t *ctx,
-    blockid_t target0
+fn gen_direct_jump(
+    jit: &JITState,
+    ctx: &Context,
+    target0: BlockId
 )
 {
+    todo!();
+
+    /*
     RUBY_ASSERT(target0.iseq != NULL);
 
     branch_t *branch = make_branch_entry(jit->block, ctx, gen_jump_branch);
@@ -1410,8 +1433,10 @@ gen_direct_jump(
         branch->start_addr = cb_get_write_ptr(cb);
         branch->end_addr = cb_get_write_ptr(cb);
     }
+    */
 }
 
+/*
 // Create a stub to force the code up to this point to be executed
 static void
 defer_compilation(
@@ -1446,7 +1471,9 @@ defer_compilation(
     gen_jump_branch(cb, branch->dst_addrs[0], NULL, SHAPE_DEFAULT);
     branch->end_addr = cb_get_write_ptr(cb);
 }
+*/
 
+/*
 // Remove all references to a block then free it.
 static void
 yjit_free_block(block_t *block)
@@ -1497,21 +1524,6 @@ yjit_free_block(block_t *block)
     rb_darray_free(block->gc_object_offsets);
 
     free(block);
-}
-
-// Remove a block version
-static void
-block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
-{
-    block_t **element;
-    rb_darray_foreach(block_array, idx, element) {
-        if (*element == block) {
-            rb_darray_remove_unordered(block_array, idx);
-            return;
-        }
-    }
-
-    RUBY_ASSERT(false);
 }
 */
 
