@@ -371,7 +371,15 @@ $(YJIT_LIBS): yjit-static-lib
 	$(empty)
 
 # Put this here instead of in common.mk to avoid breaking nmake builds
+# TODO: might need to move for BSD Make support
 miniruby$(EXEEXT): $(YJIT_LIBS)
+
+# generate rust bindings. see source for details
+.PHONY: yjit-bindgen
+yjit-bindgen:
+	cd '$(top_srcdir)'
+	# See make recipe for `.c.i`
+	$(CARGO) run --manifest-path '$(top_srcdir)/yjit/bindgen/Cargo.toml' -- $(CFLAGS) $(XCFLAGS) $(CPPFLAGS)
 
 # Query on the generated rdoc
 #

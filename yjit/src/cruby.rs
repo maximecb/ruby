@@ -79,6 +79,9 @@
 
 use std::convert::From;
 
+// Textually include output from rust-bindgen as suggested by its user guide.
+include!("cruby_bindings.inc.rs");
+
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
 
@@ -109,9 +112,6 @@ extern "C" {
 
     // TODO: export these functions from the C side
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
-
-    pub fn rb_hash_new() -> VALUE;
-    pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
 }
 
 pub fn insn_len(opcode:usize) -> u32
