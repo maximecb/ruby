@@ -652,22 +652,12 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     mov(cb, REG_EC, C_ARG_REGS[0]);
     mov(cb, REG_CFP, C_ARG_REGS[1]);
 
-
-
-
-
-
-
     // Load the current SP from the CFP into REG_SP
-    //mov(cb, REG_SP,  member_opnd!(REG_CFP, rb_control_frame_t, sp));
+    mov(cb, REG_SP, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_SP));
 
     // Setup cfp->jit_return
     mov(cb, REG0, code_ptr_opnd(CodegenGlobals::get_leave_exit_code()));
-    //mov(cb, member_opnd(REG_CFP, rb_control_frame_t, jit_return), REG0);
-
-
-
-
+    mov(cb, mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_JIT_RETURN), REG0);
 
 
 
