@@ -1069,6 +1069,10 @@ set_option_encoding_once(const char *type, VALUE *name, const char *e, long elen
 static bool
 setup_yjit_options(const char *s, struct rb_yjit_options *yjit_opt)
 {
+    //printf("GOT YJIT OPTION: \"%s\"\n", s);
+    //bool rb_yjit_parse_option(const char* s);
+    //bool result = rb_yjit_parse_option(s);
+
     const char prefix[] = "yjit-";
     if (strncmp(prefix, s, sizeof(prefix)-1) != 0) {
         return false;

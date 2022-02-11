@@ -1,6 +1,13 @@
 use crate::cruby::{EcPtr, IseqPtr};
 use crate::codegen::*;
 use crate::core::*;
+use crate::options::*;
+
+/// Parse one command-line option
+#[no_mangle]
+pub extern "C" fn rb_yjit_parse_option(str_ptr: *const std::os::raw::c_char) -> bool {
+    return parse_option(str_ptr);
+}
 
 /// This function is called from C code
 #[no_mangle]

@@ -745,12 +745,14 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
 
     // For each instruction to compile
     while insn_idx < iseq_size {
-        /*
-        // Get the current pc and opcode
-        VALUE *pc = yjit_iseq_pc_at_idx(iseq, insn_idx);
-        int opcode = yjit_opcode_at_pc(iseq, pc);
-        RUBY_ASSERT(opcode >= 0 && opcode < VM_INSTRUCTION_SIZE);
 
+        // Get the current pc and opcode
+        //VALUE *pc = yjit_iseq_pc_at_idx(iseq, insn_idx);
+        //int opcode = yjit_opcode_at_pc(iseq, pc);
+        //assert!(opcode >= 0 && opcode < VM_INSTRUCTION_SIZE);
+
+
+        /*
         // opt_getinlinecache wants to be in a block all on its own. Cut the block short
         // if we run into it. See gen_opt_getinlinecache() for details.
         if (opcode == BIN(opt_getinlinecache) && insn_idx > starting_insn_idx) {
@@ -844,18 +846,15 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
     // doesn't go to the next instruction.
     assert!(!jit.record_boundary_patch_point);
 
-
-
-    /*
     // If code for the block doesn't fit, free the block and fail.
-    if (cb->dropped_bytes || ocb->dropped_bytes) {
-        yjit_free_block(block);
+    if cb.has_dropped_bytes() || ocb.unwrap().has_dropped_bytes() {
+
+        // TODO: do we need to call drop on the block?
+        // TODO: do we need to free assumptions/invariants?
+        //yjit_free_block(block);
+
         return Err(());
     }
-    */
-
-
-
 
     // TODO: we may want a feature for this called dump_insns? Can leave commented for now
     /*

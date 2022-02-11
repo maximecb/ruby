@@ -1,3 +1,5 @@
+use std::ffi::CStr;
+
 const YJIT_DEFAULT_CALL_THRESHOLD: usize = 10;
 
 // Command-line options
@@ -52,10 +54,14 @@ macro_rules! get_option {
 }
 pub(crate) use get_option;
 
-// Just to demonstrate how this can be initialized
-fn init_options()
+pub fn parse_option(str_ptr: *const std::os::raw::c_char) -> bool
 {
-    unsafe {
-        OPTIONS.yjit_enabled = true;
-    }
+    let c_str: &CStr = unsafe { CStr::from_ptr(str_ptr) };
+    let str_slice: &str = c_str.to_str().unwrap();
+    //let str_buf: String = str_slice.to_owned();
+
+
+
+
+    return false;
 }

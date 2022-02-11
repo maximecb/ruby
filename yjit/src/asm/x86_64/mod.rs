@@ -499,6 +499,11 @@ impl CodeBlock
         }
     }
 
+    /// Check if bytes have been dropped
+    pub fn has_dropped_bytes(&self) -> bool {
+        self.dropped_bytes
+    }
+
     // Write multiple bytes starting from the current position
     pub fn write_bytes(&mut self, bytes: &[u8]) {
         for byte in bytes {
