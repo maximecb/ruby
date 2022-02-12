@@ -457,13 +457,13 @@ typedef VALUE (*yjit_func_t)(rb_execution_context_t *, rb_control_frame_t *);
 bool
 rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
 {
-#if (OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE) && JIT_ENABLED
     bool success = true;
     RB_VM_LOCK_ENTER();
     rb_vm_barrier();
 
     // Compile a block version starting at the first instruction
-    uint8_t *code_ptr = gen_entry_point(iseq, 0, ec);
+    uint8_t *rb_yjit_iseq_gen_entry_point(const rb_iseq_t *iseq, rb_execution_context_t *ec); // defined in Rust
+    uint8_t *code_ptr = rb_yjit_iseq_gen_entry_point(iseq, ec);
 
     if (code_ptr) {
         iseq->body->jit_func = (yjit_func_t)code_ptr;
@@ -475,9 +475,6 @@ rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
 
     RB_VM_LOCK_LEAVE();
     return success;
-#else
-    return false;
-#endif
 }
 
 struct yjit_block_itr {
@@ -966,18 +963,6 @@ rb_yjit_iseq_free(const struct rb_iseq_constant_body *body)
     }
 
     rb_darray_free(body->yjit_blocks);
-}
-
-bool
-rb_yjit_enabled_p(void)
-{
-    return rb_yjit_opts.yjit_enabled;
-}
-
-unsigned
-rb_yjit_call_threshold(void)
-{
-    return rb_yjit_opts.call_threshold;
 }
 
 #define PTR2NUM(x)   (LONG2NUM((long)(x)))

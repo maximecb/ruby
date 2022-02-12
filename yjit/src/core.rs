@@ -333,11 +333,6 @@ fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 
 
     // TODO: may need to allocate the payload object here
-
-
-
-
-
 }
 
 // Get all blocks for a particular place in an iseq.

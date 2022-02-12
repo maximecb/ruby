@@ -5362,7 +5362,6 @@ impl CodegenGlobals {
         let mem_size: u32 = mem_size.try_into().unwrap();
 
         let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size) };
-        dbg!(mem_block);
 
         /*
         cb = &block;
