@@ -66,12 +66,14 @@ pub struct JITState
 
 impl JITState {
     pub fn new(blockref: &BlockRef) -> Self {
+        use std::ptr;
+
         JITState {
             block: blockref.clone(),
-            iseq: IseqPtr(0), // TODO: initialize this from the blockid
+            iseq: ptr::null(), // TODO: initialize this from the blockid
             insn_idx: 0,
             opcode: 0,
-            pc: std::ptr::null_mut::<VALUE>(),
+            pc: ptr::null_mut::<VALUE>(),
             side_exit_for_pc: None,
             ec: None,
             record_boundary_patch_point: false,
@@ -766,6 +768,8 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
         //jit.opcode = opcode;
         //jit.pc = pc;
         //jit.side_exit_for_pc = NULL;
+
+        todo!("This is an infinite loop atm");
 
         /*
         // If previous instruction requested to record the boundary

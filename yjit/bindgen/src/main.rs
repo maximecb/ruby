@@ -4,12 +4,15 @@ use std::path::PathBuf;
 use std::env;
 
 fn main() {
+    // Remove this flag so rust-bindgen generates bindings
+    // that are internal functions not public in libruby
+    let filtered_clang_args = env::args().filter(|arg| arg != "-fvisibility=hidden");
+
     // assume CWD is Ruby repo root so we could copy paste include path
     // args from make.
     let bindings = bindgen::builder()
-        .clang_args(env::args())
+        .clang_args(filtered_clang_args)
         .header("internal.h")
-        .header("vm_core.h")
         .header("yjit.c")
 
         // Don't want to copy over C comment
@@ -24,8 +27,13 @@ fn main() {
         .allowlist_function("rb_hash_new")
         .allowlist_function("rb_hash_aset")
 
+        .allowlist_function("rb_iseq_(get|set)_yjit_payload")
+        .generate_inline_functions(true)
+
         // We define VALUE manually
         .blocklist_type("VALUE")
+        .opaque_type("rb_iseq_t")
+        .blocklist_type("rb_iseq_t")
 
         // Finish the builder and generate the bindings.
         .generate()
@@ -40,4 +48,6 @@ fn main() {
     bindings
         .write_to_file(out_path)
         .expect("Couldn't write bindings!");
+    bindings
+        .write(Box::new(std::io::stdout()));
 }

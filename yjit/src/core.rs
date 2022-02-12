@@ -1,5 +1,6 @@
 use std::rc::{Rc, Weak};
 use std::cell::*;
+use std::ptr;
 use crate::cruby::*;
 use crate::asm::*;
 use crate::asm::x86_64::*;
@@ -207,7 +208,7 @@ pub struct BlockId
 }
 
 /// Null block id constant
-pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
+pub const BLOCKID_NULL: BlockId = BlockId { iseq: ptr::null(), idx: 0 };
 
 /// Branch code shape enumeration
 enum BranchShape
@@ -313,6 +314,7 @@ type VersionMap = Vec<VersionList>;
 /// This will be dynamically allocated by C code
 /// C code should pass an &mut IseqPayload to us
 /// when calling into YJIT
+#[derive(Default)]
 struct IseqPayload
 {
     version_map: VersionMap
@@ -321,18 +323,27 @@ struct IseqPayload
 /// Get the payload object associated with an iseq
 fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 {
-    todo!();
+    use core::ffi::c_void;
+    type VoidPtr = *mut c_void;
 
+    let payload_non_null = unsafe {
+        let payload = rb_iseq_get_yjit_payload(iseq);
+        if payload.is_null() {
+            // Allocate and transfer ownership to the GC
+            let new_payload = Box::into_raw(Box::new(IseqPayload::default()));
+            rb_iseq_set_yjit_payload(iseq, new_payload as VoidPtr);
 
-    // TODO: add black magic unsafe {} incantation here
-    // Need to read the iseq payload from the iseq
-    //unsafe {
-    //}
+            new_payload
+        } else {
+            payload as *mut IseqPayload
+        }
+    };
 
-
-
-
-    // TODO: may need to allocate the payload object here
+    // SAFETY: we should have the VM lock and all other Ruby threads should be asleep. So we have
+    // exclusive mutable access.
+    // Hmm, nothing seems to stop calling this on the same
+    // iseq twice, though, which violates aliasing rules.
+    unsafe { payload_non_null.as_mut() }.unwrap()
 }
 
 // Get all blocks for a particular place in an iseq.
@@ -354,7 +365,8 @@ fn get_num_versions(blockid: BlockId) -> usize
 {
     let insn_idx = blockid.idx as usize;
     let payload = get_iseq_payload(blockid.iseq);
-    return payload.version_map[insn_idx].len();
+
+    payload.version_map.get(insn_idx).map(|versions| versions.len()).unwrap_or(0)
 }
 
 /// Retrieve a basic block version for an (iseq, idx) tuple

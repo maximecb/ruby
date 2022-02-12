@@ -1,6 +1,7 @@
 // YJIT combined compilation unit. This setup allows spreading functions
 // across different files without having to worry about putting things
 // in headers and prefixing function names.
+
 #include "internal.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -79,6 +80,22 @@ unsigned int
 rb_iseq_encoded_size(const rb_iseq_t *iseq)
 {
     return iseq->body->iseq_size;
+}
+
+// TODO(alan): consider using an opaque pointer for the payload rather than a void pointer
+void *
+rb_iseq_get_yjit_payload(const rb_iseq_t *iseq)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    return iseq->body->yjit_payload;
+}
+
+void
+rb_iseq_set_yjit_payload(const rb_iseq_t *iseq, void *payload)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    RUBY_ASSERT_ALWAYS(NULL == iseq->body->yjit_payload);
+    iseq->body->yjit_payload = payload;
 }
 
 #if YJIT_STATS

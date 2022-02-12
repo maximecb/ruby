@@ -140,17 +140,21 @@ pub fn get_ruby_vm_frozen_core() -> VALUE
 }
 
 
-
-
+/// Opaque iseq type for opaque iseq pointers.
+/// See: https://doc.rust-lang.org/nomicon/ffi.html#representing-opaque-structs
+#[repr(C)]
+pub struct rb_iseq_t {
+    _data: [u8; 0],
+    _marker:
+        core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct VALUE(pub usize);
 
 /// Pointer to an ISEQ
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(C)]
-pub struct IseqPtr(pub usize);
+pub type IseqPtr = *const rb_iseq_t;
 
 /// Pointer to an execution context (EC)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
