@@ -9,6 +9,7 @@ mod asm;
 mod cruby;
 mod core;
 mod codegen;
+mod invariants;
 mod utils;
 mod options;
 mod stats;
