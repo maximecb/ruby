@@ -1,6 +1,8 @@
 //! Code to track assumptions made during code generation and invalidate
 //! generated code if and when these assumptions are invalidated.
 
+use crate::core::*;
+
 // Invariants to track:
 // assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_PLUS)
 // assume_method_lookup_stable(comptime_recv_klass, cme, jit);
@@ -11,13 +13,19 @@
 
 
 
-/*
-// Hash table of BOP blocks
-static st_table *blocks_assuming_bops;
 
-static bool
-assume_bop_not_redefined(jitstate_t *jit, int redefined_flag, enum ruby_basic_operators bop)
+// Hash table of BOP blocks
+//static st_table *blocks_assuming_bops;
+
+fn assume_bop_not_redefined(block: &BlockRef, redefined_flag: usize, bop: usize) -> bool
 {
+    todo!();
+
+    // TODO: we'll want to export
+    // BASIC_OP_UNREDEFINED_P(bop, redefined_flag)
+    // from the C side
+
+    /*
     if (BASIC_OP_UNREDEFINED_P(bop, redefined_flag)) {
         RUBY_ASSERT(blocks_assuming_bops);
 
@@ -28,8 +36,10 @@ assume_bop_not_redefined(jitstate_t *jit, int redefined_flag, enum ruby_basic_op
     else {
         return false;
     }
+    */
 }
 
+/*
 /// Called when a basic operation is redefined
 void
 rb_yjit_bop_redefined(VALUE klass, const rb_method_entry_t *me, enum ruby_basic_operators bop)
