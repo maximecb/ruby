@@ -405,8 +405,6 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
 }
 */
 
-
-#[allow(unreachable_code)]
 // Generate an exit to return to the interpreter
 fn gen_exit(exit_pc: *mut VALUE, ctx: &Context, cb: &mut CodeBlock) -> CodePtr
 {

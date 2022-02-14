@@ -234,9 +234,6 @@ struct Branch
     // Context right after the branch instruction
     src_ctx : Context,
 
-    // TODO: we should refactor the targets into their own struct
-    // and wrap the whole thing into an option
-
     // Branch target blocks and their contexts
     targets: [BlockId; 2],
     target_ctxs: [Context; 2],
@@ -293,6 +290,9 @@ pub struct Block
     // These are reference counted (ownership shared between predecessor and successors)
     incoming: Vec<BranchRef>,
 
+    // NOTE: we might actually be able to store the branches here without refcounting
+    // however, using a RefCell makes it easy to get a pointer to Branch objects
+    //
     // List of outgoing branches (to successors)
     outgoing: Vec<BranchRef>,
 
@@ -1142,11 +1142,11 @@ fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch)
 }
 
 // Create a new outgoing branch entry for a block
-fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) -> Branch
+fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) -> BranchRef
 {
     let branch = Branch {
         // Block this is attached to
-        block: block,
+        block: block.clone(),
 
         // Positions where the generated code starts and ends
         start_addr: None,
@@ -1170,16 +1170,11 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
         shape: BranchShape::Default,
     };
 
-
-
-
-    todo!();
-
-    // TODO
     // Add to the list of outgoing branches for the block
-    //rb_darray_append(&block->outgoing, branch);
+    let branchref = Rc::new(RefCell::new(branch));
+    block.borrow_mut().outgoing.push(branchref.clone());
 
-    //return branch;
+    return branchref;
 }
 
 /*
