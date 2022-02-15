@@ -112,6 +112,8 @@ extern "C" {
 
     // TODO: export these functions from the C side
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
+
+    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> std::os::raw::c_uint;
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -227,6 +229,11 @@ impl VALUE {
         i.try_into().unwrap()
     }
 
+    pub fn as_u32(self:VALUE) -> u32 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
     pub fn as_usize(self:VALUE) -> usize {
         let VALUE(us) = self;
         us as usize
@@ -305,6 +312,10 @@ pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
 
 // Constants from vm_core.h
 pub const VM_SPECIAL_OBJECT_VMCORE:usize = 0x1;
+pub const VM_ENV_DATA_INDEX_SPECVAL:isize = -1;
+pub const VM_ENV_DATA_INDEX_FLAGS:isize = 0;
+pub const VM_ENV_DATA_SIZE:usize = 3;
+pub const VM_ENV_FLAG_WB_REQUIRED:usize = 0x008;
 
 pub const SIZEOF_VALUE: usize = 8;
 
@@ -342,6 +353,16 @@ pub const RUBY_OFFSET_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"
+
+// vm_core.h, enum ruby_basic_operators
+pub const BOP_PLUS: usize = 0;
+pub const BOP_MINUS: usize = 1;
+// ... more to export ...
+
+// Defined in vm_core.h
+pub const INTEGER_REDEFINED_OP_FLAG: usize = 1 << 0;
+pub const FLOAT_REDEFINED_OP_FLAG: usize = 1 << 1;
+// ... more to export ...
 
 // Constants from rb_control_frame_t vm_core.h
 pub const RUBY_OFFSET_CFP_PC: i32 = 0;

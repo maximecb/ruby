@@ -120,7 +120,7 @@ impl Type {
             return 1;
         }
 
-        // Specific type into unknown immediate type is imperfect but valid
+        // Specific immediate type into unknown immediate type is imperfect but valid
         if self.is_imm() && dst == Type::UnknownImm {
             return 1;
         }
@@ -230,8 +230,8 @@ struct Branch
     block: BlockRef,
 
     // Positions where the generated code starts and ends
-    start_addr: CodePtr,
-    end_addr: CodePtr,
+    start_addr: Option<CodePtr>,
+    end_addr: Option<CodePtr>,
 
     // Context right after the branch instruction
     src_ctx : Context,
@@ -239,7 +239,7 @@ struct Branch
     // Branch target blocks and their contexts
     targets: [BlockId; 2],
     target_ctxs: [Context; 2],
-    blocks: [BlockRef; 2],
+    blocks: [Option<BlockRef>; 2],
 
     // Jump target addresses
     dst_addrs: [Option<CodePtr>; 2],
@@ -251,11 +251,23 @@ struct Branch
     shape: BranchShape,
 }
 
-impl std::fmt::Debug for Branch {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl std::fmt::Debug for Branch
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
         // TODO: expand this if needed. #[derive(Debug)] on Branch gave a
         // strange error related to BranchGenFn
         formatter.pad("Branch")
+    }
+}
+
+impl Branch
+{
+    // Compute the size of the branch code
+    fn code_size(&self) -> usize
+    {
+        (self.end_addr.unwrap().raw_ptr() as usize) -
+        (self.start_addr.unwrap().raw_ptr() as usize)
     }
 }
 
@@ -292,6 +304,9 @@ pub struct Block
     // These are reference counted (ownership shared between predecessor and successors)
     incoming: Vec<BranchRef>,
 
+    // NOTE: we might actually be able to store the branches here without refcounting
+    // however, using a RefCell makes it easy to get a pointer to Branch objects
+    //
     // List of outgoing branches (to successors)
     outgoing: Vec<BranchRef>,
 
@@ -317,7 +332,7 @@ type BranchRef = Rc<RefCell<Branch>>;
 /// List of block versions for a given blockid
 type VersionList = Vec<BlockRef>;
 
-/// Map from iseq indices to lists of versions for that give blockid
+/// Map from iseq indices to lists of versions for that given blockid
 /// An instance of this is stored on each iseq
 type VersionMap = Vec<VersionList>;
 
@@ -478,6 +493,23 @@ fn add_block_version(blockref: &BlockRef)
 
     incr_counter!(compiled_block_count);
 }
+
+/*
+// Remove a block version
+static void
+block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
+{
+    block_t **element;
+    rb_darray_foreach(block_array, idx, element) {
+        if (*element == block) {
+            rb_darray_remove_unordered(block_array, idx);
+            return;
+        }
+    }
+
+    RUBY_ASSERT(false);
+}
+*/
 
 //===========================================================================
 // I put the implementation of traits for core.rs types below
@@ -1091,17 +1123,10 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
     return code_ptr;
 }
 
-/*
-static ptrdiff_t
-branch_code_size(const branch_t *branch)
-{
-    return branch->end_addr - branch->start_addr;
-}
-
 // Generate code for a branch, possibly rewriting and changing the size of it
-static void
-regenerate_branch(codeblock_t *cb, branch_t *branch)
+fn regenerate_branch(cb: &mut CodeBlock, branch: &mut Branch)
 {
+    /*
     if (branch->start_addr < cb_get_ptr(cb, yjit_codepage_frozen_bytes)) {
         // Generating this branch would modify frozen bytes. Do nothing.
         return;
@@ -1136,48 +1161,43 @@ regenerate_branch(codeblock_t *cb, branch_t *branch)
         // The branch sits at the end of cb and consumed some memory.
         // Keep cb->write_pos.
     }
+    */
 }
-*/
 
 // Create a new outgoing branch entry for a block
-fn make_branch_entry(block: &mut Block, src_ctx: Context, gen_fn: BranchGenFn) -> Branch {
-
-    todo!();
-
-    /*
+fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) -> BranchRef
+{
     let branch = Branch {
-        block: Weak::new(block),
-        src_ctx: *src_ctx,
-
-        gen_fn: gen_fn,
-
-        shape: BranchShape::Default
-
         // Block this is attached to
-        block: Weak<Block>,
+        block: block.clone(),
 
         // Positions where the generated code starts and ends
-        start_addr: CodePtr,
-        end_addr: CodePtr,
+        start_addr: None,
+        end_addr: None,
 
         // Context right after the branch instruction
-        src_ctx : Context,
+        src_ctx : *src_ctx,
 
         // Branch target blocks and their contexts
-        targets: [BlockId; 2],
-        target_ctxs: [Context; 2],
-        blocks: [Weak<Block>; 2],
+        targets: [BLOCKID_NULL, BLOCKID_NULL],
+        target_ctxs: [Context::default(), Context::default()],
+        blocks: [None, None],
 
         // Jump target addresses
-        dst_addrs: [CodePtr; 2],
+        dst_addrs: [None, None],
+
+        // Branch code generation function
+        gen_fn: gen_fn,
+
+        // Shape of the branch
+        shape: BranchShape::Default,
     };
-    */
 
-    // TODO
     // Add to the list of outgoing branches for the block
-    //rb_darray_append(&block->outgoing, branch);
+    let branchref = Rc::new(RefCell::new(branch));
+    block.borrow_mut().outgoing.push(branchref.clone());
 
-    //return branch;
+    return branchref;
 }
 
 /*
@@ -1302,18 +1322,19 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
     // Return a pointer to the compiled block version
     return dst_addr;
 }
+*/
 
 // Get a version or stub corresponding to a branch target
-static uint8_t *
-get_branch_target(
-    blockid_t target,
-    const ctx_t *ctx,
-    branch_t *branch,
-    uint32_t target_idx
-)
+fn get_branch_target(
+    target: BlockId,
+    ctx: &Context,
+    branch: &Branch,
+    target_idx: u32
+) -> CodePtr
 {
-    //fprintf(stderr, "get_branch_target, block (%p, %d)\n", target.iseq, target.idx);
+    todo!();
 
+    /*
     block_t *p_block = find_block_version(target, ctx);
 
     // If the block already exists
@@ -1348,21 +1369,24 @@ get_branch_target(
     RUBY_ASSERT(cb_get_ptr(ocb, ocb->write_pos) - stub_addr <= MAX_CODE_SIZE);
 
     return stub_addr;
+    */
 }
 
-static void
-gen_branch(
-    jitstate_t *jit,
-    const ctx_t *src_ctx,
-    blockid_t target0,
-    const ctx_t *ctx0,
-    blockid_t target1,
-    const ctx_t *ctx1,
-    branchgen_fn gen_fn
+fn gen_branch(
+    jit: &JITState,
+    src_ctx: &Context,
+    target0: BlockId,
+    ctx0: &Context,
+    target1: BlockId,
+    ctx1: &Context,
+    gen_fn: BranchGenFn
 )
 {
-    RUBY_ASSERT(target0.iseq != NULL);
+    assert!(target0 != BLOCKID_NULL);
 
+    todo!();
+
+    /*
     branch_t *branch = make_branch_entry(jit->block, src_ctx, gen_fn);
     branch->targets[0] = target0;
     branch->targets[1] = target1;
@@ -1376,8 +1400,10 @@ gen_branch(
     // Call the branch generation function
     branch->start_addr = cb_get_write_ptr(cb);
     regenerate_branch(cb, branch);
+    */
 }
 
+/*
 static void
 gen_jump_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
 {
@@ -1394,14 +1420,17 @@ gen_jump_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t sha
         break;
     }
 }
+*/
 
-static void
-gen_direct_jump(
-    jitstate_t *jit,
-    const ctx_t *ctx,
-    blockid_t target0
+fn gen_direct_jump(
+    jit: &JITState,
+    ctx: &Context,
+    target0: BlockId
 )
 {
+    todo!();
+
+    /*
     RUBY_ASSERT(target0.iseq != NULL);
 
     branch_t *branch = make_branch_entry(jit->block, ctx, gen_jump_branch);
@@ -1431,8 +1460,10 @@ gen_direct_jump(
         branch->start_addr = cb_get_write_ptr(cb);
         branch->end_addr = cb_get_write_ptr(cb);
     }
+    */
 }
 
+/*
 // Create a stub to force the code up to this point to be executed
 static void
 defer_compilation(
@@ -1467,7 +1498,9 @@ defer_compilation(
     gen_jump_branch(cb, branch->dst_addrs[0], NULL, SHAPE_DEFAULT);
     branch->end_addr = cb_get_write_ptr(cb);
 }
+*/
 
+/*
 // Remove all references to a block then free it.
 static void
 yjit_free_block(block_t *block)
@@ -1518,21 +1551,6 @@ yjit_free_block(block_t *block)
     rb_darray_free(block->gc_object_offsets);
 
     free(block);
-}
-
-// Remove a block version
-static void
-block_array_remove(rb_yjit_block_array_t block_array, block_t *block)
-{
-    block_t **element;
-    rb_darray_foreach(block_array, idx, element) {
-        if (*element == block) {
-            rb_darray_remove_unordered(block_array, idx);
-            return;
-        }
-    }
-
-    RUBY_ASSERT(false);
 }
 */
 

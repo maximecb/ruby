@@ -12,7 +12,8 @@ static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Parse one command-line option
 #[no_mangle]
-pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool {
+pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool
+{
     return parse_option(str_ptr);
 }
 
@@ -33,7 +34,8 @@ pub extern "C" fn rb_yjit_call_threshold() -> raw::c_uint {
 
 /// This function is called from C code
 #[no_mangle]
-pub extern "C" fn rb_yjit_init_rust() {
+pub extern "C" fn rb_yjit_init_rust()
+{
     // TODO: need to make sure that command-line options have been
     // initialized by CRuby
 
@@ -73,5 +75,13 @@ pub extern "C" fn rb_yjit_iseq_gen_entry_point(iseq: IseqPtr, ec: EcPtr) -> *con
     }
 }
 
-// TODO: expose branch_stub_hit() from core
-// This one is not ready yet!
+/// Called from C code when a branch stub is hit
+/// NOTE: this should be wrapped in RB_VM_LOCK_ENTER(), rb_vm_barrier() on the C side
+#[no_mangle]
+pub extern "C" fn rb_yjit_branch_stub_hit(/* branch_t *branch, */ target_idx: u32, ec: EcPtr) -> *const u8
+{
+    // TODO: figure out what to pass instead of a branch pointer?
+
+    // TODO
+    todo!("branch_stub_hit not implemented");
+}
