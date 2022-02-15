@@ -118,7 +118,8 @@ static inline void
 rb_darray_free(void *ary)
 {
     rb_darray_meta_t *meta = ary;
-    ruby_sized_xfree(ary, meta->capa);
+    /*ruby_sized_xfree(ary, meta->capa);*/
+    free(ary);
 }
 
 // Internal function
@@ -136,7 +137,8 @@ rb_darray_ensure_space(void *ptr_to_ary, size_t header_size, size_t element_size
     size_t new_capa = current_capa == 0 ? 1 : current_capa * 2;
 
     // realloc with size (new_capa * element_size + header_size)
-    rb_darray_meta_t *doubled_ary = rb_xrealloc_mul_add(meta, new_capa, element_size, header_size);
+    rb_darray_meta_t *doubled_ary = realloc(meta, new_capa * element_size + header_size);
+    /*rb_darray_meta_t *doubled_ary = rb_xrealloc_mul_add(meta, new_capa, element_size, header_size);*/
 
     if (meta == NULL) {
         // First allocation. Initialize size. On subsequence allocations
@@ -161,7 +163,8 @@ rb_darray_make_impl(void *ptr_to_ary, size_t array_size, size_t header_size, siz
     }
 
     // malloc with size (array_size * element_size + header_size)
-    rb_darray_meta_t *meta = rb_xcalloc_mul_add(array_size, element_size, header_size);
+    rb_darray_meta_t *meta = calloc(array_size * element_size + header_size);
+    /*rb_darray_meta_t *meta = rb_xcalloc_mul_add(array_size, element_size, header_size);*/
 
     meta->size = array_size;
     meta->capa = array_size;
