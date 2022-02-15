@@ -6,6 +6,8 @@ use crate::options::*;
 use std::sync::atomic::{AtomicBool,Ordering};
 use std::os::raw;
 
+/// Is YJIT on? AtomicBool to avoid `unsafe`. On x86 it compiles to simple movs.
+/// See https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html
 static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Parse one command-line option

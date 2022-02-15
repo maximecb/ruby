@@ -1,3 +1,7 @@
+//! This is the binding generation tool that the YJIT cruby module talks about.
+//! More docs later once we have more experience with this, for now, check
+//! the output to make sure it looks reasonable and allowlist things you want
+//! to use in Rust.
 extern crate bindgen;
 
 use std::path::PathBuf;
@@ -13,6 +17,9 @@ fn main() {
     let bindings = bindgen::builder()
         .clang_args(filtered_clang_args)
         .header("internal.h")
+
+        // Some C functions that were expressly for Rust YJIT in this
+        // file. TODO: Might want to move them later.
         .header("yjit.c")
 
         // Don't want to copy over C comment
@@ -21,7 +28,7 @@ fn main() {
         // Don't want layout tests as they are platform dependent
         .layout_tests(false)
 
-        // This struct is public to extensions
+        // This struct is public to Ruby C extensions
         .allowlist_type("RBasic")
 
         .allowlist_function("rb_hash_new")
@@ -50,6 +57,9 @@ fn main() {
     bindings
         .write_to_file(out_path)
         .expect("Couldn't write bindings!");
-    bindings
+
+    // Prints output to stdout to save having to reload the file
+    // Temporary for development.
+    let _ = bindings
         .write(Box::new(std::io::stdout()));
 }
