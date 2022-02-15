@@ -559,7 +559,7 @@ add_block_version(block_t *block)
             rb_bug("iseq too large");
         }
 
-        rb_darray_make(&body->yjit_blocks, casted);
+        rb_darray_make(&body->yjit_blocks, (unsigned)casted);
 
 #if YJIT_STATS
         // First block compiled for this iseq
