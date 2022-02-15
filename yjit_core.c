@@ -900,7 +900,7 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
 
         // Update the PC in the current CFP, because it
         // may be out of sync in JITted code
-        ec->cfp->pc = yjit_iseq_pc_at_idx(target.iseq, target.idx);
+        ec->cfp->pc = rb_iseq_pc_at_idx(target.iseq, target.idx);
 
         // Try to find an existing compiled version of this block
         block_t *p_block = find_block_version(target, target_ctx);

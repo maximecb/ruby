@@ -10,6 +10,7 @@ use CodegenStatus::*;
 use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::mem::size_of;
+use std::os::raw::{c_uint};
 
 // Callee-saved registers
 pub const REG_CFP: X86Opnd = R13;
@@ -24,6 +25,7 @@ pub const REG1: X86Opnd = RCX;
 pub const REG1_32: X86Opnd = ECX;
 
 /// Status returned by code generation functions
+#[derive(PartialEq)]
 enum CodegenStatus {
     EndBlock,
     KeepCompiling,
@@ -61,17 +63,19 @@ pub struct JITState
 
     // Whether we need to record the code address at
     // the end of this bytecode instruction for global invalidation
-    record_boundary_patch_point : bool,
+    record_boundary_patch_point: bool,
 }
 
 impl JITState {
     pub fn new(blockref: &BlockRef) -> Self {
+        use std::ptr;
+
         JITState {
             block: blockref.clone(),
-            iseq: IseqPtr(0), // TODO: initialize this from the blockid
+            iseq: ptr::null(), // TODO: initialize this from the blockid
             insn_idx: 0,
             opcode: 0,
-            pc: std::ptr::null_mut::<VALUE>(),
+            pc: ptr::null_mut::<VALUE>(),
             side_exit_for_pc: None,
             ec: None,
             record_boundary_patch_point: false,
@@ -732,8 +736,9 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
 
     let iseq = blockid.iseq;
     let iseq_size = unsafe { get_iseq_encoded_size(iseq) };
-    let insn_idx = blockid.idx;
+    let mut insn_idx: c_uint = blockid.idx;
     let starting_insn_idx = insn_idx;
+    let mut ctx = Context::new();
 
     // Initialize a JIT state object
     let mut jit = JITState::new(blockref);
@@ -744,96 +749,88 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
     block.set_start_addr(cb.get_write_ptr());
 
     // For each instruction to compile
+    // NOTE: could rewrite this loop with a std::iter::Iterator
     while insn_idx < iseq_size {
-
         // Get the current pc and opcode
-        //let pc = iseq_pc_at_idx(iseq, insn_idx);
-        //let opcode = opcode_at_pc(iseq, pc);
-        //assert!(opcode >= 0 && opcode < VM_INSTRUCTION_SIZE);
+        let pc = unsafe { rb_iseq_pc_at_idx(iseq, insn_idx) };
+        // try_into() call below is unfortunate. Maybe pick i32 instead of usize for opcodes.
+        let opcode: usize = unsafe { rb_iseq_opcode_at_pc(iseq, pc) }.try_into().unwrap();
 
-
-        /*
         // opt_getinlinecache wants to be in a block all on its own. Cut the block short
         // if we run into it. See gen_opt_getinlinecache() for details.
-        if (opcode == BIN(opt_getinlinecache) && insn_idx > starting_insn_idx) {
+        if opcode == OP_OPT_GETINLINECACHE && insn_idx > starting_insn_idx {
+            todo!();
+            /*
             jit_jump_to_next_insn(&jit, ctx);
             break;
+            */
         }
-        */
 
         // Set the current instruction
         jit.insn_idx = insn_idx;
-        //jit.opcode = opcode;
-        //jit.pc = pc;
-        //jit.side_exit_for_pc = NULL;
+        jit.opcode = opcode.try_into().unwrap();
+        jit.pc = pc;
+        jit.side_exit_for_pc = None;
 
-        /*
         // If previous instruction requested to record the boundary
-        if (jit.record_boundary_patch_point) {
+        if jit.record_boundary_patch_point {
+            todo!();
+            /*
             // Generate an exit to this instruction and record it
             uint32_t exit_pos = gen_exit(jit.pc, ctx, ocb);
             record_global_inval_patch(cb, exit_pos);
             jit.record_boundary_patch_point = false;
+            */
         }
-        */
 
         // Verify our existing assumption (DEBUG)
         //if (jit_at_current_insn(&jit)) {
         //    verify_ctx(&jit, ctx);
         //}
 
-        /*
         // Lookup the codegen function for this instruction
-        codegen_fn gen_fn = gen_fns[opcode];
-        codegen_status_t status = YJIT_CANT_COMPILE;
-        if (gen_fn) {
-            if (0) {
-                fprintf(stderr, "compiling %d: %s\n", insn_idx, insn_name(opcode));
-                print_str(cb, insn_name(opcode));
-            }
-
+        let mut status = CantCompile;
+        if let Some(gen_fn) = get_gen_fn(VALUE(opcode)) {
             // :count-placement:
             // Count bytecode instructions that execute in generated code.
             // Note that the increment happens even when the output takes side exit.
             gen_counter_incr!(cb, exec_instruction);
 
             // Add a comment for the name of the YARV instruction
-            add_comment(cb, insn_name(opcode));
+            // TODO: missing insn_name()
+            // add_comment(cb, insn_name(opcode));
 
             // Call the code generation function
-            status = gen_fn(&jit, ctx, cb);
+            status = gen_fn(&mut jit, &mut ctx, cb, ocb);
         }
 
         // If we can't compile this instruction
         // exit to the interpreter and stop compiling
-        if (status == YJIT_CANT_COMPILE) {
+        if status == CantCompile {
             // TODO: if the codegen function makes changes to ctx and then return YJIT_CANT_COMPILE,
             // the exit this generates would be wrong. We could save a copy of the entry context
             // and assert that ctx is the same here.
-            uint32_t exit_off = gen_exit(jit.pc, ctx, cb);
+            let exit = gen_exit(jit.pc, &ctx, cb);
 
             // If this is the first instruction in the block, then we can use
             // the exit for block->entry_exit.
-            if (insn_idx == block->blockid.idx) {
-                block->entry_exit = cb_get_ptr(cb, exit_off);
+            if insn_idx == block.get_blockid().idx {
+                block.entry_exit = Some(exit);
             }
             break;
         }
 
         // For now, reset the chain depth after each instruction as only the
         // first instruction in the block can concern itself with the depth.
-        ctx->chain_depth = 0;
-        */
+        ctx.reset_chain_depth();
 
         // Move to the next instruction to compile
-        //insn_idx += insn_len(opcode);
+        insn_idx += insn_len(opcode);
 
-        /*
         // If the instruction terminates this block
-        if (status == YJIT_END_BLOCK) {
+        if status == EndBlock {
             break;
         }
-        */
     }
 
     // Mark the end position of the block
@@ -5384,7 +5381,6 @@ impl CodegenGlobals {
         let mem_size: u32 = mem_size.try_into().unwrap();
 
         let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size) };
-        dbg!(mem_block);
 
         /*
         cb = &block;

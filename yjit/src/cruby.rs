@@ -80,6 +80,9 @@
 use std::convert::From;
 use std::os::raw::{c_int, c_uint, c_long};
 
+// Textually include output from rust-bindgen as suggested by its user guide.
+include!("cruby_bindings.inc.rs");
+
 // TODO: For #defines that affect memory layout, we need to check for them
 // on build and fail if they're wrong. e.g. USE_FLONUM *must* be true.
 
@@ -119,9 +122,6 @@ extern "C" {
 
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
-    pub fn rb_hash_new() -> VALUE;
-    pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
-
     pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
     pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
 }
@@ -152,17 +152,21 @@ pub fn get_ruby_vm_frozen_core() -> VALUE
 }
 
 
-
-
+/// Opaque iseq type for opaque iseq pointers.
+/// See: https://doc.rust-lang.org/nomicon/ffi.html#representing-opaque-structs
+#[repr(C)]
+pub struct rb_iseq_t {
+    _data: [u8; 0],
+    _marker:
+        core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct VALUE(pub usize);
 
 /// Pointer to an ISEQ
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(C)]
-pub struct IseqPtr(pub usize);
+pub type IseqPtr = *const rb_iseq_t;
 
 /// Pointer to an execution context (EC)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]

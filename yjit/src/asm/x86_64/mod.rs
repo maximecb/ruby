@@ -415,8 +415,8 @@ impl CodeBlock
 {
     pub fn new() -> Self {
         Self {
-            mem_block: vec![0; 1024],
-            mem_size: 1024,
+            mem_block: vec![0; 2048],
+            mem_size: 2048,
             write_pos: 0,
             label_addrs: Vec::new(),
             label_names: Vec::new(),

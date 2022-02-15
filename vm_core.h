@@ -492,6 +492,11 @@ struct rb_iseq_constant_body {
     struct rb_mjit_unit *jit_unit;
 #endif
 
+    // YJIT stores some data per iseq
+    // TODO(alan) #if YJIT_BUILD here. can't include yjit.h has circular dependency at the moment.
+    void *yjit_payload;
+
+    // TODO(alan) remove this
     rb_yjit_block_array_array_t yjit_blocks; // empty, or has a size equal to iseq_size
 };
 

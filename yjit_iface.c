@@ -42,29 +42,6 @@ static const rb_data_type_t yjit_block_type = {
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
-// Get the PC for a given index in an iseq
-static VALUE *
-yjit_iseq_pc_at_idx(const rb_iseq_t *iseq, uint32_t insn_idx)
-{
-    RUBY_ASSERT(iseq != NULL);
-    RUBY_ASSERT(insn_idx < iseq->body->iseq_size);
-    VALUE *encoded = iseq->body->iseq_encoded;
-    VALUE *pc = &encoded[insn_idx];
-    return pc;
-}
-
-static int
-yjit_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
-{
-    const VALUE at_pc = *pc;
-    if (FL_TEST_RAW((VALUE)iseq, ISEQ_TRANSLATED)) {
-        return rb_vm_insn_addr2opcode((const void *)at_pc);
-    }
-    else {
-        return (int)at_pc;
-    }
-}
-
 // Verify that calling with cd on receiver goes to callee
 static void
 check_cfunc_dispatch(VALUE receiver, struct rb_callinfo *ci, void *callee, rb_callable_method_entry_t *compile_time_cme)
@@ -457,13 +434,13 @@ typedef VALUE (*yjit_func_t)(rb_execution_context_t *, rb_control_frame_t *);
 bool
 rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
 {
-#if (OPT_DIRECT_THREADED_CODE || OPT_CALL_THREADED_CODE) && JIT_ENABLED
     bool success = true;
     RB_VM_LOCK_ENTER();
     rb_vm_barrier();
 
     // Compile a block version starting at the first instruction
-    uint8_t *code_ptr = gen_entry_point(iseq, 0, ec);
+    uint8_t *rb_yjit_iseq_gen_entry_point(const rb_iseq_t *iseq, rb_execution_context_t *ec); // defined in Rust
+    uint8_t *code_ptr = rb_yjit_iseq_gen_entry_point(iseq, ec);
 
     if (code_ptr) {
         iseq->body->jit_func = (yjit_func_t)code_ptr;
@@ -475,9 +452,6 @@ rb_yjit_compile_iseq(const rb_iseq_t *iseq, rb_execution_context_t *ec)
 
     RB_VM_LOCK_LEAVE();
     return success;
-#else
-    return false;
-#endif
 }
 
 struct yjit_block_itr {
@@ -566,7 +540,7 @@ cfp_get_self(struct rb_control_frame_struct *cfp) {
 }
 
 VALUE*
-cfp_get_ep(rb_execution_context_t *ec) {
+cfp_get_ep(struct rb_control_frame_struct *cfp) {
     return cfp->ep;
 }
 
@@ -1003,18 +977,6 @@ rb_yjit_iseq_free(const struct rb_iseq_constant_body *body)
     }
 
     rb_darray_free(body->yjit_blocks);
-}
-
-bool
-rb_yjit_enabled_p(void)
-{
-    return rb_yjit_opts.yjit_enabled;
-}
-
-unsigned
-rb_yjit_call_threshold(void)
-{
-    return rb_yjit_opts.call_threshold;
 }
 
 #define PTR2NUM(x)   (LONG2NUM((long)(x)))

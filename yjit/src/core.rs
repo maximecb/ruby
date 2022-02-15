@@ -208,7 +208,7 @@ pub struct BlockId
 }
 
 /// Null block id constant
-pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
+pub const BLOCKID_NULL: BlockId = BlockId { iseq: ptr::null(), idx: 0 };
 
 /// Branch code shape enumeration
 #[derive(PartialEq, Eq, Debug)]
@@ -251,6 +251,16 @@ struct Branch
     shape: BranchShape,
 }
 
+impl std::fmt::Debug for Branch
+{
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result
+    {
+        // TODO: expand this if needed. #[derive(Debug)] on Branch gave a
+        // strange error related to BranchGenFn
+        formatter.pad("Branch")
+    }
+}
+
 impl Branch
 {
     // Compute the size of the branch code
@@ -263,6 +273,7 @@ impl Branch
 
 // In case this block is invalidated, these two pieces of info
 // help to remove all pointers to this block in the system.
+#[derive(Debug)]
 struct CmeDependency
 {
     receiver_klass: VALUE,
@@ -272,6 +283,7 @@ struct CmeDependency
 /// Basic block version
 /// Represents a portion of an iseq compiled with a given context
 /// Note: care must be taken to minimize the size of block_t objects
+#[derive(Debug)]
 pub struct Block
 {
     // Bytecode sequence (iseq, idx) this is a version of
@@ -308,7 +320,7 @@ pub struct Block
 
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.
-    entry_exit: Option<CodePtr>,
+    pub entry_exit: Option<CodePtr>,
 }
 
 /// Reference-counted pointer to a block that can be borrowed mutably
@@ -328,6 +340,7 @@ type VersionMap = Vec<VersionList>;
 /// This will be dynamically allocated by C code
 /// C code should pass an &mut IseqPayload to us
 /// when calling into YJIT
+#[derive(Default)]
 struct IseqPayload
 {
     version_map: VersionMap
@@ -336,23 +349,30 @@ struct IseqPayload
 /// Get the payload object associated with an iseq
 fn get_iseq_payload(iseq: IseqPtr) -> &'static mut IseqPayload
 {
-    todo!();
+    use core::ffi::c_void;
+    type VoidPtr = *mut c_void;
 
+    let payload_non_null = unsafe {
+        let payload = rb_iseq_get_yjit_payload(iseq);
+        if payload.is_null() {
+            // Allocate a new payload with Box and transfer ownership to the GC.
+            // We drop the payload with Box::from_raw when the GC frees the iseq and calls us.
+            // NOTE(alan): Sometimes we read from an iseq without ever writing to it.
+            // We allocate in those cases anyways.
+            let new_payload = Box::into_raw(Box::new(IseqPayload::default()));
+            rb_iseq_set_yjit_payload(iseq, new_payload as VoidPtr);
 
-    // TODO: add black magic unsafe {} incantation here
-    // Need to read the iseq payload from the iseq
-    //unsafe {
-    //}
+            new_payload
+        } else {
+            payload as *mut IseqPayload
+        }
+    };
 
-
-
-
-    // TODO: may need to allocate the payload object here
-
-
-
-
-
+    // SAFETY: we should have the VM lock and all other Ruby threads should be asleep. So we have
+    // exclusive mutable access.
+    // Hmm, nothing seems to stop calling this on the same
+    // iseq twice, though, which violates aliasing rules.
+    unsafe { payload_non_null.as_mut() }.unwrap()
 }
 
 // Get all blocks for a particular place in an iseq.
@@ -374,7 +394,8 @@ fn get_num_versions(blockid: BlockId) -> usize
 {
     let insn_idx = blockid.idx as usize;
     let payload = get_iseq_payload(blockid.iseq);
-    return payload.version_map[insn_idx].len();
+
+    payload.version_map.get(insn_idx).map(|versions| versions.len()).unwrap_or(0)
 }
 
 /// Retrieve a basic block version for an (iseq, idx) tuple
@@ -580,6 +601,10 @@ impl Context {
 
     pub fn set_sp_offset(&mut self, offset: i16) {
         self.sp_offset = offset;
+    }
+
+    pub fn reset_chain_depth(&mut self) {
+        self.chain_depth = 0;
     }
 
     /// Get an operand for the adjusted stack pointer address
@@ -1070,7 +1095,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
     */
 
     // The entry context makes no assumptions about types
-    let blockid = BlockId { iseq: iseq, idx: insn_idx };
+    let blockid = BlockId { iseq, idx: insn_idx };
 
     // Get the inline code block
     let cb = CodegenGlobals::get_inline_cb();
@@ -1091,7 +1116,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
 
         // If the block contains no Ruby instructions
         Some(block) => {
-            let block = block.borrow_mut();
+            let block = block.borrow();
             if block.end_idx == insn_idx {
                 return None
             }

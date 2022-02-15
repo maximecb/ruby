@@ -1,6 +1,7 @@
 // YJIT combined compilation unit. This setup allows spreading functions
 // across different files without having to worry about putting things
 // in headers and prefixing function names.
+
 #include "internal.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
@@ -72,6 +73,43 @@ unsigned int
 rb_iseq_encoded_size(const rb_iseq_t *iseq)
 {
     return iseq->body->iseq_size;
+}
+
+// TODO(alan): consider using an opaque pointer for the payload rather than a void pointer
+void *
+rb_iseq_get_yjit_payload(const rb_iseq_t *iseq)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    return iseq->body->yjit_payload;
+}
+
+void
+rb_iseq_set_yjit_payload(const rb_iseq_t *iseq, void *payload)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    RUBY_ASSERT_ALWAYS(NULL == iseq->body->yjit_payload);
+    iseq->body->yjit_payload = payload;
+}
+
+// Get the PC for a given index in an iseq
+VALUE *
+rb_iseq_pc_at_idx(const rb_iseq_t *iseq, uint32_t insn_idx)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    RUBY_ASSERT_ALWAYS(insn_idx < iseq->body->iseq_size);
+    VALUE *encoded = iseq->body->iseq_encoded;
+    VALUE *pc = &encoded[insn_idx];
+    return pc;
+}
+
+int
+rb_iseq_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
+{
+    // YJIT should only use iseqs after AST to bytecode compilation
+    RUBY_ASSERT_ALWAYS(FL_TEST_RAW((VALUE)iseq, ISEQ_TRANSLATED));
+
+    const VALUE at_pc = *pc;
+    return rb_vm_insn_addr2opcode((const void *)at_pc);
 }
 
 #if YJIT_STATS
