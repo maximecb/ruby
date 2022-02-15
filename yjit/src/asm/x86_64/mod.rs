@@ -408,7 +408,7 @@ pub fn const_ptr_opnd(ptr: *const u8) -> X86Opnd
 
 pub fn code_ptr_opnd(code_ptr: CodePtr) -> X86Opnd
 {
-    uimm_opnd( code_ptr.raw_ptr() as u64)
+    uimm_opnd(code_ptr.raw_ptr() as u64)
 }
 
 impl CodeBlock
