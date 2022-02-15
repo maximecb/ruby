@@ -137,8 +137,9 @@ rb_darray_capa(const void *ary)
 static inline void
 rb_darray_free(void *ary)
 {
-    rb_darray_meta_t *meta = ary;
-    ruby_sized_xfree(ary, meta->capa);
+    /*rb_darray_meta_t *meta = ary;*/
+    /*ruby_sized_xfree(ary, meta->capa);*/
+    free(ary);
 }
 
 // Internal function. Calculate buffer size on malloc heap.
