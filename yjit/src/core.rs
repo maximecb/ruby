@@ -212,7 +212,7 @@ pub const BLOCKID_NULL: BlockId = BlockId { iseq: IseqPtr(0), idx: 0 };
 
 /// Branch code shape enumeration
 #[derive(PartialEq, Eq, Debug)]
-enum BranchShape
+pub enum BranchShape
 {
     Next0,  // Target 0 is next
     Next1,  // Target 1 is next
@@ -1351,7 +1351,7 @@ fn get_branch_target(
     */
 }
 
-fn gen_branch(
+pub fn gen_branch(
     jit: &JITState,
     src_ctx: &Context,
     target0: BlockId,
@@ -1393,7 +1393,7 @@ fn gen_jump_branch(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape
     }
 }
 
-fn gen_direct_jump(
+pub fn gen_direct_jump(
     jit: &JITState,
     ctx: &Context,
     target0: BlockId

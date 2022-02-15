@@ -104,7 +104,7 @@ impl JITState {
     }
 }
 
-pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
+pub fn jit_get_arg(jit: &JITState, arg_idx: isize) -> VALUE
 {
     // insn_len require non-test config
     #[cfg(not(test))]
@@ -3151,20 +3151,21 @@ fn gen_branchnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
     EndBlock
 }
+*/
 
 fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
+    let jump_offset = jit_get_arg(jit, 0).as_i32();
 
     // Check for interrupts, but only on backward branches that may create loops
-    if (jump_offset < 0) {
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    if jump_offset < 0 {
+        let side_exit = get_side_exit(jit, ocb, ctx);
         gen_check_ints(cb, side_exit);
     }
 
     // Get the branch target instruction offsets
-    uint32_t jump_idx = jit_next_insn_idx(jit) + jump_offset;
-    blockid_t jump_block = { jit->iseq, jump_idx };
+    let jump_idx = (jit_next_insn_idx(jit) as i32) + jump_offset;
+    let jump_block = BlockId { iseq: jit.iseq, idx: jump_idx as u32 };
 
     // Generate the jump instruction
     gen_direct_jump(
@@ -3177,13 +3178,12 @@ fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 }
 
 /*
-Guard that self or a stack operand has the same class as `known_klass`, using
-`sample_instance` to speculate about the shape of the runtime value.
-FIXNUM and on-heap integers are treated as if they have distinct classes, and
-the guard generated for one will fail for the other.
-
-Recompile as contingency if possible, or take side exit a last resort.
-*/
+/// Guard that self or a stack operand has the same class as `known_klass`, using
+/// `sample_instance` to speculate about the shape of the runtime value.
+/// FIXNUM and on-heap integers are treated as if they have distinct classes, and
+/// the guard generated for one will fail for the other.
+///
+/// Recompile as contingency if possible, or take side exit a last resort.
 static bool
 jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_t insn_opnd, VALUE sample_instance, const int max_chain_depth, uint8_t *side_exit)
 {
@@ -5277,7 +5277,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(branchif), gen_branchif);
         yjit_reg_op(BIN(branchunless), gen_branchunless);
         yjit_reg_op(BIN(branchnil), gen_branchnil);
-        yjit_reg_op(BIN(jump), gen_jump);
+        */
+        OP_JUMP => Some(gen_jump),
+        /*
         yjit_reg_op(BIN(getblockparamproxy), gen_getblockparamproxy);
         yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
         yjit_reg_op(BIN(send), gen_send);
