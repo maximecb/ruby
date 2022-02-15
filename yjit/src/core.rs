@@ -1307,48 +1307,58 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
 fn get_branch_target(
     target: BlockId,
     ctx: &Context,
-    branch: &Branch,
-    target_idx: u32
+    branchref: &BranchRef,
+    target_idx: u32,
+    ocb: &mut OutlinedCb
 ) -> CodePtr
 {
-    todo!();
-
-    /*
-    block_t *p_block = find_block_version(target, ctx);
+    let maybe_block = find_block_version(target, ctx);
 
     // If the block already exists
-    if (p_block) {
+    if let Some(blockref) = maybe_block {
+        let mut block = blockref.borrow_mut();
+
         // Add an incoming branch for this version
-        rb_darray_append(&p_block->incoming, branch);
-        branch->blocks[target_idx] = p_block;
+        block.incoming.push(branchref.clone());
+        let mut branch = branchref.borrow_mut();
+        branch.blocks[target_idx as usize] = Some(blockref.clone());
 
-        // Return a pointer to the compiled code
-        return p_block->start_addr;
+        // Return a pointer to the compiled code for the block
+        return block.start_addr.unwrap();
     }
 
-    // Do we have enough memory for a stub?
-    const long MAX_CODE_SIZE = 64;
-    if (ocb->write_pos + MAX_CODE_SIZE >= cb->mem_size) {
-        return NULL;
-    }
+    let ocb = ocb.unwrap();
 
     // Generate an outlined stub that will call branch_stub_hit()
-    uint8_t *stub_addr = cb_get_ptr(ocb, ocb->write_pos);
+    let stub_addr = ocb.get_write_ptr();
 
     // Call branch_stub_hit(branch_idx, target_idx, ec)
     mov(ocb, C_ARG_REGS[2], REG_EC);
-    mov(ocb, C_ARG_REGS[1], imm_opnd(target_idx));
-    mov(ocb, C_ARG_REGS[0], const_ptr_opnd(branch));
-    call_ptr(ocb, REG0, (void *)&branch_stub_hit);
+    mov(ocb, C_ARG_REGS[1], uimm_opnd(target_idx as u64));
+
+
+
+    todo!();
+
+
+
+
+    // TODO: here we need a way to send a branchref over. Hmmm.
+    //mov(ocb, C_ARG_REGS[0], const_ptr_opnd(branch));
+
+
+
+    // TODO: here we need a C function pointer to branch_stub_hit
+    //call_ptr(ocb, REG0, branch_stub_hit);
+
+
+
 
     // Jump to the address returned by the
     // branch_stub_hit call
-    jmp_rm(ocb, RAX);
+    //jmp_rm(ocb, RAX);
 
-    RUBY_ASSERT(cb_get_ptr(ocb, ocb->write_pos) - stub_addr <= MAX_CODE_SIZE);
-
-    return stub_addr;
-    */
+    //return stub_addr;
 }
 
 pub fn gen_branch(
@@ -1363,7 +1373,7 @@ pub fn gen_branch(
 {
     assert!(target0 != BLOCKID_NULL);
 
-    todo!();
+    todo!("gen_branch() unimplemented");
 
     /*
     branch_t *branch = make_branch_entry(jit->block, src_ctx, gen_fn);
@@ -1399,7 +1409,7 @@ pub fn gen_direct_jump(
     target0: BlockId
 )
 {
-    todo!();
+    todo!("gen_direct_jump() unimplemented");
 
     /*
     RUBY_ASSERT(target0.iseq != NULL);
@@ -1460,7 +1470,8 @@ pub fn defer_compilation(jit: &JITState, cb: &mut CodeBlock, cur_ctx: &Context)
     gen_jump_branch(cb, branch.dst_addrs[0], CodePtr::from(ptr::null()), BranchShape::Default);
     branch.end_addr = Some(cb.get_write_ptr());
     */
-    todo!()
+
+    todo!("defer_compilation() not yet implemented");
 }
 
 /*
