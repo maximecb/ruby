@@ -47,6 +47,7 @@
     rb_darray_set(*(ptr_to_ary), \
                   (*(ptr_to_ary))->meta.size, \
                   (element)); \
+    (*(ptr_to_ary))->meta.size++; \
 } while (0)
 
 // Last element of the array
@@ -117,7 +118,7 @@ rb_darray_capa(const void *ary)
 static inline void
 rb_darray_free(void *ary)
 {
-    rb_darray_meta_t *meta = ary;
+    /*rb_darray_meta_t *meta = ary;*/
     /*ruby_sized_xfree(ary, meta->capa);*/
     free(ary);
 }
@@ -163,7 +164,7 @@ rb_darray_make_impl(void *ptr_to_ary, size_t array_size, size_t header_size, siz
     }
 
     // malloc with size (array_size * element_size + header_size)
-    rb_darray_meta_t *meta = calloc(array_size * element_size + header_size);
+    rb_darray_meta_t *meta = calloc(array_size * element_size + header_size, 1);
     /*rb_darray_meta_t *meta = rb_xcalloc_mul_add(array_size, element_size, header_size);*/
 
     meta->size = array_size;
