@@ -108,12 +108,12 @@ impl JITState {
     }
 }
 
-pub fn jit_get_arg(jit:&JITState, arg_idx:isize) -> VALUE
+pub fn jit_get_arg(jit: &JITState, arg_idx: isize) -> VALUE
 {
     // insn_len require non-test config
     #[cfg(not(test))]
     assert!(insn_len(jit.get_opcode()) > (arg_idx + 1).try_into().unwrap());
-    unsafe { *(jit.get_pc().offset(arg_idx + 1)) }
+    unsafe { *(jit.pc.offset(arg_idx + 1)) }
 }
 
 // Load a VALUE into a register and keep track of the reference if it is on the GC heap.
@@ -164,54 +164,52 @@ fn jit_next_insn_idx(jit: &JITState) -> u32
     jit.insn_idx + insn_len(jit.get_opcode())
 }
 
-/*
 // Check if we are compiling the instruction at the stub PC
 // Meaning we are compiling the instruction that is next to execute
-static bool
-jit_at_current_insn(jitstate_t *jit)
+fn jit_at_current_insn(jit: &JITState) -> bool
 {
-    const VALUE *ec_pc = jit->ec->cfp->pc;
-    return (ec_pc == jit->pc);
+    let ec_pc:*mut VALUE = unsafe { cfp_get_pc(ec_get_cfp(jit.ec.unwrap())) };
+    ec_pc == jit.pc
 }
 
 // Peek at the nth topmost value on the Ruby stack.
 // Returns the topmost value when n == 0.
-static VALUE
-jit_peek_at_stack(jitstate_t *jit, ctx_t *ctx, int n)
+fn jit_peek_at_stack(jit: &JITState, ctx: &Context, n:isize) -> VALUE
 {
-    RUBY_ASSERT(jit_at_current_insn(jit));
+    assert!(jit_at_current_insn(jit));
 
     // Note: this does not account for ctx->sp_offset because
     // this is only available when hitting a stub, and while
     // hitting a stub, cfp->sp needs to be up to date in case
     // codegen functions trigger GC. See :stub-sp-flush:.
-    VALUE *sp = jit->ec->cfp->sp;
+    return unsafe {
+        let sp:*mut VALUE = cfp_get_sp(ec_get_cfp(jit.ec.unwrap()));
 
-    return *(sp - 1 - n);
+        *(sp.offset(-1 - n))
+    }
 }
 
-static VALUE
-jit_peek_at_self(jitstate_t *jit, ctx_t *ctx)
+/*
+fn jit_peek_at_self(jit: &JITState, ctx: &Context) -> VALUE
 {
-    return jit->ec->cfp->self;
+    unsafe { cfp_get_self(ec_get_cfp(jit.ec.unwrap())) }
 }
 
-RBIMPL_ATTR_MAYBE_UNUSED()
-static VALUE
-jit_peek_at_local(jitstate_t *jit, ctx_t *ctx, int n)
+fn jit_peek_at_local(jit: &JITState, ctx: &Context, n: i32) -> VALUE
 {
-    RUBY_ASSERT(jit_at_current_insn(jit));
+    assert!(jit_at_current_insn(jit));
 
-    int32_t local_table_size = jit->iseq->body->local_table_size;
-    RUBY_ASSERT(n < (int)jit->iseq->body->local_table_size);
+    let local_table_size:isize = unsafe { get_iseq_body_local_table_size(jit.iseq) }.try_into().unwrap();
+    assert!(n < local_table_size.try_into().unwrap());
 
-    const VALUE *ep = jit->ec->cfp->ep;
-    return ep[-VM_ENV_DATA_SIZE - local_table_size + n + 1];
+    unsafe {
+        let ep = cfp_get_ep(ec_get_cfp(jit.ec.unwrap()));
+        let n_isize:isize = n.try_into().unwrap();
+        let offs:isize = -(VM_ENV_DATA_SIZE as isize) - local_table_size + n_isize + 1;
+        * ep.offset(offs)
+    }
 }
 */
-
-
-
 
 
 
@@ -1074,6 +1072,50 @@ fn gen_adjuststack(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
     KeepCompiling
 }
 
+fn gen_opt_plus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
+{
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, cb, ctx);
+        return EndBlock;
+    }
+
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
+
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
+        // Create a side-exit to fall back to the interpreter
+        // Note: we generate the side-exit before popping operands from the stack
+        let side_exit = get_side_exit(jit, ocb, ctx);
+
+        /*
+        if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_PLUS)) {
+            return YJIT_CANT_COMPILE;
+        }
+        */
+
+        // Check that both operands are fixnums
+        guard_two_fixnums(ctx, cb, side_exit);
+
+        // Get the operands and destination from the stack
+        let arg1 = ctx.stack_pop(1);
+        let arg0 = ctx.stack_pop(1);
+
+        // Add arg0 + arg1 and test for overflow
+        mov(cb, REG0, arg0);
+        sub(cb, REG0, imm_opnd(1));
+        add(cb, REG0, arg1);
+        jo_ptr(cb, side_exit);
+
+        // Push the output on the stack
+        let dst = ctx.stack_push(Type::Fixnum);
+        mov(cb, dst, REG0);
+
+        KeepCompiling
+    } else {
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1730,19 +1772,19 @@ fn gen_setlocal_wc1(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
     gen_setlocal_generic(jit, ctx, cb, ocb, idx, 1)
 }
 
-/*
 // new hash initialized from top N values
 fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t num = (int32_t)jit_get_arg(jit, 0);
+    let num:i64 = jit_get_arg(jit, 0).as_i64();
 
     // Save the PC and SP because we are allocating
-    jit_prepare_routine_call(jit, ctx, REG0);
+    jit_prepare_routine_call(jit, ctx, cb, REG0);
 
-    if (num) {
+    if num != 0 {
         // val = rb_hash_new_with_size(num / 2);
         mov(cb, C_ARG_REGS[0], imm_opnd(num / 2));
-        call_ptr(cb, REG0, (void *)rb_hash_new_with_size);
+        let hn_code_ptr = CodePtr::from(rb_hash_new_with_size as *mut u8);
+        call_ptr(cb, REG0, hn_code_ptr);
 
         // save the allocated hash as we want to push it after insertion
         push(cb, RAX);
@@ -1750,20 +1792,22 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
         // rb_hash_bulk_insert(num, STACK_ADDR_FROM_TOP(num), val);
         mov(cb, C_ARG_REGS[0], imm_opnd(num));
-        lea(cb, C_ARG_REGS[1], ctx.stack_opnd(num - 1));
+        lea(cb, C_ARG_REGS[1], ctx.stack_opnd((num - 1).try_into().unwrap()));
         mov(cb, C_ARG_REGS[2], RAX);
-        call_ptr(cb, REG0, (void *)rb_hash_bulk_insert);
+        let bi_code_opnd = CodePtr::from(rb_hash_bulk_insert as *mut u8);
+        call_ptr(cb, REG0, bi_code_opnd);
 
         pop(cb, RAX); // alignment
         pop(cb, RAX);
 
-        ctx.stack_pop(num);
+        ctx.stack_pop(num.try_into().unwrap());
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
     }
     else {
         // val = rb_hash_new();
-        call_ptr(cb, REG0, (void *)rb_hash_new);
+        let hn_code_ptr = CodePtr::from(rb_hash_new as *mut u8);
+        call_ptr(cb, REG0, hn_code_ptr);
 
         let stack_ret = ctx.stack_push(Type::Hash);
         mov(cb, stack_ret, RAX);
@@ -1772,6 +1816,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
+/*
 fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     VALUE put_val = jit_get_arg(jit, 0);
@@ -2099,7 +2144,7 @@ fn gen_getinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -2182,59 +2227,59 @@ fn gen_defined(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     KeepCompiling
 }
+*/
 
 fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    enum ruby_value_type type_val = (enum ruby_value_type)jit_get_arg(jit, 0);
+    let type_val = jit_get_arg(jit, 0).as_usize();
+
     // Only three types are emitted by compile.c
-    if (type_val == T_STRING || type_val == T_ARRAY || type_val == T_HASH) {
-        val_type_t val_type = ctx.get_opnd_type(StackOpnd(0));
+    if type_val == RUBY_T_STRING || type_val == RUBY_T_ARRAY || type_val == RUBY_T_HASH {
+        let val_type = ctx.get_opnd_type(StackOpnd(0));
         let val = ctx.stack_pop(1);
 
-        x86opnd_t stack_ret;
-
         // Check if we know from type information
-        if ((type_val == T_STRING && val_type.type == ETYPE_STRING) ||
-                (type_val == T_ARRAY && val_type.type == ETYPE_ARRAY) ||
-                (type_val == T_HASH && val_type.type == ETYPE_HASH)) {
+        if (type_val == RUBY_T_STRING && val_type == Type::String) ||
+                (type_val == RUBY_T_ARRAY && val_type == Type::Array) ||
+                (type_val == RUBY_T_HASH && val_type == Type::Hash) {
             // guaranteed type match
-            stack_ret = ctx.stack_push(Type::True);
-            mov(cb, stack_ret, imm_opnd(Qtrue));
+            let stack_ret = ctx.stack_push(Type::True);
+            mov(cb, stack_ret, uimm_opnd(Qtrue.as_u64()));
             return KeepCompiling;
         }
-        else if (val_type.is_imm || val_type.type != ETYPE_UNKNOWN) {
+        else if val_type.is_imm() || val_type != Type::Unknown {
             // guaranteed not to match T_STRING/T_ARRAY/T_HASH
-            stack_ret = ctx.stack_push(Type::False);
-            mov(cb, stack_ret, imm_opnd(Qfalse));
+            let stack_ret = ctx.stack_push(Type::False);
+            mov(cb, stack_ret, uimm_opnd(Qfalse.as_u64()));
             return KeepCompiling;
         }
 
         mov(cb, REG0, val);
-        mov(cb, REG1, imm_opnd(Qfalse));
+        mov(cb, REG1, uimm_opnd(Qfalse.as_u64()));
 
-        uint32_t ret = cb_new_label(cb, "ret");
+        let ret = cb.new_label("ret".to_string());
 
-        if (!val_type.is_heap) {
+        if !val_type.is_heap() {
             // if (SPECIAL_CONST_P(val)) {
             // Return Qfalse via REG1 if not on heap
-            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
+            test(cb, REG0, uimm_opnd(RUBY_IMMEDIATE_MASK as u64));
             jnz_label(cb, ret);
-            cmp(cb, REG0, imm_opnd(Qnil));
+            cmp(cb, REG0, uimm_opnd(Qnil.as_u64()));
             jbe_label(cb, ret);
         }
 
         // Check type on object
-        mov(cb, REG0, mem_opnd(64, REG0, offsetof(struct RBasic, flags)));
-        and(cb, REG0, imm_opnd(RUBY_T_MASK));
-        cmp(cb, REG0, imm_opnd(type_val));
-        mov(cb, REG0, imm_opnd(Qtrue));
+        mov(cb, REG0, mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_FLAGS));
+        and(cb, REG0, uimm_opnd(RUBY_T_MASK as u64));
+        cmp(cb, REG0, uimm_opnd(type_val as u64));
+        mov(cb, REG0, uimm_opnd(Qtrue.as_u64()));
         // REG1 contains Qfalse from above
         cmove(cb, REG1, REG0);
 
-        cb_write_label(cb, ret);
-        stack_ret = ctx.stack_push(Type::UnknownImm);
+        cb.write_label(ret);
+        let stack_ret = ctx.stack_push(Type::UnknownImm);
         mov(cb, stack_ret, REG1);
-        cb_link_labels(cb);
+        cb.link_labels();
 
         KeepCompiling
     }
@@ -2243,6 +2288,7 @@ fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     }
 }
 
+/*
 fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     rb_num_t n = (rb_num_t)jit_get_arg(jit, 0);
@@ -2263,47 +2309,47 @@ fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, 
 
     KeepCompiling
 }
+*/
 
-static void
-guard_two_fixnums(ctx_t *ctx, uint8_t *side_exit)
+fn guard_two_fixnums(ctx: &mut Context, cb: &mut CodeBlock, side_exit: CodePtr)
 {
     // Get the stack operand types
-    val_type_t arg1_type = ctx.get_opnd_type(StackOpnd(0));
-    val_type_t arg0_type = ctx.get_opnd_type(StackOpnd(1));
+    let arg1_type = ctx.get_opnd_type(StackOpnd(0));
+    let arg0_type = ctx.get_opnd_type(StackOpnd(1));
 
-    if (arg0_type.is_heap || arg1_type.is_heap) {
+    if arg0_type.is_heap() || arg1_type.is_heap() {
         jmp_ptr(cb, side_exit);
         return;
     }
 
-    if (arg0_type.type != ETYPE_FIXNUM && arg0_type.type != ETYPE_UNKNOWN) {
+    if arg0_type != Type::Fixnum && arg0_type != Type::Unknown {
         jmp_ptr(cb, side_exit);
         return;
     }
 
-    if (arg1_type.type != ETYPE_FIXNUM && arg1_type.type != ETYPE_UNKNOWN) {
+    if arg1_type != Type::Fixnum && arg1_type != Type::Unknown {
         jmp_ptr(cb, side_exit);
         return;
     }
 
-    RUBY_ASSERT(!arg0_type.is_heap);
-    RUBY_ASSERT(!arg1_type.is_heap);
-    RUBY_ASSERT(arg0_type.type == ETYPE_FIXNUM || arg0_type.type == ETYPE_UNKNOWN);
-    RUBY_ASSERT(arg1_type.type == ETYPE_FIXNUM || arg1_type.type == ETYPE_UNKNOWN);
+    assert!(! arg0_type.is_heap());
+    assert!(! arg1_type.is_heap());
+    assert!(arg0_type == Type::Fixnum || arg0_type == Type::Unknown);
+    assert!(arg1_type == Type::Fixnum || arg1_type == Type::Unknown);
 
     // Get stack operands without popping them
     let arg1 = ctx.stack_opnd(0);
     let arg0 = ctx.stack_opnd(1);
 
     // If not fixnums, fall back
-    if (arg0_type.type != ETYPE_FIXNUM) {
+    if arg0_type != Type::Fixnum {
         add_comment(cb, "guard arg0 fixnum");
-        test(cb, arg0, imm_opnd(RUBY_FIXNUM_FLAG));
+        test(cb, arg0, uimm_opnd(RUBY_FIXNUM_FLAG as u64));
         jz_ptr(cb, side_exit);
     }
-    if (arg1_type.type != ETYPE_FIXNUM) {
+    if arg1_type != Type::Fixnum {
         add_comment(cb, "guard arg1 fixnum");
-        test(cb, arg1, imm_opnd(RUBY_FIXNUM_FLAG));
+        test(cb, arg1, uimm_opnd(RUBY_FIXNUM_FLAG as u64));
         jz_ptr(cb, side_exit);
     }
 
@@ -2313,30 +2359,32 @@ guard_two_fixnums(ctx_t *ctx, uint8_t *side_exit)
 }
 
 // Conditional move operation used by comparison operators
-typedef void (*cmov_fn)(codeblock_t *cb, x86opnd_t opnd0, x86opnd_t opnd1);
+type CmovFn = fn(cb: &mut CodeBlock, opnd0: X86Opnd, opnd1: X86Opnd) -> ();
 
-fn gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
+fn gen_fixnum_cmp(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb, cmov_op:CmovFn) -> CodegenStatus
 {
     // Defer compilation so we can specialize base on a runtime receiver
-    if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
+        /*
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_LT)) {
             return CantCompile;
         }
+        */
 
         // Check that both operands are fixnums
-        guard_two_fixnums(ctx, side_exit);
+        guard_two_fixnums(ctx, cb, side_exit);
 
         // Get the operands from the stack
         let arg1 = ctx.stack_pop(1);
@@ -2346,7 +2394,7 @@ fn gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
         xor(cb, REG0_32, REG0_32); // REG0 = Qfalse
         mov(cb, REG1, arg0);
         cmp(cb, REG1, arg1);
-        mov(cb, REG1, imm_opnd(Qtrue));
+        mov(cb, REG1, uimm_opnd(Qtrue.into()));
         cmov_op(cb, REG0, REG1);
 
         // Push the output on the stack
@@ -2356,30 +2404,31 @@ fn gen_fixnum_cmp(jitstate_t *jit, ctx_t *ctx, cmov_fn cmov_op)
         KeepCompiling
     }
     else {
-        return gen_opt_send_without_block(jit, ctx, cb);
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
     }
 }
 
 fn gen_opt_lt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_fixnum_cmp(jit, ctx, cmovl);
+    gen_fixnum_cmp(jit, ctx, cb, ocb, cmovl)
 }
 
 fn gen_opt_le(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_fixnum_cmp(jit, ctx, cmovle);
+    gen_fixnum_cmp(jit, ctx, cb, ocb, cmovle)
 }
 
 fn gen_opt_ge(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_fixnum_cmp(jit, ctx, cmovge);
+    gen_fixnum_cmp(jit, ctx, cb, ocb, cmovge)
 }
 
 fn gen_opt_gt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    return gen_fixnum_cmp(jit, ctx, cmovg);
+    gen_fixnum_cmp(jit, ctx, cb, ocb, cmovg)
 }
 
+/*
 // Implements specialized equality for either two fixnum or two strings
 // Returns true if code was generated, otherwise false
 static bool
@@ -2463,7 +2512,7 @@ fn gen_opt_eq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &m
 {
     // Defer compilation so we can specialize base on a runtime receiver
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -2502,7 +2551,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
     // Defer compilation so we can specialize base on a runtime receiver
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -2606,7 +2655,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 {
     // Defer compilation so we can specialize on a runtime `self`
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -2681,29 +2730,32 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         return gen_opt_send_without_block(jit, ctx, cb);
     }
 }
+*/
 
 fn gen_opt_and(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
-    if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
+        /*
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_AND)) {
             return CantCompile;
         }
+        */
 
         // Check that both operands are fixnums
-        guard_two_fixnums(ctx, side_exit);
+        guard_two_fixnums(ctx, cb, side_exit);
 
         // Get the operands and destination from the stack
         let arg1 = ctx.stack_pop(1);
@@ -2721,32 +2773,34 @@ fn gen_opt_and(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     }
     else {
         // Delegate to send, call the method on the recv
-        return gen_opt_send_without_block(jit, ctx, cb);
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
     }
 }
 
 fn gen_opt_or(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
-    if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
+        /*
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_OR)) {
             return CantCompile;
         }
+        */
 
         // Check that both operands are fixnums
-        guard_two_fixnums(ctx, side_exit);
+        guard_two_fixnums(ctx, cb, side_exit);
 
         // Get the operands and destination from the stack
         let arg1 = ctx.stack_pop(1);
@@ -2764,32 +2818,34 @@ fn gen_opt_or(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &m
     }
     else {
         // Delegate to send, call the method on the recv
-        return gen_opt_send_without_block(jit, ctx, cb);
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
     }
 }
 
 fn gen_opt_minus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize on a runtime `self`
-    if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+    if !jit_at_current_insn(jit) {
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
         // Create a side-exit to fall back to the interpreter
         // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+        let side_exit = get_side_exit(jit, ocb, ctx);
 
+        /*
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_MINUS)) {
             return CantCompile;
         }
+        */
 
         // Check that both operands are fixnums
-        guard_two_fixnums(ctx, side_exit);
+        guard_two_fixnums(ctx, cb, side_exit);
 
         // Get the operands and destination from the stack
         let arg1 = ctx.stack_pop(1);
@@ -2809,55 +2865,11 @@ fn gen_opt_minus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
     }
     else {
         // Delegate to send, call the method on the recv
-        return gen_opt_send_without_block(jit, ctx, cb);
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
     }
 }
 
-fn gen_opt_plus(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
-{
-    // Defer compilation so we can specialize on a runtime `self`
-    if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
-        return EndBlock;
-    }
-
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
-
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
-        // Create a side-exit to fall back to the interpreter
-        // Note: we generate the side-exit before popping operands from the stack
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
-
-        if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_PLUS)) {
-            return CantCompile;
-        }
-
-        // Check that both operands are fixnums
-        guard_two_fixnums(ctx, side_exit);
-
-        // Get the operands and destination from the stack
-        let arg1 = ctx.stack_pop(1);
-        let arg0 = ctx.stack_pop(1);
-
-        // Add arg0 + arg1 and test for overflow
-        mov(cb, REG0, arg0);
-        sub(cb, REG0, imm_opnd(1));
-        add(cb, REG0, arg1);
-        jo_ptr(cb, side_exit);
-
-        // Push the output on the stack
-        let dst = ctx.stack_push(Type::Fixnum);
-        mov(cb, dst, REG0);
-
-        KeepCompiling
-    }
-    else {
-        // Delegate to send, call the method on the recv
-        return gen_opt_send_without_block(jit, ctx, cb);
-    }
-}
-
+/*
 fn gen_opt_mult(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Delegate to send, call the method on the recv
@@ -2984,33 +2996,31 @@ fn gen_opt_case_dispatch(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
 
     KeepCompiling // continue with the next instruction
 }
+*/
 
-static void
-gen_branchif_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_branchif_branch(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-        jz_ptr(cb, target1);
-        break;
-
-      case SHAPE_NEXT1:
-        jnz_ptr(cb, target0);
-        break;
-
-      case SHAPE_DEFAULT:
-        jnz_ptr(cb, target0);
-        jmp_ptr(cb, target1);
-        break;
+    match shape {
+        BranchShape::Next0 => {
+            jz_ptr(cb, target1);
+        },
+        BranchShape::Next1 => {
+            jnz_ptr(cb, target0);
+        },
+        BranchShape::Default => {
+            jnz_ptr(cb, target0);
+            jmp_ptr(cb, target1);
+        }
     }
 }
 
 fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
+    let jump_offset = jit_get_arg(jit, 0).as_i32();
 
     // Check for interrupts, but only on backward branches that may create loops
-    if (jump_offset < 0) {
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    if jump_offset < 0 {
+        let side_exit = get_side_exit(jit, ocb, ctx);
         gen_check_ints(cb, side_exit);
     }
 
@@ -3018,13 +3028,13 @@ fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // RUBY_Qfalse  /* ...0000 0000 */
     // RUBY_Qnil    /* ...0000 1000 */
     let val_opnd = ctx.stack_pop(1);
-    test(cb, val_opnd, imm_opnd(~Qnil));
+    test(cb, val_opnd, imm_opnd(!Qnil.as_i64()));
 
     // Get the branch target instruction offsets
-    uint32_t next_idx = jit_next_insn_idx(jit);
-    uint32_t jump_idx = next_idx + jump_offset;
-    blockid_t next_block = { jit->iseq, next_idx };
-    blockid_t jump_block = { jit->iseq, jump_idx };
+    let next_idx = jit_next_insn_idx(jit);
+    let jump_idx = (next_idx as i32) + jump_offset;
+    let next_block = BlockId { iseq: jit.iseq, idx: next_idx };
+    let jump_block = BlockId { iseq: jit.iseq, idx: jump_idx as u32 };
 
     // Generate the branch instructions
     gen_branch(
@@ -3040,6 +3050,7 @@ fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     EndBlock
 }
 
+/*
 static void
 gen_branchunless_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
 {
@@ -3148,20 +3159,21 @@ fn gen_branchnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
 
     EndBlock
 }
+*/
 
 fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
+    let jump_offset = jit_get_arg(jit, 0).as_i32();
 
     // Check for interrupts, but only on backward branches that may create loops
-    if (jump_offset < 0) {
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    if jump_offset < 0 {
+        let side_exit = get_side_exit(jit, ocb, ctx);
         gen_check_ints(cb, side_exit);
     }
 
     // Get the branch target instruction offsets
-    uint32_t jump_idx = jit_next_insn_idx(jit) + jump_offset;
-    blockid_t jump_block = { jit->iseq, jump_idx };
+    let jump_idx = (jit_next_insn_idx(jit) as i32) + jump_offset;
+    let jump_block = BlockId { iseq: jit.iseq, idx: jump_idx as u32 };
 
     // Generate the jump instruction
     gen_direct_jump(
@@ -3174,13 +3186,12 @@ fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
 }
 
 /*
-Guard that self or a stack operand has the same class as `known_klass`, using
-`sample_instance` to speculate about the shape of the runtime value.
-FIXNUM and on-heap integers are treated as if they have distinct classes, and
-the guard generated for one will fail for the other.
-
-Recompile as contingency if possible, or take side exit a last resort.
-*/
+/// Guard that self or a stack operand has the same class as `known_klass`, using
+/// `sample_instance` to speculate about the shape of the runtime value.
+/// FIXNUM and on-heap integers are treated as if they have distinct classes, and
+/// the guard generated for one will fail for the other.
+///
+/// Recompile as contingency if possible, or take side exit a last resort.
 static bool
 jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_t insn_opnd, VALUE sample_instance, const int max_chain_depth, uint8_t *side_exit)
 {
@@ -4327,7 +4338,7 @@ fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_ise
 
     // Defer compilation so we can specialize on class of receiver
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -4481,13 +4492,19 @@ fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_ise
         RUBY_ASSERT(false);
     }
 }
+*/
 
 fn gen_opt_send_without_block(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
+    /*
     struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
-    return gen_send_general(jit, ctx, cd, NULL);
+    gen_send_general(jit, ctx, cd, NULL)
+    */
+
+    todo!()
 }
 
+/*
 fn gen_send(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     struct rb_call_data *cd = (struct rb_call_data *)jit_get_arg(jit, 0);
@@ -4502,7 +4519,7 @@ fn gen_invokesuper(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 
     // Defer compilation so we can specialize on class of receiver
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -4727,7 +4744,7 @@ fn gen_anytostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
 fn gen_objtostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     if (!jit_at_current_insn(jit)) {
-        defer_compilation(jit, ctx);
+        defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
@@ -5220,6 +5237,16 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_SETLOCAL => Some(gen_setlocal),
         OP_SETLOCAL_WC_0 => Some(gen_setlocal_wc0),
         OP_SETLOCAL_WC_1 => Some(gen_setlocal_wc1),
+        OP_OPT_PLUS => Some(gen_opt_plus),
+        OP_OPT_MINUS => Some(gen_opt_minus),
+        OP_OPT_AND => Some(gen_opt_and),
+        OP_OPT_OR => Some(gen_opt_or),
+        OP_NEWHASH => Some(gen_newhash),
+        OP_CHECKTYPE => Some(gen_checktype),
+        OP_OPT_LT => Some(gen_opt_lt),
+        OP_OPT_LE => Some(gen_opt_le),
+        OP_OPT_GT => Some(gen_opt_gt),
+        OP_OPT_GE => Some(gen_opt_ge),
 
         /*
         yjit_reg_op(BIN(newarray), gen_newarray);
@@ -5227,27 +5254,17 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(duphash), gen_duphash);
         yjit_reg_op(BIN(splatarray), gen_splatarray);
         yjit_reg_op(BIN(expandarray), gen_expandarray);
-        yjit_reg_op(BIN(newhash), gen_newhash);
         yjit_reg_op(BIN(newrange), gen_newrange);
         yjit_reg_op(BIN(concatstrings), gen_concatstrings);
         yjit_reg_op(BIN(putstring), gen_putstring);
         yjit_reg_op(BIN(getinstancevariable), gen_getinstancevariable);
         yjit_reg_op(BIN(setinstancevariable), gen_setinstancevariable);
         yjit_reg_op(BIN(defined), gen_defined);
-        yjit_reg_op(BIN(checktype), gen_checktype);
         yjit_reg_op(BIN(checkkeyword), gen_checkkeyword);
-        yjit_reg_op(BIN(opt_lt), gen_opt_lt);
-        yjit_reg_op(BIN(opt_le), gen_opt_le);
-        yjit_reg_op(BIN(opt_ge), gen_opt_ge);
-        yjit_reg_op(BIN(opt_gt), gen_opt_gt);
         yjit_reg_op(BIN(opt_eq), gen_opt_eq);
         yjit_reg_op(BIN(opt_neq), gen_opt_neq);
         yjit_reg_op(BIN(opt_aref), gen_opt_aref);
         yjit_reg_op(BIN(opt_aset), gen_opt_aset);
-        yjit_reg_op(BIN(opt_and), gen_opt_and);
-        yjit_reg_op(BIN(opt_or), gen_opt_or);
-        yjit_reg_op(BIN(opt_minus), gen_opt_minus);
-        yjit_reg_op(BIN(opt_plus), gen_opt_plus);
         yjit_reg_op(BIN(opt_mult), gen_opt_mult);
         yjit_reg_op(BIN(opt_div), gen_opt_div);
         yjit_reg_op(BIN(opt_mod), gen_opt_mod);
@@ -5265,17 +5282,16 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(opt_invokebuiltin_delegate), gen_opt_invokebuiltin_delegate);
         yjit_reg_op(BIN(opt_invokebuiltin_delegate_leave), gen_opt_invokebuiltin_delegate);
         yjit_reg_op(BIN(opt_case_dispatch), gen_opt_case_dispatch);
-        yjit_reg_op(BIN(branchif), gen_branchif);
-        yjit_reg_op(BIN(branchunless), gen_branchunless);
-        yjit_reg_op(BIN(branchnil), gen_branchnil);
-        yjit_reg_op(BIN(jump), gen_jump);
-        yjit_reg_op(BIN(getblockparamproxy), gen_getblockparamproxy);
-        yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
-        yjit_reg_op(BIN(send), gen_send);
-        yjit_reg_op(BIN(invokesuper), gen_invokesuper);
         */
-
-        //OP_LEAVE => Some(gen_leave),
+        OP_BRANCHIF => Some(gen_branchif),
+        //yjit_reg_op(BIN(branchunless), gen_branchunless);
+        //yjit_reg_op(BIN(branchnil), gen_branchnil);
+        OP_JUMP => Some(gen_jump),
+        //yjit_reg_op(BIN(getblockparamproxy), gen_getblockparamproxy);
+        //yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
+        //yjit_reg_op(BIN(send), gen_send);
+        //yjit_reg_op(BIN(invokesuper), gen_invokesuper);
+        OP_LEAVE => Some(gen_leave),
 
         /*
         yjit_reg_op(BIN(getglobal), gen_getglobal);

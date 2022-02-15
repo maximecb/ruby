@@ -78,6 +78,7 @@
 //! [GhostCell]: http://plv.mpi-sws.org/rustbelt/ghostcell/
 
 use std::convert::From;
+use std::os::raw::{c_int, c_uint, c_long};
 
 // Textually include output from rust-bindgen as suggested by its user guide.
 include!("cruby_bindings.inc.rs");
@@ -89,7 +90,6 @@ include!("cruby_bindings.inc.rs");
 // Temporary, these external bindings will likely be auto-generated
 // and textually included in this file
 extern "C" {
-
     #[link_name = "rb_yjit_alloc_exec_mem"] // we can rename functions with this attribute
     pub fn alloc_exec_mem(mem_size: u32) -> *mut u8;
 
@@ -105,15 +105,28 @@ extern "C" {
     //pub fn LL2NUM((long long)ocb->write_pos) -> VALUE;
 
     #[link_name = "rb_yarv_insn_len"]
-    pub fn raw_insn_len(v: VALUE) -> std::os::raw::c_int;
+    pub fn raw_insn_len(v: VALUE) -> c_int;
+
+    pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
+
+    pub fn cfp_get_pc(cfp: CfpPtr) -> *mut VALUE;
+    pub fn cfp_get_sp(cfp: CfpPtr) -> *mut VALUE;
+    pub fn cfp_get_self(cfp: CfpPtr) -> VALUE;
+    pub fn cfp_get_ep(cfp: CfpPtr) -> *mut VALUE;
 
     #[link_name = "rb_iseq_encoded_size"]
-    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+    pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;
 
     // TODO: export these functions from the C side
-    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> std::os::raw::c_int;
+    pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> c_int;
 
-    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> std::os::raw::c_uint;
+    pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
+
+    pub fn rb_hash_new() -> VALUE;
+    pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
+
+    pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
+    pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -162,6 +175,11 @@ pub type IseqPtr = *const rb_iseq_t;
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 #[repr(C)]
 pub struct EcPtr(pub usize);
+
+/// Pointer to a control frame pointer (CFP)
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+#[repr(C)]
+pub struct CfpPtr(pub usize);
 
 impl VALUE {
     // Return whether the value is truthy or falsy in Ruby -- only nil and false are falsy.
@@ -230,6 +248,16 @@ impl VALUE {
     }
 
     pub fn as_u32(self:VALUE) -> u32 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
+    pub fn as_i64(self:VALUE) -> i64 {
+        let VALUE(i) = self;
+        i.try_into().unwrap()
+    }
+
+    pub fn as_u64(self:VALUE) -> u64 {
         let VALUE(i) = self;
         i.try_into().unwrap()
     }
