@@ -122,9 +122,6 @@ extern "C" {
 
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
-    pub fn rb_hash_new() -> VALUE;
-    pub fn rb_hash_aset(hash: VALUE, key: VALUE, value: VALUE) -> VALUE;
-
     pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
     pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
 }

@@ -540,7 +540,7 @@ cfp_get_self(struct rb_control_frame_struct *cfp) {
 }
 
 VALUE*
-cfp_get_ep(rb_execution_context_t *ec) {
+cfp_get_ep(struct rb_control_frame_struct *cfp) {
     return cfp->ep;
 }
 
