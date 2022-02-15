@@ -98,6 +98,27 @@ rb_iseq_set_yjit_payload(const rb_iseq_t *iseq, void *payload)
     iseq->body->yjit_payload = payload;
 }
 
+// Get the PC for a given index in an iseq
+VALUE *
+rb_iseq_pc_at_idx(const rb_iseq_t *iseq, uint32_t insn_idx)
+{
+    RUBY_ASSERT_ALWAYS(IMEMO_TYPE_P(iseq, imemo_iseq));
+    RUBY_ASSERT_ALWAYS(insn_idx < iseq->body->iseq_size);
+    VALUE *encoded = iseq->body->iseq_encoded;
+    VALUE *pc = &encoded[insn_idx];
+    return pc;
+}
+
+int
+rb_iseq_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
+{
+    // YJIT should only use iseqs after AST to bytecode compilation
+    RUBY_ASSERT_ALWAYS(FL_TEST_RAW((VALUE)iseq, ISEQ_TRANSLATED));
+
+    const VALUE at_pc = *pc;
+    return rb_vm_insn_addr2opcode((const void *)at_pc);
+}
+
 #if YJIT_STATS
 // Comments for generated code
 struct yjit_comment {

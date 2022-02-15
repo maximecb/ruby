@@ -17,3 +17,9 @@ extern "C" {
 extern "C" {
     pub fn rb_iseq_set_yjit_payload(iseq: *const rb_iseq_t, payload: *mut ::std::os::raw::c_void);
 }
+extern "C" {
+    pub fn rb_iseq_pc_at_idx(iseq: *const rb_iseq_t, insn_idx: u32) -> *mut VALUE;
+}
+extern "C" {
+    pub fn rb_iseq_opcode_at_pc(iseq: *const rb_iseq_t, pc: *const VALUE) -> ::std::os::raw::c_int;
+}

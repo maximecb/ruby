@@ -42,29 +42,6 @@ static const rb_data_type_t yjit_block_type = {
     0, 0, RUBY_TYPED_FREE_IMMEDIATELY
 };
 
-// Get the PC for a given index in an iseq
-static VALUE *
-yjit_iseq_pc_at_idx(const rb_iseq_t *iseq, uint32_t insn_idx)
-{
-    RUBY_ASSERT(iseq != NULL);
-    RUBY_ASSERT(insn_idx < iseq->body->iseq_size);
-    VALUE *encoded = iseq->body->iseq_encoded;
-    VALUE *pc = &encoded[insn_idx];
-    return pc;
-}
-
-static int
-yjit_opcode_at_pc(const rb_iseq_t *iseq, const VALUE *pc)
-{
-    const VALUE at_pc = *pc;
-    if (FL_TEST_RAW((VALUE)iseq, ISEQ_TRANSLATED)) {
-        return rb_vm_insn_addr2opcode((const void *)at_pc);
-    }
-    else {
-        return (int)at_pc;
-    }
-}
-
 // Verify that calling with cd on receiver goes to callee
 static void
 check_cfunc_dispatch(VALUE receiver, struct rb_callinfo *ci, void *callee, rb_callable_method_entry_t *compile_time_cme)

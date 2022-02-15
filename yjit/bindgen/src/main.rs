@@ -28,7 +28,9 @@ fn main() {
         .allowlist_function("rb_hash_aset")
 
         .allowlist_function("rb_iseq_(get|set)_yjit_payload")
-        .generate_inline_functions(true)
+
+        .allowlist_function("rb_iseq_pc_at_idx")
+        .allowlist_function("rb_iseq_opcode_at_pc")
 
         // We define VALUE manually
         .blocklist_type("VALUE")

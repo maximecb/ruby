@@ -180,7 +180,7 @@ pub struct Context
     sp_offset : i16,
 
     // Depth of this block in the sidechain (eg: inline-cache chain)
-    chain_depth: u8,
+    pub chain_depth: u8,
 
     // Local variable types we keep track of
     local_types: [Type; MAX_LOCAL_TYPES],
@@ -211,6 +211,7 @@ pub struct BlockId
 pub const BLOCKID_NULL: BlockId = BlockId { iseq: ptr::null(), idx: 0 };
 
 /// Branch code shape enumeration
+#[derive(Debug)]
 enum BranchShape
 {
     Next0,  // Target 0 is next
@@ -250,8 +251,17 @@ struct Branch
     shape: BranchShape,
 }
 
+impl std::fmt::Debug for Branch {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // TODO: expand this if needed. #[derive(Debug)] on Branch gave a
+        // strange error related to BranchGenFn
+        formatter.pad("Branch")
+    }
+}
+
 // In case this block is invalidated, these two pieces of info
 // help to remove all pointers to this block in the system.
+#[derive(Debug)]
 struct CmeDependency
 {
     receiver_klass: VALUE,
@@ -261,21 +271,22 @@ struct CmeDependency
 /// Basic block version
 /// Represents a portion of an iseq compiled with a given context
 /// Note: care must be taken to minimize the size of block_t objects
+#[derive(Debug)]
 pub struct Block
 {
     // Bytecode sequence (iseq, idx) this is a version of
-    blockid: BlockId,
+    pub blockid: BlockId,
 
     // Index one past the last instruction for this block in the iseq
-    end_idx: u32,
+    pub end_idx: u32,
 
     // Context at the start of the block
     // This should never be mutated
-    ctx: Context,
+    pub ctx: Context,
 
     // Positions where the generated code starts and ends
-    start_addr: Option<CodePtr>,
-    end_addr: Option<CodePtr>,
+    pub start_addr: Option<CodePtr>,
+    pub end_addr: Option<CodePtr>,
 
     // List of incoming branches (from predecessors)
     // These are reference counted (ownership shared between predecessor and successors)
@@ -294,7 +305,7 @@ pub struct Block
 
     // Code address of an exit for `ctx` and `blockid`.
     // Used for block invalidation.
-    entry_exit: Option<CodePtr>,
+    pub entry_exit: Option<CodePtr>,
 }
 
 /// Reference-counted pointer to a block that can be borrowed mutably
@@ -1045,7 +1056,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
     */
 
     // The entry context makes no assumptions about types
-    let blockid = BlockId { iseq: iseq, idx: insn_idx };
+    let blockid = BlockId { iseq, idx: insn_idx };
 
     // Get the inline code block
     let cb = CodegenGlobals::get_inline_cb();
@@ -1066,7 +1077,7 @@ pub fn gen_entry_point(iseq: IseqPtr, insn_idx: u32, ec: EcPtr) -> Option<CodePt
 
         // If the block contains no Ruby instructions
         Some(block) => {
-            let block = block.borrow_mut();
+            let block = block.borrow();
             if block.end_idx == insn_idx {
                 return None
             }
