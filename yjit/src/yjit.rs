@@ -21,7 +21,7 @@ pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool {
 pub extern "C" fn rb_yjit_enabled_p() -> raw::c_int {
     // Note that we might want to call this function from signal handlers so
     // might need to ensure signal-safety(7).
-    YJIT_ENABLED.load(Ordering::SeqCst).into()
+    YJIT_ENABLED.load(Ordering::Acquire).into()
 }
 
 /// On which invocation of the ISEQ to invoke YJIT?
@@ -49,7 +49,7 @@ pub extern "C" fn rb_yjit_init_rust() {
         // TODO:
         //Invariants::init() ?
 
-        YJIT_ENABLED.store(true, Ordering::SeqCst);
+        YJIT_ENABLED.store(true, Ordering::Release);
     });
 
 
