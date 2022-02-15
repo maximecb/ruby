@@ -1818,6 +1818,7 @@ fn gen_newhash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
 
     KeepCompiling
 }
+
 /*
 fn gen_putstring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -2289,6 +2290,7 @@ fn gen_checktype(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
         CantCompile
     }
 }
+
 /*
 fn gen_concatstrings(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -2997,33 +2999,31 @@ fn gen_opt_case_dispatch(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
 
     KeepCompiling // continue with the next instruction
 }
+*/
 
-static void
-gen_branchif_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_branchif_branch(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-        jz_ptr(cb, target1);
-        break;
-
-      case SHAPE_NEXT1:
-        jnz_ptr(cb, target0);
-        break;
-
-      case SHAPE_DEFAULT:
-        jnz_ptr(cb, target0);
-        jmp_ptr(cb, target1);
-        break;
+    match shape {
+        BranchShape::Next0 => {
+            jz_ptr(cb, target1);
+        },
+        BranchShape::Next1 => {
+            jnz_ptr(cb, target0);
+        },
+        BranchShape::Default => {
+            jnz_ptr(cb, target0);
+            jmp_ptr(cb, target1);
+        }
     }
 }
 
 fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    int32_t jump_offset = (int32_t)jit_get_arg(jit, 0);
+    let jump_offset = jit_get_arg(jit, 0).as_i32();
 
     // Check for interrupts, but only on backward branches that may create loops
-    if (jump_offset < 0) {
-        uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    if jump_offset < 0 {
+        let side_exit = get_side_exit(jit, ocb, ctx);
         gen_check_ints(cb, side_exit);
     }
 
@@ -3031,13 +3031,13 @@ fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     // RUBY_Qfalse  /* ...0000 0000 */
     // RUBY_Qnil    /* ...0000 1000 */
     let val_opnd = ctx.stack_pop(1);
-    test(cb, val_opnd, imm_opnd(~Qnil));
+    test(cb, val_opnd, imm_opnd(!Qnil.as_i64()));
 
     // Get the branch target instruction offsets
-    uint32_t next_idx = jit_next_insn_idx(jit);
-    uint32_t jump_idx = next_idx + jump_offset;
-    blockid_t next_block = { jit->iseq, next_idx };
-    blockid_t jump_block = { jit->iseq, jump_idx };
+    let next_idx = jit_next_insn_idx(jit);
+    let jump_idx = (next_idx as i32) + jump_offset;
+    let next_block = BlockId { iseq: jit.iseq, idx: next_idx };
+    let jump_block = BlockId { iseq: jit.iseq, idx: jump_idx as u32 };
 
     // Generate the branch instructions
     gen_branch(
@@ -3053,6 +3053,7 @@ fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     EndBlock
 }
 
+/*
 static void
 gen_branchunless_branch(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
 {
@@ -5284,19 +5285,16 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         yjit_reg_op(BIN(opt_invokebuiltin_delegate), gen_opt_invokebuiltin_delegate);
         yjit_reg_op(BIN(opt_invokebuiltin_delegate_leave), gen_opt_invokebuiltin_delegate);
         yjit_reg_op(BIN(opt_case_dispatch), gen_opt_case_dispatch);
-        yjit_reg_op(BIN(branchif), gen_branchif);
-        yjit_reg_op(BIN(branchunless), gen_branchunless);
-        yjit_reg_op(BIN(branchnil), gen_branchnil);
         */
+        OP_BRANCHIF => Some(gen_branchif),
+        //yjit_reg_op(BIN(branchunless), gen_branchunless);
+        //yjit_reg_op(BIN(branchnil), gen_branchnil);
         OP_JUMP => Some(gen_jump),
-        /*
-        yjit_reg_op(BIN(getblockparamproxy), gen_getblockparamproxy);
-        yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
-        yjit_reg_op(BIN(send), gen_send);
-        yjit_reg_op(BIN(invokesuper), gen_invokesuper);
-        */
-
-        //OP_LEAVE => Some(gen_leave),
+        //yjit_reg_op(BIN(getblockparamproxy), gen_getblockparamproxy);
+        //yjit_reg_op(BIN(opt_send_without_block), gen_opt_send_without_block);
+        //yjit_reg_op(BIN(send), gen_send);
+        //yjit_reg_op(BIN(invokesuper), gen_invokesuper);
+        OP_LEAVE => Some(gen_leave),
 
         /*
         yjit_reg_op(BIN(getglobal), gen_getglobal);
