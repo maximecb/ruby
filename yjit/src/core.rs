@@ -180,7 +180,7 @@ pub struct Context
     sp_offset : i16,
 
     // Depth of this block in the sidechain (eg: inline-cache chain)
-    pub chain_depth: u8,
+    chain_depth: u8,
 
     // Local variable types we keep track of
     local_types: [Type; MAX_LOCAL_TYPES],
@@ -287,18 +287,18 @@ struct CmeDependency
 pub struct Block
 {
     // Bytecode sequence (iseq, idx) this is a version of
-    pub blockid: BlockId,
+    blockid: BlockId,
 
     // Index one past the last instruction for this block in the iseq
-    pub end_idx: u32,
+    end_idx: u32,
 
     // Context at the start of the block
     // This should never be mutated
-    pub ctx: Context,
+    ctx: Context,
 
     // Positions where the generated code starts and ends
-    pub start_addr: Option<CodePtr>,
-    pub end_addr: Option<CodePtr>,
+    start_addr: Option<CodePtr>,
+    end_addr: Option<CodePtr>,
 
     // List of incoming branches (from predecessors)
     // These are reference counted (ownership shared between predecessor and successors)
@@ -601,6 +601,10 @@ impl Context {
 
     pub fn set_sp_offset(&mut self, offset: i16) {
         self.sp_offset = offset;
+    }
+
+    pub fn reset_chain_depth(&mut self) {
+        self.chain_depth = 0;
     }
 
     /// Get an operand for the adjusted stack pointer address

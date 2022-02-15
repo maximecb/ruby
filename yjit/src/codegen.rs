@@ -816,7 +816,7 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
 
             // If this is the first instruction in the block, then we can use
             // the exit for block->entry_exit.
-            if insn_idx == block.blockid.idx {
+            if insn_idx == block.get_blockid().idx {
                 block.entry_exit = Some(exit);
             }
             break;
@@ -824,7 +824,7 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
 
         // For now, reset the chain depth after each instruction as only the
         // first instruction in the block can concern itself with the depth.
-        ctx.chain_depth = 0;
+        ctx.reset_chain_depth();
 
         // Move to the next instruction to compile
         insn_idx += insn_len(opcode);

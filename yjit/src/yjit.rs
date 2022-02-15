@@ -6,8 +6,10 @@ use crate::options::*;
 use std::sync::atomic::{AtomicBool,Ordering};
 use std::os::raw;
 
-/// Is YJIT on? AtomicBool to avoid `unsafe`. On x86 it compiles to simple movs.
+/// For tracking whether the user enabled YJIT through command line arguments or environment
+/// variables. AtomicBool to avoid `unsafe`. On x86 it compiles to simple movs.
 /// See https://doc.rust-lang.org/std/sync/atomic/enum.Ordering.html
+/// See [rb_yjit_enabled_p]
 static YJIT_ENABLED: AtomicBool = AtomicBool::new(false);
 
 /// Parse one command-line option
@@ -17,7 +19,9 @@ pub extern "C" fn rb_yjit_parse_option(str_ptr: *const raw::c_char) -> bool
     return parse_option(str_ptr);
 }
 
-/// Is YJIT on?
+/// Is YJIT on? The interpreter uses this function to decide whether to increment
+/// ISEQ call counters. See mjit_exec().
+/// This is used frequently since it's used on every method call in the interpreter.
 #[no_mangle]
 pub extern "C" fn rb_yjit_enabled_p() -> raw::c_int {
     // Note that we might want to call this function from signal handlers so
