@@ -82,6 +82,8 @@
 //
 #define rb_darray_make(ptr_to_ary, size) rb_darray_make_impl((ptr_to_ary), size, sizeof(**(ptr_to_ary)), sizeof((*(ptr_to_ary))->data[0]))
 
+#define rb_darray_data_ptr(ary) ((ary)->data)
+
 // Set the size of the array to zero without freeing the backing memory.
 // Allows reusing the same array.
 //
