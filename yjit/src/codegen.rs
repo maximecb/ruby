@@ -1407,7 +1407,7 @@ fn gen_newarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     let ary_new = CodePtr::from(rb_ec_ary_new_from_values as *mut u8);
     call_ptr(cb, REG0, ary_new);
 
-    ctx.stack_pop(n.try_into().unwrap());
+    ctx.stack_pop(n as usize);
     let stack_ret = ctx.stack_push(Type::Array);
     mov(cb, stack_ret, RAX);
 
