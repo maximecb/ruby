@@ -287,7 +287,6 @@ impl From<VALUE> for u64 {
     }
 }
 
-// TODO: write this for parameterized integer types as generic code?
 impl From<VALUE> for i64 {
     fn from(value: VALUE) -> Self {
         let VALUE(uimm) = value;

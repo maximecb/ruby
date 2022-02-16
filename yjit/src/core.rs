@@ -1207,9 +1207,14 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
 // Called by the generated code when a branch stub is executed
 // Triggers compilation of branches and code patching
 #[no_mangle]
-pub extern "C" fn branch_stub_hit(/*branch_t *branch,*/ target_idx: u32, ec: EcPtr) -> *const u8
+pub extern "C" fn branch_stub_hit(branch_ptr: *const u8, target_idx: u32, ec: EcPtr) -> *const u8
 {
+    //branch_ptr is actually:
+    //branch_ptr: *const RefCell<Branch>
+
     todo!();
+
+    // NOTE: here we need to take the VM lock. Should we call this function from C?
 
     /*
     uint8_t *dst_addr = NULL;
@@ -1359,34 +1364,21 @@ fn get_branch_target(
     // Generate an outlined stub that will call branch_stub_hit()
     let stub_addr = ocb.get_write_ptr();
 
+    // Get a raw pointer to the branch while keeping the
+    // reference count alive
+    let branch_ptr = BranchRef::into_raw( branchref.clone() );
+
     // Call branch_stub_hit(branch_idx, target_idx, ec)
     mov(ocb, C_ARG_REGS[2], REG_EC);
     mov(ocb, C_ARG_REGS[1], uimm_opnd(target_idx as u64));
-
-
-
-
-
-
-    // TODO: here we need a way to send a branchref over. Hmmm.
-    //mov(ocb, C_ARG_REGS[0], const_ptr_opnd(branch));
-
-
-
-    // TODO: here we need a C function pointer to branch_stub_hit
+    mov(ocb, C_ARG_REGS[0], const_ptr_opnd(branch_ptr as *const u8));
     call_ptr(ocb, REG0, CodePtr::from(branch_stub_hit as *mut u8));
-
-
-
 
     // Jump to the address returned by the
     // branch_stub_hit call
-    //jmp_rm(ocb, RAX);
+    jmp_rm(ocb, RAX);
 
-    //return stub_addr;
-
-
-    todo!();
+    return stub_addr;
 }
 
 pub fn gen_branch(

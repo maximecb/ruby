@@ -902,9 +902,6 @@ rb_yjit_iseq_mark(const struct rb_iseq_constant_body *body)
                 memcpy(&object, value_address, SIZEOF_VALUE);
                 rb_gc_mark_movable(object);
             }
-
-            // Mark the machine code page this block lives on
-            //rb_gc_mark_movable(block->code_page);
         }
     }
 }
@@ -955,9 +952,6 @@ rb_yjit_iseq_update_references(const struct rb_iseq_constant_body *body)
                     memcpy(value_address, &possibly_moved, SIZEOF_VALUE);
                 }
             }
-
-            // Update the machine code page this block lives on
-            //block->code_page = rb_gc_location(block->code_page);
         }
     }
 
@@ -1126,10 +1120,6 @@ rb_yjit_init(struct rb_yjit_options *options)
     struct yjit_root_struct *root;
     VALUE yjit_root = TypedData_Make_Struct(0, struct yjit_root_struct, &yjit_root_type, root);
     rb_gc_register_mark_object(yjit_root);
-
-    (void)yjit_get_cb;
-    (void)yjit_get_ocb;
-    (void)yjit_get_code_page;
     */
 
 
