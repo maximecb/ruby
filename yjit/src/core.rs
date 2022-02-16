@@ -1204,12 +1204,14 @@ fn make_branch_entry(block: BlockRef, src_ctx: &Context, gen_fn: BranchGenFn) ->
     return branchref;
 }
 
-/*
 // Called by the generated code when a branch stub is executed
 // Triggers compilation of branches and code patching
-static uint8_t *
-branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_context_t *ec)
+#[no_mangle]
+pub extern "C" fn branch_stub_hit(/*branch_t *branch,*/ target_idx: u32, ec: EcPtr) -> *const u8
 {
+    todo!();
+
+    /*
     uint8_t *dst_addr = NULL;
 
     // Stop other ractors since we are going to patch machine code.
@@ -1325,8 +1327,8 @@ branch_stub_hit(branch_t *branch, const uint32_t target_idx, rb_execution_contex
 
     // Return a pointer to the compiled block version
     return dst_addr;
+    */
 }
-*/
 
 // Get a version or stub corresponding to a branch target
 fn get_branch_target(
@@ -1363,8 +1365,6 @@ fn get_branch_target(
 
 
 
-    todo!();
-
 
 
 
@@ -1374,7 +1374,7 @@ fn get_branch_target(
 
 
     // TODO: here we need a C function pointer to branch_stub_hit
-    //call_ptr(ocb, REG0, branch_stub_hit);
+    call_ptr(ocb, REG0, CodePtr::from(branch_stub_hit as *mut u8));
 
 
 
@@ -1384,6 +1384,9 @@ fn get_branch_target(
     //jmp_rm(ocb, RAX);
 
     //return stub_addr;
+
+
+    todo!();
 }
 
 pub fn gen_branch(
