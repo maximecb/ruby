@@ -251,7 +251,7 @@ macro_rules! gen_counter_incr {
 
             // Use REG1 because there might be return value in REG0
             mov(cb, REG1, const_ptr_opnd(ptr));
-            cb_write_lock_prefix(cb); // for ractors.
+            cb.write_lock_prefix(); // for ractors.
             add(cb, mem_opnd(64, REG1, 0), imm_opnd(1));
         }
     };
@@ -386,8 +386,8 @@ verify_ctx(jitstate_t *jit, ctx_t *ctx)
             }
         }
 
-        if (type_diff(detected, learned.type) == INT_MAX) {
-            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value on stack: %s", yjit_type_name(learned.type), rb_obj_info(val));
+        if (type_diff(detected, learned) == INT_MAX) {
+            rb_bug("verify_ctx: ctx type (%s) incompatible with actual value on stack: %s", yjit_type_name(learned), rb_obj_info(val));
         }
     }
 
@@ -2468,7 +2468,7 @@ gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
         mov(cb, REG0, C_ARG_REGS[0]);
         jit_guard_known_klass(jit, ctx, rb_cString, StackOpnd(1), comptime_a, SEND_MAX_DEPTH, side_exit);
 
-        uint32_t ret = cb_new_label(cb, "ret");
+        let ret = cb.new_label("ret");
 
         // If they are equal by identity, return true
         cmp(cb, C_ARG_REGS[0], C_ARG_REGS[1]);
@@ -3197,8 +3197,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
 
     if (known_klass == rb_cNilClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_NIL) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Nil) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is nil");
             cmp(cb, REG0, imm_opnd(Qnil));
@@ -3209,8 +3209,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cTrueClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_TRUE) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::True) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is true");
             cmp(cb, REG0, imm_opnd(Qtrue));
@@ -3221,8 +3221,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cFalseClass) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_FALSE) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::False) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is false");
             STATIC_ASSERT(qfalse_is_zero, Qfalse == 0);
@@ -3236,8 +3236,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
         RUBY_ASSERT(!val_type.is_heap);
         // We will guard fixnum and bignum as though they were separate classes
         // BIGNUM can be handled by the general else case below
-        if (val_type.type != ETYPE_FIXNUM || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Fixnum || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is fixnum");
             test(cb, REG0, imm_opnd(RUBY_FIXNUM_FLAG));
@@ -3249,8 +3249,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
         RUBY_ASSERT(!val_type.is_heap);
         // We will guard STATIC vs DYNAMIC as though they were separate classes
         // DYNAMIC symbols can be handled by the general else case below
-        if (val_type.type != ETYPE_SYMBOL || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::ImmSymbol || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is static symbol");
             STATIC_ASSERT(special_shift_is_8, RUBY_SPECIAL_SHIFT == 8);
@@ -3261,8 +3261,8 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
     }
     else if (known_klass == rb_cFloat && FLONUM_P(sample_instance)) {
         RUBY_ASSERT(!val_type.is_heap);
-        if (val_type.type != ETYPE_FLONUM || !val_type.is_imm) {
-            RUBY_ASSERT(val_type.type == ETYPE_UNKNOWN);
+        if (val_type != Type::Flonum || !val_type.is_imm) {
+            RUBY_ASSERT(val_type == Type::Unknown);
 
             // We will guard flonum vs heap float as though they were separate classes
             add_comment(cb, "guard object is flonum");
@@ -3369,14 +3369,14 @@ jit_rb_obj_not(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, const 
 {
     const val_type_t recv_opnd = ctx.get_opnd_type(StackOpnd(0));
 
-    if (recv_opnd.type == ETYPE_NIL || recv_opnd.type == ETYPE_FALSE) {
+    if (recv_opnd == Type::Nil || recv_opnd == Type::False) {
         add_comment(cb, "rb_obj_not(nil_or_false)");
         ctx.stack_pop(1);
         let out_opnd = ctx.stack_push(Type::True);
         mov(cb, out_opnd, imm_opnd(Qtrue));
     }
-    else if (recv_opnd.is_heap || recv_opnd.type != ETYPE_UNKNOWN) {
-        // Note: recv_opnd.type != ETYPE_NIL && recv_opnd.type != ETYPE_FALSE.
+    else if (recv_opnd.is_heap || recv_opnd != Type::Unknown) {
+        // Note: recv_opnd != Type::Nil && recv_opnd != Type::False.
         add_comment(cb, "rb_obj_not(truthy)");
         ctx.stack_pop(1);
         let out_opnd = ctx.stack_push(Type::False);
@@ -5126,11 +5126,11 @@ rb_yjit_tracing_invalidate_all(void)
     const uint32_t old_pos = cb->write_pos;
     rb_darray_for(global_inval_patches, patch_idx) {
         struct codepage_patch patch = rb_darray_get(global_inval_patches, patch_idx);
-        cb_set_pos(cb, patch.inline_patch_pos);
+        cb.set_pos(patch.inline_patch_pos);
         uint8_t *jump_target = cb_get_ptr(ocb, patch.outlined_target_pos);
         jmp_ptr(cb, jump_target);
     }
-    cb_set_pos(cb, old_pos);
+    cb.set_pos(old_pos);
 
     // Freeze invalidated part of the codepage. We only want to wait for
     // running instances of the code to exit from now on, so we shouldn't
