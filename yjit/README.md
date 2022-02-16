@@ -23,6 +23,20 @@ cargo doc --document-private-items --open # build documentation site and open it
 cargo fmt                         # reformat the source code (idempotent)
 ```
 
+## Generating C bindings with bindgen
+
+To generate C bindings for the YJIT Rust code, run:
+
+```sh
+CC=clang ./configure --enable-yjit=dev
+make -j miniruby
+make yjit-bindgen
+```
+
+This will generate/update `yjit/src/cruby_bindings.inc.rs`. Avoid manually editing this file
+as it could be automatically regenerated at a later time.
+If you need to manually add C bindings, add them to `yjit/cruby.rs` instead.
+
 ## Are you going to use Rust in other parts of CRuby?
 
 No.
