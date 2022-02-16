@@ -232,6 +232,5 @@ static uint32_t yjit_codepage_frozen_bytes = 0;
 #include "yjit_utils.c"
 #include "yjit_core.c"
 #include "yjit_iface.c"
-#include "yjit_codegen.c"
 
 #endif // if JIT_ENABLED && PLATFORM_SUPPORTED_P
