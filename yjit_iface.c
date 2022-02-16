@@ -524,6 +524,11 @@ get_iseq_body_iseq_encoded(rb_iseq_t* iseq) {
     return iseq->body->iseq_encoded;
 }
 
+int
+get_iseq_flags_has_opt(rb_iseq_t* iseq) {
+    return iseq->body->param.flags.has_opt;
+}
+
 struct rb_control_frame_struct *
 ec_get_cfp(rb_execution_context_t *ec) {
     return ec->cfp;
