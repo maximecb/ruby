@@ -3938,7 +3938,7 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
 
     const struct rb_builtin_function *leaf_builtin = rb_leaf_builtin_function(iseq);
 
-    if (leaf_builtin && !block && leaf_builtin->argc + 1 <= NUM_C_ARG_REGS) {
+    if (leaf_builtin && !block && leaf_builtin->argc + 1 /* for self */ + 1 /* for ec */ <= NUM_C_ARG_REGS) {
         add_comment(cb, "inlined leaf builtin");
 
         // Call the builtin func (ec, recv, arg1, arg2, ...)
