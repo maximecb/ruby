@@ -124,6 +124,7 @@ extern "C" {
 
     pub fn rb_hash_new_with_size(sz:usize) -> VALUE;
     pub fn rb_hash_bulk_insert(argc:c_long, argv: *mut u8, hash:VALUE);
+    pub fn rb_hash_resurrect(hash:VALUE) -> VALUE;
 
     pub fn rb_ec_ary_new_from_values(ec: EcPtr, n:c_long, elts: *const VALUE) -> VALUE;
     pub fn rb_ary_resurrect(ary: VALUE) -> VALUE;

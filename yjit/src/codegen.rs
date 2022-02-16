@@ -1433,18 +1433,18 @@ fn gen_duparray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     KeepCompiling
 }
 
-/*
 // dup hash
 fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
-    VALUE hash = jit_get_arg(jit, 0);
+    let hash = jit_get_arg(jit, 0);
 
     // Save the PC and SP because we are allocating
     jit_prepare_routine_call(jit, ctx, cb, REG0);
 
     // call rb_hash_resurrect(VALUE hash);
     jit_mov_gc_ptr(jit, cb, C_ARG_REGS[0], hash);
-    call_ptr(cb, REG0, (void *)rb_hash_resurrect);
+    let hash_res = CodePtr::from(rb_hash_resurrect as *mut u8);
+    call_ptr(cb, REG0, hash_res);
 
     let stack_ret = ctx.stack_push(Type::Hash);
     mov(cb, stack_ret, RAX);
@@ -1452,6 +1452,7 @@ fn gen_duphash(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &
     KeepCompiling
 }
 
+/*
 // call to_a on the array on the stack
 fn gen_splatarray(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
@@ -5245,6 +5246,9 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_AND => Some(gen_opt_and),
         OP_OPT_OR => Some(gen_opt_or),
         OP_NEWHASH => Some(gen_newhash),
+        OP_DUPHASH => Some(gen_duphash),
+        OP_NEWARRAY => Some(gen_newarray),
+        OP_DUPARRAY => Some(gen_duparray),
         OP_CHECKTYPE => Some(gen_checktype),
         OP_OPT_LT => Some(gen_opt_lt),
         OP_OPT_LE => Some(gen_opt_le),
@@ -5252,9 +5256,6 @@ fn get_gen_fn(opcode: VALUE) -> Option<CodeGenFn>
         OP_OPT_GE => Some(gen_opt_ge),
 
         /*
-        yjit_reg_op(BIN(newarray), gen_newarray);
-        yjit_reg_op(BIN(duparray), gen_duparray);
-        yjit_reg_op(BIN(duphash), gen_duphash);
         yjit_reg_op(BIN(splatarray), gen_splatarray);
         yjit_reg_op(BIN(expandarray), gen_expandarray);
         yjit_reg_op(BIN(newrange), gen_newrange);
