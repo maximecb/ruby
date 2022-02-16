@@ -3,6 +3,7 @@
 // in headers and prefixing function names.
 
 #include "internal.h"
+#include "internal/string.h"
 #include "vm_core.h"
 #include "vm_callinfo.h"
 #include "builtin.h"
@@ -157,6 +158,27 @@ cfp_get_self(struct rb_control_frame_struct *cfp) {
 VALUE*
 cfp_get_ep(struct rb_control_frame_struct *cfp) {
     return cfp->ep;
+}
+
+VALUE
+rb_yarv_class_of(VALUE obj)
+{
+    return rb_class_of(obj);
+}
+
+// YJIT needs this function to never allocate and never raise
+VALUE
+rb_yarv_str_eql_internal(VALUE str1, VALUE str2)
+{
+    // We wrap this since it's static inline
+    return rb_str_eql_internal(str1, str2);
+}
+
+// The FL_TEST() macro
+VALUE
+rb_yarv_FL_TEST(VALUE obj, VALUE flags)
+{
+    return RB_FL_TEST(obj, flags);
 }
 
 // The number of bytes counting from the beginning of the inline code block

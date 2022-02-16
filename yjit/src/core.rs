@@ -603,8 +603,16 @@ impl Context {
         self.sp_offset = offset;
     }
 
+    pub fn get_chain_depth(&self) -> u8 {
+        self.chain_depth
+    }
+
     pub fn reset_chain_depth(&mut self) {
         self.chain_depth = 0;
+    }
+
+    pub fn increment_chain_depth(&mut self) {
+        self.chain_depth += 1;
     }
 
     /// Get an operand for the adjusted stack pointer address
@@ -1386,8 +1394,8 @@ pub fn gen_branch(
     src_ctx: &Context,
     target0: BlockId,
     ctx0: &Context,
-    target1: BlockId,
-    ctx1: &Context,
+    target1: Option<BlockId>,
+    ctx1: Option<&Context>,
     gen_fn: BranchGenFn
 )
 {

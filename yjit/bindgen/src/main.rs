@@ -41,11 +41,22 @@ fn main() {
         .allowlist_function("rb_ary_resurrect")
         .allowlist_function("rb_ec_ary_new_from_values")
 
+        // VALUE variables for Ruby class objects
+        .allowlist_var("rb_cNilClass")
+        .allowlist_var("rb_cTrueClass")
+        .allowlist_var("rb_cFalseClass")
+        .allowlist_var("rb_cInteger")
+        .allowlist_var("rb_cSymbol")
+        .allowlist_var("rb_cFloat")
+        .allowlist_var("rb_cString")
+
         // `ruby_value_type` is a C enum and this stops it from
         // prefixing all the members with the name of the type
         .prepend_enum_name(false)
         .translate_enum_integer_types(true) // so we get fixed width Rust types for members
         .allowlist_type("ruby_value_type") // really old C extension API
+
+        .allowlist_type("ruby_method_ids")
 
         // Constants defined in vm_core.h
         .allowlist_type("ruby_basic_operators")
@@ -57,6 +68,8 @@ fn main() {
         .allowlist_function("rb_iseq_opcode_at_pc")
 
         .allowlist_function("rb_gvar_(get|set)")
+
+        .allowlist_function("rb_attr_get")
 
         // We define VALUE manually
         .blocklist_type("VALUE")

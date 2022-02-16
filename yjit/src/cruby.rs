@@ -79,6 +79,8 @@
 
 // CRuby types use snake_case. Allow them so we use one name across languages.
 #![allow(non_camel_case_types)]
+// A lot of imported CRuby globals aren't all-caps
+#![allow(non_upper_case_globals)]
 
 use std::convert::From;
 use std::os::raw::{c_int, c_uint, c_long};
@@ -110,6 +112,9 @@ extern "C" {
     #[link_name = "rb_yarv_insn_len"]
     pub fn raw_insn_len(v: VALUE) -> c_int;
 
+    #[link_name = "rb_yarv_class_of"]
+    pub fn raw_class_of(v:VALUE) -> VALUE;
+
     pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
 
     pub fn cfp_get_pc(cfp: CfpPtr) -> *mut VALUE;
@@ -129,6 +134,12 @@ extern "C" {
 
     // Ruby only defines this in vm_insnhelper.c, which bindgen has trouble using b/c of duplicate definitions
     pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
+
+    #[link_name = "rb_yarv_str_eql_internal"]
+    pub fn raw_rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
+
+    #[link_name = "rb_yarv_fl_test"]
+    pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -227,7 +238,7 @@ impl VALUE {
     // Return true for a static (non-heap) Ruby symbol
     pub fn static_sym_p(self:VALUE) -> bool {
         let VALUE(cval) = self;
-        (cval & 0xff) == RB_SYMBOL_FLAG
+        (cval & 0xff) == RUBY_SYMBOL_FLAG
     }
 
     // Returns true or false depending on whether the value is nil
@@ -243,6 +254,10 @@ impl VALUE {
         let rbasic_ptr = cval as *const RBasic;
         let flags_bits:usize = unsafe { (*rbasic_ptr).flags }.as_usize();
         (flags_bits & (RUBY_T_MASK as usize)) as ruby_value_type
+    }
+
+    pub fn class_of(self:VALUE) -> VALUE {
+        unsafe { raw_class_of(self) }
     }
 
     pub fn as_isize(self:VALUE) -> isize {
@@ -317,7 +332,7 @@ pub const Qtrue: VALUE = VALUE(20);
 #[allow(non_upper_case_globals)]
 pub const Qundef: VALUE = VALUE(52);
 
-pub const RB_SYMBOL_FLAG: usize = 0x0c;
+pub const RUBY_SYMBOL_FLAG: usize = 0x0c;
 
 pub const RUBY_LONG_MIN:isize = std::os::raw::c_long::MIN as isize;
 pub const RUBY_LONG_MAX:isize = std::os::raw::c_long::MAX as isize;
@@ -326,7 +341,12 @@ pub const RUBY_FIXNUM_MIN:isize = RUBY_LONG_MIN / 2;
 pub const RUBY_FIXNUM_MAX:isize = RUBY_LONG_MAX / 2;
 pub const RUBY_FIXNUM_FLAG:usize = 0x1;
 
+pub const RUBY_FLONUM_FLAG:usize = 0x2;
+pub const RUBY_FLONUM_MASK:usize = 0x3;
+
 pub const RUBY_IMMEDIATE_MASK:usize = 0x7;
+
+pub const RUBY_SPECIAL_SHIFT:usize = 8;
 
 // Constants from vm_core.h
 pub const VM_SPECIAL_OBJECT_VMCORE:usize = 0x1;
@@ -336,6 +356,8 @@ pub const VM_ENV_DATA_SIZE:usize = 3;
 pub const VM_ENV_FLAG_WB_REQUIRED:usize = 0x008;
 
 pub const SIZEOF_VALUE: usize = 8;
+
+pub const RUBY_FL_SINGLETON:usize = RUBY_FL_USER_0;
 
 // Constants from include/ruby/internal/fl_type.h
 pub const RUBY_FL_USHIFT:usize = 12;
@@ -368,6 +390,7 @@ pub const RARRAY_EMBED_LEN_MASK:usize = RUBY_FL_USER_3 | RUBY_FL_USER_4;
 // We'll need to encode a lot of Ruby struct/field offsets as constants unless we want to
 // redeclare all the Ruby C structs and write our own offsetof macro. For now, we use constants.
 pub const RUBY_OFFSET_RBASIC_FLAGS:i32 = 0;  // struct RBasic, field "flags"
+pub const RUBY_OFFSET_RBASIC_KLASS:i32 = 8;  // struct RBasic, field "klass"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_LEN:i32 = 16;  // struct RArray, subfield "as.heap.len"
 pub const RUBY_OFFSET_RARRAY_AS_ARY:i32 = 16;  // struct RArray, subfield "as.ary"
 pub const RUBY_OFFSET_RARRAY_AS_HEAP_PTR:i32 = 16;  // struct RArray, subfield "as.heap.ptr"

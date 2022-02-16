@@ -108,6 +108,18 @@ impl JITState {
     }
 }
 
+use crate::codegen::JCCKinds::*;
+
+#[allow(non_camel_case_types)]
+pub enum JCCKinds {
+    JCC_JNE,
+    JCC_JNZ,
+    JCC_JZ,
+    JCC_JE,
+    JCC_JBE,
+    JCC_JNA,
+}
+
 pub fn jit_get_arg(jit: &JITState, arg_idx: isize) -> VALUE
 {
     // insn_len require non-test config
@@ -1866,111 +1878,67 @@ fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
 
     KeepCompiling
 }
+*/
 
-static void
-gen_jnz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_jnz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-      case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-      case SHAPE_DEFAULT:
-        jnz_ptr(cb, target0);
-        break;
+    match shape {
+        BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
+        BranchShape::Default => jnz_ptr(cb, target0),
     }
 }
 
-static void
-gen_jz_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_jz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-      case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-      case SHAPE_DEFAULT:
-        jz_ptr(cb, target0);
-        break;
+    match shape {
+        BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
+        BranchShape::Default => jz_ptr(cb, target0),
     }
 }
 
-static void
-gen_jbe_to_target0(codeblock_t *cb, uint8_t *target0, uint8_t *target1, uint8_t shape)
+fn gen_jbe_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
 {
-    switch (shape) {
-      case SHAPE_NEXT0:
-      case SHAPE_NEXT1:
-        RUBY_ASSERT(false);
-        break;
-
-      case SHAPE_DEFAULT:
-        jbe_ptr(cb, target0);
-        break;
+    match shape {
+        BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
+        BranchShape::Default => jbe_ptr(cb, target0),
     }
 }
-
-enum jcc_kinds {
-    JCC_JNE,
-    JCC_JNZ,
-    JCC_JZ,
-    JCC_JE,
-    JCC_JBE,
-    JCC_JNA,
-};
 
 // Generate a jump to a stub that recompiles the current YARV instruction on failure.
 // When depth_limitk is exceeded, generate a jump to a side exit.
-static void
-jit_chain_guard(enum jcc_kinds jcc, jitstate_t *jit, const ctx_t *ctx, uint8_t depth_limit, uint8_t *side_exit)
+fn jit_chain_guard(jcc:JCCKinds, jit: &JITState, ctx: &Context, cb: &mut CodeBlock, depth_limit: i32, side_exit: CodePtr)
 {
-    branchgen_fn target0_gen_fn;
-
-    switch (jcc) {
-      case JCC_JNE:
-      case JCC_JNZ:
-        target0_gen_fn = gen_jnz_to_target0;
-        break;
-      case JCC_JZ:
-      case JCC_JE:
-        target0_gen_fn = gen_jz_to_target0;
-        break;
-      case JCC_JBE:
-      case JCC_JNA:
-        target0_gen_fn = gen_jbe_to_target0;
-        break;
-      default:
-        rb_bug("yjit: unimplemented jump kind");
-        break;
+    let target0_gen_fn = match jcc {
+        JCC_JNE | JCC_JNZ => gen_jnz_to_target0,
+        JCC_JZ | JCC_JE => gen_jz_to_target0,
+        JCC_JBE | JCC_JNA => gen_jbe_to_target0,
     };
 
-    if (ctx->chain_depth < depth_limit) {
-        ctx_t deeper = *ctx;
-        deeper.chain_depth++;
+    if (ctx.get_chain_depth() as i32) < depth_limit {
+        let mut deeper = ctx.clone();
+        deeper.increment_chain_depth();
+        let bid = BlockId { iseq: jit.iseq, idx: jit.insn_idx };
 
         gen_branch(
             jit,
             ctx,
-            (blockid_t) { jit->iseq, jit->insn_idx },
+            bid,
             &deeper,
-            BLOCKID_NULL,
-            NULL,
+            None,
+            None,
             target0_gen_fn
         );
     }
     else {
-        target0_gen_fn(cb, side_exit, NULL, SHAPE_DEFAULT);
+        target0_gen_fn(cb, side_exit, CodePtr::null(), BranchShape::Default);
     }
 }
 
-enum {
-    GETIVAR_MAX_DEPTH = 10,       // up to 5 different classes, and embedded or not for each
-    OPT_AREF_MAX_CHAIN_DEPTH = 2, // hashes and arrays
-    SEND_MAX_DEPTH = 5,           // up to 5 different classes
-};
+pub const GET_IVAR_MAX_DEPTH:i32 = 10;
+pub const OPT_AREF_MAX_CHAIN_DEPTH:i32 = 2;
+pub const SEND_MAX_DEPTH:i32 = 5;
 
+/*
 VALUE rb_vm_set_ivar_idx(VALUE obj, uint32_t idx, VALUE val);
 
 // Codegen for setting an instance variable.
@@ -2057,7 +2025,7 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
     mov(cb, REG1, member_opnd(REG0, struct RBasic, flags));
     and(cb, REG1, imm_opnd(RUBY_T_MASK));
     cmp(cb, REG1, imm_opnd(T_OBJECT));
-    jit_chain_guard(JCC_JNE, jit, &starting_context, max_chain_depth, side_exit);
+    jit_chain_guard(JCC_JNE, jit, &starting_context, cb, max_chain_depth, side_exit);
     */
 
     // FIXME: Mapping the index could fail when there is too many ivar names. If we're
@@ -2079,7 +2047,7 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         add_comment(cb, "guard embedded getivar");
         let flags_opnd = member_opnd(REG0, struct RBasic, flags);
         test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-        jit_chain_guard(JCC_JZ, jit, &starting_context, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
+        jit_chain_guard(JCC_JZ, jit, &starting_context, cb, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
 
         // Load the variable
         let ivar_opnd = mem_opnd(64, REG0, offsetof(struct RObject, as.ary) + ivar_index * SIZEOF_VALUE);
@@ -2102,7 +2070,7 @@ fn gen_get_ivar(jitstate_t *jit, ctx_t *ctx, const int max_chain_depth, VALUE co
         add_comment(cb, "guard extended getivar");
         let flags_opnd = member_opnd(REG0, struct RBasic, flags);
         test(cb, flags_opnd, imm_opnd(ROBJECT_EMBED));
-        jit_chain_guard(JCC_JNZ, jit, &starting_context, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
+        jit_chain_guard(JCC_JNZ, jit, &starting_context, cb, max_chain_depth, counted_exit!(ocb, side_exit, getivar_megamorphic));
 
         // check that the extended table is big enough
         if (ivar_index >= ROBJECT_EMBED_LEN_MAX + 1) {
@@ -2154,7 +2122,7 @@ fn gen_getinstancevariable(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeB
     // Guard that the receiver has the same class as the one from compile time.
     mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, self));
 
-    jit_guard_known_klass(jit, ctx, comptime_val_klass, OPND_SELF, comptime_val, GETIVAR_MAX_DEPTH, side_exit);
+    jit_guard_known_klass(jit, ctx, cb, comptime_val_klass, OPND_SELF, comptime_val, GETIVAR_MAX_DEPTH, side_exit);
 
     return gen_get_ivar(jit, ctx, GETIVAR_MAX_DEPTH, comptime_val, ivar_name, OPND_SELF, side_exit);
 }
@@ -2423,31 +2391,31 @@ fn gen_opt_gt(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &m
     gen_fixnum_cmp(jit, ctx, cb, ocb, cmovg)
 }
 
-/*
 // Implements specialized equality for either two fixnum or two strings
 // Returns true if code was generated, otherwise false
-static bool
-gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
+fn gen_equality_specialized(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, side_exit: CodePtr) -> bool
 {
-    VALUE comptime_a = jit_peek_at_stack(jit, ctx, 1);
-    VALUE comptime_b = jit_peek_at_stack(jit, ctx, 0);
+    let comptime_a = jit_peek_at_stack(jit, ctx, 1);
+    let comptime_b = jit_peek_at_stack(jit, ctx, 0);
 
     let a_opnd = ctx.stack_opnd(1);
     let b_opnd = ctx.stack_opnd(0);
 
-    if (FIXNUM_P(comptime_a) && FIXNUM_P(comptime_b)) {
+    if comptime_a.fixnum_p() && comptime_b.fixnum_p() {
+        /*
         if (!assume_bop_not_redefined(jit, INTEGER_REDEFINED_OP_FLAG, BOP_EQ)) {
             // if overridden, emit the generic version
             return false;
         }
+        */
 
-        guard_two_fixnums(ctx, side_exit);
+        guard_two_fixnums(ctx, cb, side_exit);
 
         mov(cb, REG0, a_opnd);
         cmp(cb, REG0, b_opnd);
 
-        mov(cb, REG0, imm_opnd(Qfalse));
-        mov(cb, REG1, imm_opnd(Qtrue));
+        mov(cb, REG0, imm_opnd(Qfalse.into()));
+        mov(cb, REG1, imm_opnd(Qtrue.into()));
         cmove(cb, REG0, REG1);
 
         // Push the output on the stack
@@ -2455,14 +2423,16 @@ gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
         let dst = ctx.stack_push(Type::UnknownImm);
         mov(cb, dst, REG0);
 
-        return true;
+        true
     }
-    else if (CLASS_OF(comptime_a) == rb_cString &&
-            CLASS_OF(comptime_b) == rb_cString) {
+    else if unsafe { comptime_a.class_of() == rb_cString &&
+            comptime_b.class_of() == rb_cString } {
+        /*
         if (!assume_bop_not_redefined(jit, STRING_REDEFINED_OP_FLAG, BOP_EQ)) {
             // if overridden, emit the generic version
             return false;
         }
+        */
 
         // Load a and b in preparation for call later
         mov(cb, C_ARG_REGS[0], a_opnd);
@@ -2470,59 +2440,67 @@ gen_equality_specialized(jitstate_t *jit, ctx_t *ctx, uint8_t *side_exit)
 
         // Guard that a is a String
         mov(cb, REG0, C_ARG_REGS[0]);
-        jit_guard_known_klass(jit, ctx, rb_cString, StackOpnd(1), comptime_a, SEND_MAX_DEPTH, side_exit);
+        unsafe {
+            // Use of rb_cString here requires an unsafe block
+            jit_guard_known_klass(jit, ctx, cb, rb_cString, StackOpnd(1), comptime_a, SEND_MAX_DEPTH, side_exit);
+        }
 
-        let ret = cb.new_label("ret");
+        let ret = cb.new_label("ret".to_string());
 
         // If they are equal by identity, return true
         cmp(cb, C_ARG_REGS[0], C_ARG_REGS[1]);
-        mov(cb, RAX, imm_opnd(Qtrue));
+        mov(cb, RAX, imm_opnd(Qtrue.into()));
         je_label(cb, ret);
 
         // Otherwise guard that b is a T_STRING (from type info) or String (from runtime guard)
-        if (ctx.get_opnd_type(StackOpnd(0)).type != ETYPE_STRING) {
+        if ctx.get_opnd_type(StackOpnd(0)) != Type::String {
             mov(cb, REG0, C_ARG_REGS[1]);
             // Note: any T_STRING is valid here, but we check for a ::String for simplicity
-            jit_guard_known_klass(jit, ctx, rb_cString, StackOpnd(0), comptime_b, SEND_MAX_DEPTH, side_exit);
+            // To pass a mutable static variable (rb_cString) requires an unsafe block
+            unsafe {
+                jit_guard_known_klass(jit, ctx, cb, rb_cString, StackOpnd(0), comptime_b, SEND_MAX_DEPTH, side_exit);
+            }
         }
 
         // Call rb_str_eql_internal(a, b)
-        call_ptr(cb, REG0, (void *)rb_str_eql_internal);
+        let str_eql = CodePtr::from(raw_rb_str_eql_internal as *mut u8);
+        call_ptr(cb, REG0, str_eql);
 
         // Push the output on the stack
-        cb_write_label(cb, ret);
+        cb.write_label(ret);
         ctx.stack_pop(2);
         let dst = ctx.stack_push(Type::UnknownImm);
         mov(cb, dst, RAX);
-        cb_link_labels(cb);
+        cb.link_labels();
 
-        return true;
+        true
     }
     else {
-        return false;
+        false
     }
 }
 
 fn gen_opt_eq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
 {
     // Defer compilation so we can specialize base on a runtime receiver
-    if (!jit_at_current_insn(jit)) {
+    if !jit_at_current_insn(jit) {
         defer_compilation(jit, cb, ctx);
         return EndBlock;
     }
 
     // Create a side-exit to fall back to the interpreter
-    uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
+    let side_exit = get_side_exit(jit, ocb, ctx);
 
-    if (gen_equality_specialized(jit, ctx, side_exit)) {
-        jit_jump_to_next_insn(jit, ctx);
-        return EndBlock;
+    if gen_equality_specialized(jit, ctx, cb, side_exit) {
+        jit_jump_to_next_insn(jit, ctx, cb, ocb);
+        EndBlock
     }
     else {
-        return gen_opt_send_without_block(jit, ctx, cb);
+        gen_opt_send_without_block(jit, ctx, cb, ocb)
     }
 }
 
+/*
 static codegen_status_t gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_iseq_t *block);
 
 fn gen_opt_neq(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb) -> CodegenStatus
@@ -2584,7 +2562,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         mov(cb, REG1, mem_opnd(64, REG0, offsetof(struct RBasic, klass)));
         mov(cb, REG0, const_ptr_opnd((void *)rb_cArray));
         cmp(cb, REG0, REG1);
-        jit_chain_guard(JCC_JNE, jit, &starting_context, OPT_AREF_MAX_CHAIN_DEPTH, side_exit);
+        jit_chain_guard(JCC_JNE, jit, &starting_context, cb, OPT_AREF_MAX_CHAIN_DEPTH, side_exit);
 
         // Bail if idx is not a FIXNUM
         mov(cb, REG1, idx_opnd);
@@ -2618,7 +2596,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
         // Guard that the receiver is a hash
         mov(cb, REG0, recv_opnd);
-        jit_guard_known_klass(jit, ctx, rb_cHash, StackOpnd(1), comptime_recv, OPT_AREF_MAX_CHAIN_DEPTH, side_exit);
+        jit_guard_known_klass(jit, ctx, cb, rb_cHash, StackOpnd(1), comptime_recv, OPT_AREF_MAX_CHAIN_DEPTH, side_exit);
 
         // Setup arguments for rb_hash_aref().
         mov(cb, C_ARG_REGS[0], REG0);
@@ -2642,7 +2620,7 @@ fn gen_opt_aref(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
     }
     else {
         // General case. Call the [] method.
-        return gen_opt_send_without_block(jit, ctx, cb);
+        return gen_opt_send_without_block(jit, ctx, cb, ocb);
     }
 }
 
@@ -2667,11 +2645,11 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
         // Guard receiver is an Array
         mov(cb, REG0, recv);
-        jit_guard_known_klass(jit, ctx, rb_cArray, StackOpnd(2), comptime_recv, SEND_MAX_DEPTH, side_exit);
+        jit_guard_known_klass(jit, ctx, cb, rb_cArray, StackOpnd(2), comptime_recv, SEND_MAX_DEPTH, side_exit);
 
         // Guard key is a fixnum
         mov(cb, REG0, key);
-        jit_guard_known_klass(jit, ctx, rb_cInteger, StackOpnd(1), comptime_key, SEND_MAX_DEPTH, side_exit);
+        jit_guard_known_klass(jit, ctx, cb, rb_cInteger, StackOpnd(1), comptime_key, SEND_MAX_DEPTH, side_exit);
 
         // Call rb_ary_store
         mov(cb, C_ARG_REGS[0], recv);
@@ -2701,7 +2679,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
 
         // Guard receiver is a Hash
         mov(cb, REG0, recv);
-        jit_guard_known_klass(jit, ctx, rb_cHash, StackOpnd(2), comptime_recv, SEND_MAX_DEPTH, side_exit);
+        jit_guard_known_klass(jit, ctx, cb, rb_cHash, StackOpnd(2), comptime_recv, SEND_MAX_DEPTH, side_exit);
 
         // Call rb_hash_aset
         mov(cb, C_ARG_REGS[0], recv);
@@ -2722,7 +2700,7 @@ fn gen_opt_aset(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         EndBlock
     }
     else {
-        return gen_opt_send_without_block(jit, ctx, cb);
+        return gen_opt_send_without_block(jit, ctx, cb, ocb);
     }
 }
 */
@@ -3044,8 +3022,8 @@ fn gen_branchif(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: 
         ctx,
         jump_block,
         ctx,
-        next_block,
-        ctx,
+        Some(next_block),
+        Some(ctx),
         gen_branchif_branch
     );
 
@@ -3100,8 +3078,8 @@ fn gen_branchunless(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
         ctx,
         jump_block,
         ctx,
-        next_block,
-        ctx,
+        Some(next_block),
+        Some(ctx),
         gen_branchunless_branch
     );
 
@@ -3154,8 +3132,8 @@ fn gen_branchnil(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb:
         ctx,
         jump_block,
         ctx,
-        next_block,
-        ctx,
+        Some(next_block),
+        Some(ctx),
         gen_branchnil_branch
     );
 
@@ -3187,97 +3165,97 @@ fn gen_jump(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, ocb: &mut
     EndBlock
 }
 
-/*
 /// Guard that self or a stack operand has the same class as `known_klass`, using
 /// `sample_instance` to speculate about the shape of the runtime value.
 /// FIXNUM and on-heap integers are treated as if they have distinct classes, and
 /// the guard generated for one will fail for the other.
 ///
 /// Recompile as contingency if possible, or take side exit a last resort.
-static bool
-jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_t insn_opnd, VALUE sample_instance, const int max_chain_depth, uint8_t *side_exit)
-{
-    val_type_t val_type = ctx.get_opnd_type(insn_opnd);
 
-    if (known_klass == rb_cNilClass) {
-        RUBY_ASSERT(!val_type.is_heap);
-        if (val_type != Type::Nil) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+fn jit_guard_known_klass(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, known_klass: VALUE, insn_opnd: InsnOpnd, sample_instance: VALUE, max_chain_depth: i32, side_exit: CodePtr) -> bool
+{
+    let val_type = ctx.get_opnd_type(insn_opnd);
+
+    if unsafe { known_klass == rb_cNilClass } {
+        assert!(!val_type.is_heap());
+        if val_type != Type::Nil {
+            assert!(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is nil");
-            cmp(cb, REG0, imm_opnd(Qnil));
-            jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+            cmp(cb, REG0, imm_opnd(Qnil.into()));
+            jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
 
             ctx.upgrade_opnd_type(insn_opnd, Type::Nil);
         }
     }
-    else if (known_klass == rb_cTrueClass) {
-        RUBY_ASSERT(!val_type.is_heap);
-        if (val_type != Type::True) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+    else if unsafe { known_klass == rb_cTrueClass } {
+        assert!(!val_type.is_heap());
+        if val_type != Type::True {
+            assert!(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is true");
-            cmp(cb, REG0, imm_opnd(Qtrue));
-            jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+            cmp(cb, REG0, imm_opnd(Qtrue.into()));
+            jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
 
             ctx.upgrade_opnd_type(insn_opnd, Type::True);
         }
     }
-    else if (known_klass == rb_cFalseClass) {
-        RUBY_ASSERT(!val_type.is_heap);
-        if (val_type != Type::False) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+    else if unsafe { known_klass == rb_cFalseClass } {
+        assert!(!val_type.is_heap());
+        if val_type != Type::False {
+            assert!(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is false");
-            STATIC_ASSERT(qfalse_is_zero, Qfalse == 0);
+            assert!(Qfalse.as_i32() == 0);
             test(cb, REG0, REG0);
-            jit_chain_guard(JCC_JNZ, jit, ctx, max_chain_depth, side_exit);
+            jit_chain_guard(JCC_JNZ, jit, ctx, cb, max_chain_depth, side_exit);
 
             ctx.upgrade_opnd_type(insn_opnd, Type::False);
         }
     }
-    else if (known_klass == rb_cInteger && FIXNUM_P(sample_instance)) {
-        RUBY_ASSERT(!val_type.is_heap);
+    else if unsafe { known_klass == rb_cInteger } && sample_instance.fixnum_p() {
+        assert!(!val_type.is_heap());
         // We will guard fixnum and bignum as though they were separate classes
         // BIGNUM can be handled by the general else case below
-        if (val_type != Type::Fixnum || !val_type.is_imm) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+        if val_type != Type::Fixnum || !val_type.is_imm() {
+            assert!(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is fixnum");
-            test(cb, REG0, imm_opnd(RUBY_FIXNUM_FLAG));
-            jit_chain_guard(JCC_JZ, jit, ctx, max_chain_depth, side_exit);
+            test(cb, REG0, imm_opnd(RUBY_FIXNUM_FLAG as i64));
+            jit_chain_guard(JCC_JZ, jit, ctx, cb, max_chain_depth, side_exit);
             ctx.upgrade_opnd_type(insn_opnd, Type::Fixnum);
         }
     }
-    else if (known_klass == rb_cSymbol && STATIC_SYM_P(sample_instance)) {
-        RUBY_ASSERT(!val_type.is_heap);
+    else if unsafe { known_klass == rb_cSymbol } && sample_instance.static_sym_p() {
+        assert!(!val_type.is_heap());
         // We will guard STATIC vs DYNAMIC as though they were separate classes
         // DYNAMIC symbols can be handled by the general else case below
-        if (val_type != Type::ImmSymbol || !val_type.is_imm) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+        if val_type != Type::ImmSymbol || !val_type.is_imm() {
+            assert!(val_type == Type::Unknown);
 
             add_comment(cb, "guard object is static symbol");
-            STATIC_ASSERT(special_shift_is_8, RUBY_SPECIAL_SHIFT == 8);
-            cmp(cb, REG0_8, imm_opnd(RUBY_SYMBOL_FLAG));
-            jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+            assert!(RUBY_SPECIAL_SHIFT == 8);
+            cmp(cb, REG0_8, uimm_opnd(RUBY_SYMBOL_FLAG as u64));
+            jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
             ctx.upgrade_opnd_type(insn_opnd, Type::ImmSymbol);
         }
     }
-    else if (known_klass == rb_cFloat && FLONUM_P(sample_instance)) {
-        RUBY_ASSERT(!val_type.is_heap);
-        if (val_type != Type::Flonum || !val_type.is_imm) {
-            RUBY_ASSERT(val_type == Type::Unknown);
+    else if unsafe { known_klass == rb_cFloat } && sample_instance.flonum_p() {
+        assert!(!val_type.is_heap());
+        if val_type != Type::Flonum || !val_type.is_imm() {
+            assert!(val_type == Type::Unknown);
 
             // We will guard flonum vs heap float as though they were separate classes
             add_comment(cb, "guard object is flonum");
             mov(cb, REG1, REG0);
-            and(cb, REG1, imm_opnd(RUBY_FLONUM_MASK));
-            cmp(cb, REG1, imm_opnd(RUBY_FLONUM_FLAG));
-            jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+            and(cb, REG1, uimm_opnd(RUBY_FLONUM_MASK as u64));
+            cmp(cb, REG1, uimm_opnd(RUBY_FLONUM_FLAG as u64));
+            jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
             ctx.upgrade_opnd_type(insn_opnd, Type::Flonum);
         }
     }
-    else if (FL_TEST(known_klass, FL_SINGLETON) && sample_instance == rb_attr_get(known_klass, id__attached__)) {
+    else if unsafe { FL_TEST(known_klass, VALUE(RUBY_FL_SINGLETON)) != VALUE(0) &&
+        sample_instance == rb_attr_get(known_klass, id__attached__ as ID) } {
         // Singleton classes are attached to one specific object, so we can
         // avoid one memory access (and potentially the is_heap check) by
         // looking for the expected object directly.
@@ -3292,37 +3270,38 @@ jit_guard_known_klass(jitstate_t *jit, ctx_t *ctx, VALUE known_klass, insn_opnd_
         // TODO: jit_mov_gc_ptr keeps a strong reference, which leaks the object.
         jit_mov_gc_ptr(jit, cb, REG1, sample_instance);
         cmp(cb, REG0, REG1);
-        jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+        jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
     }
     else {
-        RUBY_ASSERT(!val_type.is_imm);
+        assert!(!val_type.is_imm());
 
         // Check that the receiver is a heap object
         // Note: if we get here, the class doesn't have immediate instances.
-        if (!val_type.is_heap) {
+        if !val_type.is_heap() {
             add_comment(cb, "guard not immediate");
-            RUBY_ASSERT(Qfalse < Qnil);
-            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK));
-            jit_chain_guard(JCC_JNZ, jit, ctx, max_chain_depth, side_exit);
-            cmp(cb, REG0, imm_opnd(Qnil));
-            jit_chain_guard(JCC_JBE, jit, ctx, max_chain_depth, side_exit);
+            assert!(Qfalse.as_i32() < Qnil.as_i32());
+            test(cb, REG0, imm_opnd(RUBY_IMMEDIATE_MASK as i64));
+            jit_chain_guard(JCC_JNZ, jit, ctx, cb, max_chain_depth, side_exit);
+            cmp(cb, REG0, imm_opnd(Qnil.into()));
+            jit_chain_guard(JCC_JBE, jit, ctx, cb, max_chain_depth, side_exit);
 
             ctx.upgrade_opnd_type(insn_opnd, Type::UnknownHeap);
         }
 
-        let klass_opnd = mem_opnd(64, REG0, offsetof(struct RBasic, klass));
+        let klass_opnd = mem_opnd(64, REG0, RUBY_OFFSET_RBASIC_KLASS);
 
         // Bail if receiver class is different from known_klass
         // TODO: jit_mov_gc_ptr keeps a strong reference, which leaks the class.
         add_comment(cb, "guard known class");
         jit_mov_gc_ptr(jit, cb, REG1, known_klass);
         cmp(cb, klass_opnd, REG1);
-        jit_chain_guard(JCC_JNE, jit, ctx, max_chain_depth, side_exit);
+        jit_chain_guard(JCC_JNE, jit, ctx, cb, max_chain_depth, side_exit);
     }
 
-    return true;
+    true
 }
 
+/*
 // Generate ancestry guard for protected callee.
 // Calls to protected callees only go through when self.is_a?(klass_that_defines_the_callee).
 static void
@@ -4208,8 +4187,8 @@ fn gen_send_iseq(jitstate_t *jit, ctx_t *ctx, const struct rb_callinfo *ci, cons
         ctx,
         return_block,
         &return_ctx,
-        return_block,
-        &return_ctx,
+        Some(return_block),
+        Some(&return_ctx),
         gen_return_branch
     );
 
@@ -4354,7 +4333,7 @@ fn gen_send_general(jitstate_t *jit, ctx_t *ctx, struct rb_call_data *cd, rb_ise
     let recv = ctx.stack_opnd(argc);
     insn_opnd_t recv_opnd = StackOpnd(argc);
     mov(cb, REG0, recv);
-    if (!jit_guard_known_klass(jit, ctx, comptime_recv_klass, recv_opnd, comptime_recv, SEND_MAX_DEPTH, side_exit)) {
+    if (!jit_guard_known_klass(jit, ctx, cb, comptime_recv_klass, recv_opnd, comptime_recv, SEND_MAX_DEPTH, side_exit)) {
         return CantCompile;
     }
 
@@ -4759,7 +4738,7 @@ fn gen_objtostring(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, oc
         uint8_t *side_exit = get_side_exit(jit, ocb, ctx);
 
         mov(cb, REG0, recv);
-        jit_guard_known_klass(jit, ctx, CLASS_OF(comptime_recv), StackOpnd(0), comptime_recv, SEND_MAX_DEPTH, side_exit);
+        jit_guard_known_klass(jit, ctx, cb, CLASS_OF(comptime_recv), StackOpnd(0), comptime_recv, SEND_MAX_DEPTH, side_exit);
         // No work needed. The string value is already on the top of the stack.
         KeepCompiling
     }
