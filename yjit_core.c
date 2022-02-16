@@ -746,7 +746,7 @@ gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_contex
     block_t *block;
 
     // Generate code for the first block
-    block = gen_single_block(blockid, start_ctx, ec);
+    //block = gen_single_block(blockid, start_ctx, ec);
     if (block) {
         // Track the block
         add_block_version(block);
@@ -782,7 +782,7 @@ gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_contex
 
         batch_success = compiled_count < MAX_PER_BATCH;
         if (batch_success) {
-            block = gen_single_block(requested_id, requested_ctx, ec);
+            //block = gen_single_block(requested_id, requested_ctx, ec);
             batch_success = block;
         }
 
