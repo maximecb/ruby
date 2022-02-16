@@ -331,16 +331,13 @@ fn jit_prepare_routine_call(jit: &mut JITState, ctx: &mut Context, cb: &mut Code
     jit_save_pc(jit, cb, scratch_reg);
     gen_save_sp(cb, ctx);
 }
-/*
+
 // Record the current codeblock write position for rewriting into a jump into
 // the outlined block later. Used to implement global code invalidation.
-static void
-record_global_inval_patch(const codeblock_t *cb, uint32_t outline_block_target_pos)
+fn record_global_inval_patch(cb: &mut CodeBlock, outline_block_target_pos: CodePtr)
 {
-    struct codepage_patch patch_point = { cb->write_pos, outline_block_target_pos };
-    if (!rb_darray_append(&global_inval_patches, patch_point)) rb_bug("allocation failed");
+    CodegenGlobals::push_global_inval_patch(cb.get_write_ptr(), outline_block_target_pos);
 }
-*/
 
 
 
@@ -517,17 +514,17 @@ jit_ensure_block_entry_exit(jitstate_t *jit)
 // assumes the entry point is 0.
 fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr)
 {
-    todo!();
+    //RUBY_ASSERT(cb != NULL);
 
-    /*
-    RUBY_ASSERT(cb != NULL);
-
-    mov(cb, REG0, member_opnd(REG_CFP, rb_control_frame_t, pc));
-    mov(cb, REG1, const_ptr_opnd(iseq->body->iseq_encoded));
+    let pc_opnd = mem_opnd(64, REG_CFP, RUBY_OFFSET_CFP_PC);
+    mov(cb, REG0, pc_opnd);
+    let encoded_iseq: *mut VALUE = unsafe { get_iseq_body_iseq_encoded(iseq) };
+    let encoded_iseq_opnd = const_ptr_opnd(encoded_iseq as *const u8);
+    mov(cb, REG1, encoded_iseq_opnd);
     xor(cb, REG0, REG1);
 
     // xor should impact ZF, so we can jz here
-    uint32_t pc_is_zero = cb_new_label(cb, "pc_is_zero");
+    let pc_is_zero = cb.new_label("pc_is_zero".to_string());
     jz_label(cb, pc_is_zero);
 
     // We're not starting at the first PC, so we need to exit.
@@ -537,13 +534,12 @@ fn gen_pc_guard(cb: &mut CodeBlock, iseq: IseqPtr)
     pop(cb, REG_EC);
     pop(cb, REG_CFP);
 
-    mov(cb, RAX, imm_opnd(Qundef));
+    mov(cb, RAX, imm_opnd(Qundef.into()));
     ret(cb);
 
     // PC should be at the beginning
-    cb_write_label(cb, pc_is_zero);
-    cb_link_labels(cb);
-    */
+    cb.write_label(pc_is_zero);
+    cb.link_labels();
 }
 
 /*
@@ -670,9 +666,9 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
     // has optional parameters, we'll add a runtime check that the PC we've
     // compiled for is the same PC that the interpreter wants us to run with.
     // If they don't match, then we'll take a side exit.
-    //if get_iseq_flags_has_opt(iseq) != 0 {
-    //    gen_pc_guard(cb, iseq);
-    //}
+    if unsafe { get_iseq_flags_has_opt(iseq) } != 0 {
+        gen_pc_guard(cb, iseq);
+    }
 
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
@@ -693,24 +689,23 @@ fn gen_check_ints(cb: &mut CodeBlock, side_exit: CodePtr)
     jnz_ptr(cb, side_exit);
 }
 
-/*
 // Generate a stubbed unconditional jump to the next bytecode instruction.
 // Blocks that are part of a guard chain can use this to share the same successor.
-static void
-jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
+fn jit_jump_to_next_insn(jit: &mut JITState, current_context: &Context, cb: &mut CodeBlock, ocb: &mut OutlinedCb)
 {
     // Reset the depth since in current usages we only ever jump to to
     // chain_depth > 0 from the same instruction.
-    ctx_t reset_depth = *current_context;
-    reset_depth.chain_depth = 0;
+    let mut reset_depth = current_context.clone();
+    reset_depth.reset_chain_depth();
 
-    blockid_t jump_block = { jit->iseq, jit_next_insn_idx(jit) };
+    let jump_block = BlockId { iseq: jit.iseq, idx: jit_next_insn_idx(jit) };
 
     // We are at the end of the current instruction. Record the boundary.
-    if (jit->record_boundary_patch_point) {
-        uint32_t exit_pos = gen_exit(jit->pc + insn_len(jit->opcode), &reset_depth, jit->ocb);
-        record_global_inval_patch(jit->cb, exit_pos);
-        jit->record_boundary_patch_point = false;
+    if jit.record_boundary_patch_point {
+        let next_insn = unsafe { jit.pc.offset(insn_len(jit.opcode).try_into().unwrap()) };
+        let exit_pos = gen_exit(next_insn, &reset_depth, ocb.unwrap());
+        record_global_inval_patch(cb, exit_pos);
+        jit.record_boundary_patch_point = false;
     }
 
     // Generate the jump instruction
@@ -720,7 +715,6 @@ jit_jump_to_next_insn(jitstate_t *jit, const ctx_t *current_context)
         jump_block
     );
 }
-*/
 
 // Compile a sequence of bytecode instructions for a given basic block version.
 // Part of gen_block_version().
@@ -759,11 +753,8 @@ pub fn gen_single_block(blockref: &BlockRef, ec: EcPtr, cb: &mut CodeBlock, ocb:
         // opt_getinlinecache wants to be in a block all on its own. Cut the block short
         // if we run into it. See gen_opt_getinlinecache() for details.
         if opcode == OP_OPT_GETINLINECACHE && insn_idx > starting_insn_idx {
-            todo!();
-            /*
-            jit_jump_to_next_insn(&jit, ctx);
-            break;
-            */
+            jit_jump_to_next_insn(&mut jit, &ctx, cb, ocb);
+            break
         }
 
         // Set the current instruction
@@ -5357,17 +5348,17 @@ pub struct CodegenGlobals
     /*
     // Code for full logic of returning from C method and exiting to the interpreter
     static uint32_t outline_full_cfunc_return_pos;
+    */
 
     // For implementing global code invalidation
-    struct codepage_patch {
-        uint32_t inline_patch_pos;
-        uint32_t outlined_target_pos;
-    };
+    global_inval_patches: Vec<CodepagePatch>,
+}
 
-    typedef rb_darray(struct codepage_patch) patch_array_t;
-
-    static patch_array_t global_inval_patches = NULL;
-    */
+// For implementing global code invalidation
+pub struct CodepagePatch
+{
+    inline_patch_pos: CodePtr,
+    outlined_target_pos: CodePtr,
 }
 
 /// Private singleton instance of the codegen globals
@@ -5412,6 +5403,7 @@ impl CodegenGlobals {
                     outlined_cb: ocb,
                     leave_exit_code: leave_exit_code,
                     stub_exit_code: stub_exit_code,
+                    global_inval_patches: Vec::new(),
                 }
             )
         }
@@ -5436,5 +5428,10 @@ impl CodegenGlobals {
 
     pub fn get_leave_exit_code() -> CodePtr {
         CodegenGlobals::get_instance().leave_exit_code
+    }
+
+    pub fn push_global_inval_patch(i_pos: CodePtr, o_pos: CodePtr) {
+        let patch = CodepagePatch { inline_patch_pos: i_pos, outlined_target_pos: o_pos };
+        CodegenGlobals::get_instance().global_inval_patches.push(patch);
     }
 }
