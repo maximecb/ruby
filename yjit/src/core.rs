@@ -1429,19 +1429,20 @@ pub fn gen_direct_jump(
     target0: BlockId
 )
 {
-    todo!("gen_direct_jump() unimplemented");
+    assert!(target0 != BLOCKID_NULL);
 
     /*
-    RUBY_ASSERT(target0.iseq != NULL);
-
     branch_t *branch = make_branch_entry(jit->block, ctx, gen_jump_branch);
     branch->targets[0] = target0;
     branch->target_ctxs[0] = *ctx;
+    */
 
-    block_t *p_block = find_block_version(target0, ctx);
+    let maybe_block = find_block_version(target0, ctx);
 
-    // If the version already exists
-    if (p_block) {
+    // If the block already exists
+    if let Some(blockref) = maybe_block {
+
+        /*
         rb_darray_append(&p_block->incoming, branch);
 
         branch->dst_addrs[0] = p_block->start_addr;
@@ -1452,16 +1453,23 @@ pub fn gen_direct_jump(
         branch->start_addr = cb.get_write_ptr();
         gen_jump_branch(cb, branch->dst_addrs[0], NULL, BranchShape::Default);
         branch->end_addr = cb.get_write_ptr();
+        */
+
     }
     else {
+
+        /*
         // This NULL target address signals gen_block_series() to compile the
         // target block right after this one (fallthrough).
         branch->dst_addrs[0] = NULL;
         branch->shape = BranchShape::Next0;
         branch->start_addr = cb.get_write_ptr();
         branch->end_addr = cb.get_write_ptr();
+        */
+
     }
-    */
+
+    todo!("gen_direct_jump() unimplemented");
 }
 
 pub fn defer_compilation(jit: &JITState, cb: &mut CodeBlock, cur_ctx: &Context)
