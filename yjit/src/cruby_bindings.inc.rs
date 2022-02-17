@@ -62,6 +62,13 @@ extern "C" {
 extern "C" {
     pub fn rb_hash_bulk_insert(argc: ::std::os::raw::c_long, argv: *const VALUE, hash: VALUE);
 }
+extern "C" {
+    pub fn rb_ec_ary_new_from_values(
+        ec: *mut rb_execution_context_struct,
+        n: ::std::os::raw::c_long,
+        elts: *const VALUE,
+    ) -> VALUE;
+}
 pub const BOP_PLUS: ruby_basic_operators = 0;
 pub const BOP_MINUS: ruby_basic_operators = 1;
 pub const BOP_MULT: ruby_basic_operators = 2;
