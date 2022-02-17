@@ -127,9 +127,6 @@ extern "C" {
 
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
 
-    // Even opaque/blocklisting rb_execution_context_t, bindgen pulls in huge amounts of irrelevant definitions from this
-    pub fn rb_ec_ary_new_from_values(ec: EcPtr, n:c_long, elts: *const VALUE) -> VALUE;
-
     // Ruby only defines this in vm_insnhelper.c, which bindgen has trouble using b/c of duplicate definitions
     pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
 }
@@ -178,14 +175,14 @@ pub type IseqPtr = *const rb_iseq_t;
 
 /// Opaque execution-context type
 #[repr(C)]
-pub struct rb_execution_context_t {
+pub struct rb_execution_context_struct {
     _data: [u8; 0],
     _marker:
         core::marker::PhantomData<(*mut u8, core::marker::PhantomPinned)>,
 }
 
 /// Pointer to an execution context (EC)
-pub type EcPtr = *const rb_execution_context_t;
+pub type EcPtr = *const rb_execution_context_struct;
 
 /// Pointer to a control frame pointer (CFP)
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
