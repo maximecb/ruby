@@ -1934,8 +1934,13 @@ fn jit_chain_guard(jcc:JCCKinds, jit: &JITState, ctx: &Context, cb: &mut CodeBlo
     }
 }
 
+// up to 5 different classes, and embedded or not for each
 pub const GET_IVAR_MAX_DEPTH:i32 = 10;
+
+// hashes and arrays
 pub const OPT_AREF_MAX_CHAIN_DEPTH:i32 = 2;
+
+// up to 5 different classes
 pub const SEND_MAX_DEPTH:i32 = 5;
 
 /*
@@ -2463,7 +2468,7 @@ fn gen_equality_specialized(jit: &mut JITState, ctx: &mut Context, cb: &mut Code
         }
 
         // Call rb_str_eql_internal(a, b)
-        let str_eql = CodePtr::from(raw_rb_str_eql_internal as *mut u8);
+        let str_eql = CodePtr::from(rb_str_eql_internal as *mut u8);
         call_ptr(cb, REG0, str_eql);
 
         // Push the output on the stack

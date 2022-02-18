@@ -113,7 +113,7 @@ extern "C" {
     pub fn raw_insn_len(v: VALUE) -> c_int;
 
     #[link_name = "rb_yarv_class_of"]
-    pub fn raw_class_of(v:VALUE) -> VALUE;
+    pub fn CLASS_OF(v:VALUE) -> VALUE;
 
     pub fn ec_get_cfp(ec: EcPtr) -> CfpPtr;
 
@@ -136,7 +136,7 @@ extern "C" {
     pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
 
     #[link_name = "rb_yarv_str_eql_internal"]
-    pub fn raw_rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
+    pub fn rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
 
     #[link_name = "rb_yarv_fl_test"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
@@ -257,7 +257,7 @@ impl VALUE {
     }
 
     pub fn class_of(self:VALUE) -> VALUE {
-        unsafe { raw_class_of(self) }
+        unsafe { CLASS_OF(self) }
     }
 
     pub fn as_isize(self:VALUE) -> isize {
