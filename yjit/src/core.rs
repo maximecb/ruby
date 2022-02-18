@@ -220,7 +220,7 @@ pub enum BranchShape
 }
 
 // Branch code generation function signature
-type BranchGenFn = fn(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape) -> ();
+type BranchGenFn = fn(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape) -> ();
 
 /// Store info about an outgoing branch in a code segment
 /// Note: care must be taken to minimize the size of branch objects
@@ -1399,7 +1399,7 @@ pub fn gen_branch(
     gen_fn: BranchGenFn
 )
 {
-    assert!(target0 != BLOCKID_NULL);
+    //assert!(target0 != BLOCKID_NULL);
 
     todo!("gen_branch() unimplemented");
 

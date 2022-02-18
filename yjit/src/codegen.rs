@@ -1880,7 +1880,7 @@ fn gen_checkkeyword(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlock, o
 }
 */
 
-fn gen_jnz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
+fn gen_jnz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape)
 {
     match shape {
         BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
@@ -1888,7 +1888,7 @@ fn gen_jnz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, sh
     }
 }
 
-fn gen_jz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
+fn gen_jz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape)
 {
     match shape {
         BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
@@ -1896,7 +1896,7 @@ fn gen_jz_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, sha
     }
 }
 
-fn gen_jbe_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
+fn gen_jbe_to_target0(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape)
 {
     match shape {
         BranchShape::Next0 | BranchShape::Next1 => unreachable!(),
@@ -1930,7 +1930,7 @@ fn jit_chain_guard(jcc:JCCKinds, jit: &JITState, ctx: &Context, cb: &mut CodeBlo
         );
     }
     else {
-        target0_gen_fn(cb, side_exit, CodePtr::null(), BranchShape::Default);
+        target0_gen_fn(cb, side_exit, None, BranchShape::Default);
     }
 }
 
@@ -2978,18 +2978,19 @@ fn gen_opt_case_dispatch(jit: &mut JITState, ctx: &mut Context, cb: &mut CodeBlo
 }
 */
 
-fn gen_branchif_branch(cb: &mut CodeBlock, target0: CodePtr, target1: CodePtr, shape: BranchShape)
+fn gen_branchif_branch(cb: &mut CodeBlock, target0: CodePtr, target1: Option<CodePtr>, shape: BranchShape)
 {
+    assert!(target1 != None);
     match shape {
         BranchShape::Next0 => {
-            jz_ptr(cb, target1);
+            jz_ptr(cb, target1.unwrap());
         },
         BranchShape::Next1 => {
             jnz_ptr(cb, target0);
         },
         BranchShape::Default => {
             jnz_ptr(cb, target0);
-            jmp_ptr(cb, target1);
+            jmp_ptr(cb, target1.unwrap());
         }
     }
 }

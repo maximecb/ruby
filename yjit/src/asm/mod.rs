@@ -26,12 +26,6 @@ impl From<*mut u8> for CodePtr {
     }
 }
 
-impl CodePtr {
-    pub fn null() -> Self {
-        return CodePtr(0 as *const u8);
-    }
-}
-
 /// Compute an offset in bytes of a given struct field
 macro_rules! offset_of {
     ($struct_type:ty, $field_name:tt) => {
