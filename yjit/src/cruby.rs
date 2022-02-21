@@ -126,20 +126,21 @@ extern "C" {
     pub fn get_iseq_encoded_size(iseq: IseqPtr) -> c_uint;
 
     pub fn get_iseq_body_iseq_encoded(iseq: IseqPtr) -> *mut VALUE;
-
-    // TODO: export these functions from the C side
     pub fn get_iseq_flags_has_opt(iseq: IseqPtr) -> c_int;
-
     pub fn get_iseq_body_local_table_size(iseq: IseqPtr) -> c_uint;
-
-    // Ruby only defines this in vm_insnhelper.c, which bindgen has trouble using b/c of duplicate definitions
-    pub fn rb_vm_opt_mod(recv:VALUE, obj: VALUE) -> VALUE;
+    pub fn get_iseq_body_param_num(iseq: IseqPtr) -> c_int;
 
     #[link_name = "rb_yarv_str_eql_internal"]
     pub fn rb_str_eql_internal(str1: VALUE, str2: VALUE) -> VALUE;
 
     #[link_name = "rb_yarv_fl_test"]
     pub fn FL_TEST(obj: VALUE, flags: VALUE) -> VALUE;
+
+    // Ruby only defines these in vm_insnhelper.c, not in any header.
+    // Parsing it would result in a lot of duplicate definitions.
+    pub fn rb_vm_opt_mod(recv: VALUE, obj: VALUE) -> VALUE;
+    pub fn rb_vm_splat_array(flag: VALUE, ary: VALUE) -> VALUE;
+    pub fn rb_vm_defined(ec: EcPtr, reg_cfp: CfpPtr, op_type: rb_num_t, obj: VALUE, v: VALUE) -> bool;
 }
 
 pub fn insn_len(opcode:usize) -> u32
@@ -291,8 +292,8 @@ impl VALUE {
     }
 }
 
-impl From<usize> for VALUE {
-    fn from(item: usize) -> Self {
+impl VALUE {
+    pub fn fixnum_from_usize(item: usize) -> Self {
         assert!(item <= (RUBY_FIXNUM_MAX as usize)); // An unsigned will always be greater than RUBY_FIXNUM_MIN
         let k : usize = item.wrapping_add(item.wrapping_add(1));
         VALUE(k)
