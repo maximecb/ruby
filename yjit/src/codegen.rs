@@ -11,6 +11,7 @@ use std::cell::{RefCell, RefMut};
 use std::rc::Rc;
 use std::mem::size_of;
 use std::os::raw::{c_uint};
+use std::slice;
 
 // Callee-saved registers
 pub const REG_CFP: X86Opnd = R13;
@@ -1126,17 +1127,18 @@ mod tests {
 
     fn setup_codegen() -> (JITState, Context, CodeBlock, OutlinedCb) {
         let block = Block::new(BLOCKID_NULL, &Context::default());
+
         return (
             JITState::new(&block),
             Context::new(),
-            CodeBlock::new(),
-            OutlinedCb::wrap(CodeBlock::new())
+            CodeBlock::new_dummy(256 * 1024),
+            OutlinedCb::wrap(CodeBlock::new_dummy(256 * 1024))
         );
     }
 
     #[test]
     fn test_gen_leave_exit() {
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        let mut ocb = OutlinedCb::wrap( CodeBlock::new_dummy(256 * 1024));
         gen_leave_exit(&mut ocb);
         assert!(ocb.unwrap().get_write_pos() > 0);
     }
@@ -5365,21 +5367,20 @@ impl CodegenGlobals {
     pub fn init() {
         // Executable memory size in MiB
         let mem_size = get_option!(exec_mem_size) * 1024 * 1024;
-        let mem_size: u32 = mem_size.try_into().unwrap();
 
-        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size) };
+        #[cfg(not(test))]
+        let mem_block: *mut u8 = unsafe { alloc_exec_mem(mem_size.try_into().unwrap()) };
+        #[cfg(not(test))]
+        let mut cb = CodeBlock::new(mem_block, mem_size / 2);
+        #[cfg(not(test))]
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new(unsafe { mem_block.add(mem_size / 2) }, mem_size / 2));
 
-        /*
-        cb = &block;
-        cb_init(cb, mem_block, mem_size/2);
-
-        ocb = &outline_block;
-        cb_init(ocb, mem_block + mem_size/2, mem_size/2);
-        */
-
-        let mut cb = CodeBlock::new();
-
-        let mut ocb = OutlinedCb::wrap(CodeBlock::new());
+        // In test mode we're not linking with the C code
+        // so we don't allocate executable memory
+        #[cfg(test)]
+        let mut cb = CodeBlock::new_dummy(mem_size / 2);       
+        #[cfg(test)]
+        let mut ocb = OutlinedCb::wrap(CodeBlock::new_dummy(mem_size / 2));
 
         let leave_exit_code = gen_leave_exit(&mut ocb);
 
