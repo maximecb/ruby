@@ -13,135 +13,13 @@
 // Filled by gen_code_for_exit_from_stub().
 static uint8_t *code_for_exit_from_stub = NULL;
 
-#define UPGRADE_TYPE(dest, src) do { \
-    RUBY_ASSERT(type_diff((src), (dest)) != INT_MAX); \
-    (dest) = (src); \
-} while (false)
-
-// Get all blocks for a particular place in an iseq.
-static rb_yjit_block_array_t
-yjit_get_version_array(const rb_iseq_t *iseq, unsigned idx)
-{
-    struct rb_iseq_constant_body *body = iseq->body;
-
-    if (rb_darray_size(body->yjit_blocks) == 0) {
-        return NULL;
-    }
-
-    RUBY_ASSERT((unsigned)rb_darray_size(body->yjit_blocks) == body->iseq_size);
-    return rb_darray_get(body->yjit_blocks, idx);
-}
-
 static void yjit_free_block(block_t *block);
-
-// Immediately compile a series of block versions at a starting point and
-// return the starting block.
-static block_t *
-gen_block_version(blockid_t blockid, const ctx_t *start_ctx, rb_execution_context_t *ec)
-{
-    return NULL;
-
-    /*
-    // Small array to keep track of all the blocks compiled per invocation. We
-    // tend to have small batches since we often break up compilation with lazy
-    // stubs. Compilation is successful only if the whole batch is successful.
-    enum { MAX_PER_BATCH = 64 };
-    block_t *batch[MAX_PER_BATCH];
-    int compiled_count = 0;
-    bool batch_success = true;
-    block_t *block = NULL;
-
-    // Generate code for the first block
-    //block = gen_single_block(blockid, start_ctx, ec);
-    if (block) {
-        // Track the block
-        add_block_version(block);
-
-        batch[compiled_count] = block;
-        compiled_count++;
-    }
-    batch_success = block;
-
-    // For each successor block to compile
-    while (batch_success) {
-        // If the previous block compiled doesn't have outgoing branches, stop
-        if (rb_darray_size(block->outgoing) == 0) {
-            break;
-        }
-
-        // Get the last outgoing branch from the previous block. Blocks can use
-        // gen_direct_jump() to request a block to be placed immediately after.
-        branch_t *last_branch = rb_darray_back(block->outgoing);
-
-        // If there is no next block to compile, stop
-        if (last_branch->dst_addrs[0] || last_branch->dst_addrs[1]) {
-            break;
-        }
-
-        if (last_branch->targets[0].iseq == NULL) {
-            rb_bug("invalid target for last branch");
-        }
-
-        // Generate code for the current block using context from the last branch.
-        blockid_t requested_id = last_branch->targets[0];
-        const ctx_t *requested_ctx = &last_branch->target_ctxs[0];
-
-        batch_success = compiled_count < MAX_PER_BATCH;
-        if (batch_success) {
-            //block = gen_single_block(requested_id, requested_ctx, ec);
-            batch_success = block;
-        }
-
-        // If the batch failed, stop
-        if (!batch_success) {
-            break;
-        }
-
-        // Connect the last branch and the new block
-        last_branch->dst_addrs[0] = block->start_addr;
-        rb_darray_append(&block->incoming, last_branch);
-        last_branch->blocks[0] = block;
-
-        // This block should immediately follow the last branch
-        RUBY_ASSERT(block->start_addr == last_branch->end_addr);
-
-        // Track the block
-        add_block_version(block);
-
-        batch[compiled_count] = block;
-        compiled_count++;
-    }
-
-    if (batch_success) {
-        // Success. Return first block in the batch.
-        RUBY_ASSERT(compiled_count > 0);
-        return batch[0];
-    }
-    else {
-        // The batch failed. Free everything in the batch
-        for (int block_idx = 0; block_idx < compiled_count; block_idx++) {
-            block_t *const to_free = batch[block_idx];
-
-            // Undo add_block_version()
-            rb_yjit_block_array_t versions = yjit_get_version_array(to_free->blockid.iseq, to_free->blockid.idx);
-            block_array_remove(versions, to_free);
-
-            // Deallocate
-            yjit_free_block(to_free);
-        }
-
-#if YJIT_STATS
-        yjit_runtime_counters.compilation_failure++;
-#endif
-        return NULL;
-    }
-    */
-}
 
 // Remove all references to a block then free it.
 static void
 yjit_free_block(block_t *block)
 {
+    /*
     yjit_unlink_method_lookup_dependency(block);
     yjit_block_assumptions_free(block);
 
@@ -188,12 +66,15 @@ yjit_free_block(block_t *block)
     rb_darray_free(block->gc_object_offsets);
 
     free(block);
+    */
 }
 
 // Invalidate one specific block version
 static void
 invalidate_block_version(block_t *block)
 {
+    // TODO: take the VM lock and call into the Rust code here?
+
     /*
     ASSERT_vm_locking();
 

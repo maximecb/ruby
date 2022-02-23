@@ -324,7 +324,7 @@ rb_get_ec_cfp(rb_execution_context_t *ec) {
 
 VALUE*
 rb_get_cfp_pc(struct rb_control_frame_struct *cfp) {
-    return cfp->pc;
+    return (VALUE*)cfp->pc;
 }
 
 VALUE*
@@ -339,7 +339,7 @@ rb_get_cfp_self(struct rb_control_frame_struct *cfp) {
 
 VALUE*
 rb_get_cfp_ep(struct rb_control_frame_struct *cfp) {
-    return cfp->ep;
+    return (VALUE*)cfp->ep;
 }
 
 VALUE
