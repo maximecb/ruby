@@ -83,6 +83,10 @@ fn main() {
         .allowlist_function("rb_get_alloc_func")
         .allowlist_function("rb_class_allocate_instance")
 
+        .allowlist_function("rb_yjit_mark_writable")
+        .allowlist_function("rb_yjit_mark_executable")
+        .allowlist_function("rb_yjit_get_page_size")
+
         // We define VALUE manually
         .blocklist_type("VALUE")
         .opaque_type("rb_iseq_t")

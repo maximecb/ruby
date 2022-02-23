@@ -354,6 +354,15 @@ pub const BOP_LAST_: ruby_basic_operators = 29;
 pub type ruby_basic_operators = u32;
 pub type IVC = *mut iseq_inline_iv_cache_entry;
 extern "C" {
+    pub fn rb_yjit_mark_writable(mem_block: *mut ::std::os::raw::c_void, mem_size: u32);
+}
+extern "C" {
+    pub fn rb_yjit_mark_executable(mem_block: *mut ::std::os::raw::c_void, mem_size: u32);
+}
+extern "C" {
+    pub fn rb_yjit_get_page_size() -> u32;
+}
+extern "C" {
     pub fn rb_iseq_get_yjit_payload(iseq: *const rb_iseq_t) -> *mut ::std::os::raw::c_void;
 }
 extern "C" {
