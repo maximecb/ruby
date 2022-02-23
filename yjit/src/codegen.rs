@@ -3319,8 +3319,7 @@ fn jit_protected_callee_ancestry_guard(jit: &mut JITState, cb: &mut CodeBlock, c
     // Note: PC isn't written to current control frame as rb_is_kind_of() shouldn't raise.
     // VALUE rb_obj_is_kind_of(VALUE obj, VALUE klass);
 
-    let obj_is_kind_of = CodePtr::from(rb_obj_is_kind_of as *mut u8);
-    call_ptr(cb, REG0, obj_is_kind_of);
+    call_ptr(cb, REG0, rb_obj_is_kind_of as *mut u8);
     test(cb, RAX, RAX);
     jz_ptr(cb, counted_exit!(ocb, side_exit, send_se_protected_check_failed));
 }
