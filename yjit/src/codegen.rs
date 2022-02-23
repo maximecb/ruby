@@ -684,19 +684,6 @@ pub fn gen_entry_prologue(cb: &mut CodeBlock, iseq: IseqPtr) -> Option<CodePtr>
         gen_pc_guard(cb, iseq);
     }
 
-    // FIXME(alan): For some reason the code for the iseq isn't generated after the prologue
-    // Removing this int3 reveals a crash with the following script:
-    // ```ruby
-    // def foo = nil
-    //
-    // i = 0
-    // while i < 10
-    //   foo
-    //   i += 1
-    // end
-    // ```
-    int3(cb);
-
     // Verify MAX_PROLOGUE_SIZE
     assert!(cb.get_write_pos() - old_write_pos <= MAX_PROLOGUE_SIZE);
 
